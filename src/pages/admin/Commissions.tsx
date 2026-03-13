@@ -22,7 +22,7 @@ const Commissions = () => {
                 <p className="text-slate-500 text-sm">Calculate and track sales team commissions.</p>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
                     <div className="size-10 rounded-xl flex items-center justify-center bg-blue-500/10 text-blue-600 mb-3"><span className="material-symbols-outlined text-lg">payments</span></div>
                     <p className="text-2xl font-black text-primary font-display">{totalEarned}</p>
@@ -40,8 +40,8 @@ const Commissions = () => {
                 </div>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden">
-                <table className="w-full">
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-x-auto">
+                <table className="w-full min-w-[800px]">
                     <thead>
                         <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
                             <th className="text-left px-5 py-3">Team Member</th>

@@ -24,7 +24,7 @@ const TaxCompliance = () => {
                 <p className="text-slate-500 text-sm">GST reports, TDS tracking, and filing status.</p>
             </div>
 
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                     { label: 'GST Payable (Oct)', val: '₹1.67L', icon: 'receipt', color: 'bg-blue-500/10 text-blue-600' },
                     { label: 'Input Credit', val: '₹0.85L', icon: 'credit_score', color: 'bg-green-500/10 text-green-600' },

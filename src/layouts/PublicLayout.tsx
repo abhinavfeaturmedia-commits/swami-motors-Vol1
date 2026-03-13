@@ -25,14 +25,17 @@ const PublicLayout: React.FC = () => {
             {/* Header */}
             <header className="sticky top-0 z-50 bg-white border-b border-border shadow-sm">
                 <div className="container-main">
-                    <div className="flex items-center justify-between h-[4.5rem] gap-6">
+                    <div className="flex items-center justify-between h-16 sm:h-[4.5rem] gap-2 lg:gap-6">
                         {/* Logo */}
-                        <Link to="/" className="flex items-center gap-3 shrink-0">
-                            <div className="size-10 bg-primary rounded-xl flex items-center justify-center text-white shadow-sm">
+                        <Link to="/" className="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
+                            <div className="size-9 sm:size-10 bg-primary rounded-xl flex items-center justify-center text-white shadow-sm shrink-0">
                                 <span className="material-symbols-outlined text-xl">directions_car</span>
                             </div>
-                            <div className="hidden sm:block">
-                                <h1 className="text-primary text-lg font-bold leading-tight tracking-tight font-display">Shree Swami Samarth Motors</h1>
+                            <div className="block min-w-0 flex-1">
+                                <h1 className="text-primary text-sm sm:text-lg font-bold leading-tight tracking-tight font-display truncate">
+                                    <span className="xs:hidden">SSSM Motors</span>
+                                    <span className="hidden xs:inline">Shree Swami Samarth Motors</span>
+                                </h1>
                             </div>
                         </Link>
 
@@ -53,20 +56,19 @@ const PublicLayout: React.FC = () => {
                         </nav>
 
                         {/* Actions */}
-                        <div className="flex items-center gap-3">
-                            {/* Search */}
-                            <div className="hidden md:flex items-center gap-2 bg-slate-50 rounded-xl px-4 h-10 border border-slate-100 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/30 transition-all min-w-[12.5rem]">
+                        <div className="flex items-center gap-1.5 sm:gap-3">
+                            <div className="hidden md:flex items-center gap-2 bg-slate-50 rounded-xl px-4 h-10 border border-slate-100 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/30 transition-all min-w-[10rem] lg:min-w-[12.5rem]">
                                 <Search size={16} className="text-slate-400 shrink-0" />
                                 <input
                                     className="bg-transparent border-none text-sm text-primary placeholder:text-slate-400 w-full outline-none"
-                                    placeholder="Search cars..."
+                                    placeholder="Search..."
                                 />
                             </div>
 
-                            <button className="flex size-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 hover:text-primary transition-colors">
+                            <button className="hidden lg:flex size-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 hover:text-primary transition-colors">
                                 <Heart size={20} />
                             </button>
-                            <Link to="/admin/login" className="hidden sm:flex h-10 px-4 items-center justify-center gap-1.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 hover:text-primary transition-colors">
+                            <Link to="/admin/login" className="hidden lg:flex h-10 px-4 items-center justify-center gap-1.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 hover:text-primary transition-colors">
                                 <span className="material-symbols-outlined text-base">admin_panel_settings</span>
                                 Admin
                             </Link>
@@ -74,14 +76,14 @@ const PublicLayout: React.FC = () => {
                                 <User size={16} />
                                 Login
                             </Link>
-                            <Link to="/auth" className="sm:hidden flex size-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition-colors">
-                                <User size={20} />
+                            <Link to="/auth" className="sm:hidden flex size-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition-colors">
+                                <User size={18} />
                             </Link>
 
                             {/* Mobile menu button */}
                             <button
                                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                                className="lg:hidden flex size-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition-colors"
+                                className="lg:hidden flex size-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition-colors"
                             >
                                 {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
                             </button>
@@ -90,15 +92,15 @@ const PublicLayout: React.FC = () => {
 
                     {/* Mobile Menu */}
                     {mobileMenuOpen && (
-                        <div className="lg:hidden border-t border-slate-100 py-4 pb-6">
-                            <nav className="flex flex-col gap-1">
+                        <div className="lg:hidden fixed inset-x-0 top-16 bottom-0 z-[60] bg-white overflow-y-auto pt-4 pb-8 flex flex-col">
+                            <nav className="flex flex-col gap-1 px-4">
                                 {navLinks.map(link => (
                                     <Link
                                         key={link.path}
                                         to={link.path}
                                         onClick={() => setMobileMenuOpen(false)}
-                                        className={`px-4 py-3 rounded-xl text-sm font-medium transition-colors ${isActive(link.path)
-                                            ? 'text-primary bg-slate-100 font-semibold'
+                                        className={`px-4 py-3.5 rounded-xl text-sm font-semibold transition-colors ${isActive(link.path)
+                                            ? 'text-primary bg-slate-50 border-l-4 border-accent'
                                             : 'text-slate-600 hover:text-primary hover:bg-slate-50'
                                             }`}
                                     >
@@ -106,21 +108,15 @@ const PublicLayout: React.FC = () => {
                                     </Link>
                                 ))}
                             </nav>
-                            <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col gap-2 px-4">
-                                <Link to="/admin/login" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-600 hover:text-primary hover:bg-slate-50 transition-colors">
+                            <div className="mt-auto pt-4 border-t border-slate-100 flex flex-col gap-3 px-6">
+                                <Link to="/admin/login" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 py-2 text-sm font-medium text-slate-500 hover:text-primary transition-colors">
                                     <span className="material-symbols-outlined text-base">admin_panel_settings</span>
-                                    Admin Panel
+                                    Staff Login
                                 </Link>
-                                <Link to="/auth" onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-center gap-2 h-11 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-light transition-colors shadow-sm">
-                                    <User size={16} />
-                                    Login / Sign Up
+                                <Link to="/auth" onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-center gap-2 h-12 rounded-xl bg-primary text-white text-base font-bold hover:bg-primary-light transition-colors shadow-lg">
+                                    <User size={18} />
+                                    Sign In / Register
                                 </Link>
-                            </div>
-                            <div className="mt-4 px-4">
-                                <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-4 h-10 border border-slate-100">
-                                    <Search size={16} className="text-slate-400" />
-                                    <input className="bg-transparent border-none text-sm w-full outline-none" placeholder="Search cars..." />
-                                </div>
                             </div>
                         </div>
                     )}
@@ -133,24 +129,24 @@ const PublicLayout: React.FC = () => {
             </main>
 
             {/* Footer */}
-            <footer className="bg-primary text-white mt-auto">
-                <div className="container-main py-16">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
+            <footer className="bg-primary text-white pt-12 sm:pt-16 pb-8 border-t border-primary-light/10">
+                <div className="container-main">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12 mb-12">
                         {/* Brand */}
-                        <div>
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="size-9 bg-accent rounded-lg flex items-center justify-center text-primary">
-                                    <span className="material-symbols-outlined text-lg">directions_car</span>
+                        <div className="space-y-4 sm:space-y-6">
+                            <Link to="/" className="flex items-center gap-3">
+                                <div className="size-10 bg-accent rounded-xl flex items-center justify-center text-primary">
+                                    <span className="material-symbols-outlined font-bold">directions_car</span>
                                 </div>
-                                <h3 className="text-lg font-bold font-display">Shree Swami Samarth Motors</h3>
-                            </div>
-                            <p className="text-slate-400 text-sm leading-relaxed mb-6">
-                                Kolhapur's most trusted premium automotive dealer. We make owning a car a reality with transparent finance options.
+                                <h2 className="text-lg font-bold font-display leading-tight">Shree Swami Samarth Motors</h2>
+                            </Link>
+                            <p className="text-slate-400 text-sm leading-relaxed max-w-xs">
+                                Your trusted destination for quality pre-owned cars in Kolhapur. We bring you the best deals with certified assurance.
                             </p>
-                            <div className="flex gap-3">
-                                {['FB', 'IG', 'WA'].map(social => (
-                                    <a key={social} href="#" className="size-10 rounded-full bg-white/10 flex items-center justify-center text-sm font-bold text-slate-300 hover:bg-accent hover:text-primary transition-colors">
-                                        {social}
+                            <div className="flex items-center gap-3">
+                                {['facebook', 'instagram', 'twitter', 'youtube'].map(social => (
+                                    <a key={social} href="#" className="size-9 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 hover:bg-accent hover:text-primary transition-all duration-300">
+                                        <span className="material-symbols-outlined text-lg">{social === 'youtube' ? 'play_circle' : social}</span>
                                     </a>
                                 ))}
                             </div>

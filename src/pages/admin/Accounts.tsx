@@ -30,7 +30,7 @@ const Accounts = () => {
             </div>
 
             {/* Summary */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                     { label: 'Total Income', val: '₹25.25L', icon: 'trending_up', color: 'bg-green-500/10 text-green-600' },
                     { label: 'Total Expense', val: '₹29.09L', icon: 'trending_down', color: 'bg-red-500/10 text-red-600' },
@@ -51,8 +51,8 @@ const Accounts = () => {
                 ))}
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden">
-                <table className="w-full">
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-x-auto">
+                <table className="w-full min-w-[700px]">
                     <thead>
                         <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
                             <th className="text-left px-5 py-3">Description</th>

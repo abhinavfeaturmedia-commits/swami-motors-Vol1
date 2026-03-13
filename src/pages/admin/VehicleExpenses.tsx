@@ -35,7 +35,7 @@ const VehicleExpenses = () => {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
                     { label: 'Total Expenses', val: '₹62,300', icon: 'receipt_long', color: 'bg-red-500/10 text-red-600' },
                     { label: 'Repairs', val: '₹22,300', icon: 'build', color: 'bg-amber-500/10 text-amber-600' },
@@ -57,8 +57,8 @@ const VehicleExpenses = () => {
             </div>
 
             {tab === 'expenses' ? (
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden">
-                    <table className="w-full">
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-x-auto">
+                    <table className="w-full min-w-[600px]">
                         <thead>
                             <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
                                 <th className="text-left px-5 py-3">Vehicle</th>
@@ -86,8 +86,8 @@ const VehicleExpenses = () => {
                     </table>
                 </div>
             ) : (
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden">
-                    <table className="w-full">
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-x-auto">
+                    <table className="w-full min-w-[600px]">
                         <thead>
                             <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
                                 <th className="text-left px-5 py-3">Vehicle</th>

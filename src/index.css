@@ -54,11 +54,15 @@
   html {
     font-size: 14.4px;
     /* 90% of 16px — scales all rem-based sizing proportionally */
-    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
   }
 
   body {
     @apply bg-background-light text-slate-900 font-body antialiased;
+    width: 100%;
+    min-height: 100vh;
+    position: relative;
     overflow-x: hidden;
   }
 
@@ -68,7 +72,7 @@
   h4,
   h5,
   h6 {
-    font-family: var(--font-display);
+    @apply font-display font-bold;
   }
 }
 

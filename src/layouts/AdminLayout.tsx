@@ -96,16 +96,22 @@ const AdminLayout: React.FC = () => {
 
     return (
         <div className="min-h-screen w-full bg-slate-50 flex font-body">
-            {/* Mobile backdrop */}
+            {/* Sidebar Overlay */}
             {sidebarOpen && (
-                <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden" onClick={() => setSidebarOpen(false)} />
+                <div
+                    className="fixed inset-0 z-30 bg-primary/20 backdrop-blur-sm lg:hidden transition-opacity"
+                    onClick={() => setSidebarOpen(false)}
+                />
             )}
 
             {/* Sidebar */}
-            <aside className={clsx(
-                "fixed inset-y-0 left-0 z-50 w-[16.25rem] bg-white border-r border-slate-100 transform transition-transform duration-300 lg:translate-x-0 lg:static flex flex-col",
-                sidebarOpen ? "translate-x-0" : "-translate-x-full"
-            )}>
+            <aside
+                className={clsx(
+                    "fixed top-0 left-0 z-40 h-screen transition-transform duration-300 ease-in-out bg-white border-r border-slate-100 flex flex-col",
+                    sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
+                    "w-64"
+                )}
+            >
                 {/* Header */}
                 <div className="h-[4.5rem] flex items-center justify-between px-5 border-b border-slate-100 shrink-0">
                     <Link to="/admin" className="flex items-center gap-3">
@@ -123,78 +129,83 @@ const AdminLayout: React.FC = () => {
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 py-3 px-3 overflow-y-auto">
-                    {NAV_GROUPS.map(group => {
-                        const isOpen = !collapsed[group.label] || (activeGroup?.label === group.label);
-                        const hasActive = group.items.some(i => isNavActive(i.href));
+                <nav className="flex-1 py-3 px-3 overflow-y-auto flex flex-col min-h-0">
+                    <div className="flex-1">
+                        {NAV_GROUPS.map(group => {
+                            const isOpen = !collapsed[group.label] || (activeGroup?.label === group.label);
+                            const hasActive = group.items.some(i => isNavActive(i.href));
 
-                        return (
-                            <div key={group.label} className="mb-1">
-                                <button
-                                    onClick={() => toggleGroup(group.label)}
-                                    className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors"
-                                >
-                                    <span className={hasActive ? 'text-primary' : ''}>{group.label}</span>
-                                    <ChevronDown size={12} className={clsx('transition-transform', isOpen ? '' : '-rotate-90')} />
-                                </button>
+                            return (
+                                <div key={group.label} className="mb-1">
+                                    <button
+                                        onClick={() => toggleGroup(group.label)}
+                                        className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors"
+                                    >
+                                        <span className={hasActive ? 'text-primary' : ''}>{group.label}</span>
+                                        <ChevronDown size={12} className={clsx('transition-transform', isOpen ? '' : '-rotate-90')} />
+                                    </button>
 
-                                {isOpen && (
-                                    <div className="space-y-0.5">
-                                        {group.items.map(item => {
-                                            const active = isNavActive(item.href);
-                                            return (
-                                                <Link
-                                                    key={item.href}
-                                                    to={item.href}
-                                                    onClick={() => setSidebarOpen(false)}
-                                                    className={clsx(
-                                                        "flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-200",
-                                                        active
-                                                            ? "bg-primary text-white shadow-sm shadow-primary/20"
-                                                            : "text-slate-600 hover:bg-slate-50 hover:text-primary"
-                                                    )}
-                                                >
-                                                    <span className={clsx("material-symbols-outlined text-[18px]", active ? "text-white" : "text-slate-400")}>{item.icon}</span>
-                                                    {item.name}
-                                                </Link>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
+                                    {isOpen && (
+                                        <div className="space-y-0.5">
+                                            {group.items.map(item => {
+                                                const active = isNavActive(item.href);
+                                                return (
+                                                    <Link
+                                                        key={item.href}
+                                                        to={item.href}
+                                                        onClick={() => setSidebarOpen(false)}
+                                                        className={clsx(
+                                                            "flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-200",
+                                                            active
+                                                                ? "bg-primary text-white shadow-sm shadow-primary/20"
+                                                                : "text-slate-600 hover:bg-slate-50 hover:text-primary"
+                                                        )}
+                                                    >
+                                                        <span className={clsx("material-symbols-outlined text-[18px]", active ? "text-white" : "text-slate-400")}>{item.icon}</span>
+                                                        {item.name}
+                                                    </Link>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Bottom Actions */}
+                    <div className="mt-auto px-1 pb-4 shrink-0 space-y-2 border-t border-slate-100 pt-5">
+                        <Link
+                            to="/admin/inventory/new"
+                            className="flex items-center justify-center gap-2 w-full h-10 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-light transition-colors shadow-sm"
+                        >
+                            <Plus size={16} /> New Listing
+                        </Link>
+                        <Link
+                            to="/"
+                            className="flex items-center justify-center gap-2 w-full h-10 bg-slate-50 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-100 hover:text-primary transition-colors"
+                        >
+                            <Home size={15} /> View Website
+                        </Link>
+                        <button
+                            onClick={handleLogout}
+                            className="flex items-center justify-center gap-2 w-full h-10 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-100 hover:text-red-700 transition-colors"
+                        >
+                            <LogOut size={15} /> Logout
+                        </button>
+                    </div>
                 </nav>
-
-                {/* Bottom Actions */}
-                <div className="px-3 pb-4 shrink-0 space-y-2 border-t border-slate-100 pt-3">
-                    <Link
-                        to="/admin/inventory/new"
-                        className="flex items-center justify-center gap-2 w-full h-10 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-light transition-colors shadow-sm"
-                    >
-                        <Plus size={16} /> New Listing
-                    </Link>
-                    <Link
-                        to="/"
-                        className="flex items-center justify-center gap-2 w-full h-10 bg-slate-50 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-100 hover:text-primary transition-colors"
-                    >
-                        <Home size={15} /> View Website
-                    </Link>
-                    <button
-                        onClick={handleLogout}
-                        className="flex items-center justify-center gap-2 w-full h-10 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-100 hover:text-red-700 transition-colors"
-                    >
-                        <LogOut size={15} /> Logout
-                    </button>
-                </div>
             </aside>
 
             {/* Main content */}
-            <div className="flex-1 flex flex-col min-h-screen min-w-0">
+            <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden lg:pl-64">
                 {/* Header */}
-                <header className="h-[4.5rem] bg-white border-b border-slate-100 flex items-center justify-between px-4 sm:px-6 lg:px-8 sticky top-0 z-30">
-                    <div className="flex items-center gap-4 flex-1">
-                        <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-500 hover:text-primary p-2 -ml-2 rounded-lg hover:bg-slate-100 transition-colors">
+                <header className="h-16 bg-white border-b border-slate-100 flex items-center justify-between px-4 sm:px-8 shrink-0">
+                    <div className="flex items-center gap-3 sm:gap-4 flex-1">
+                        <button
+                            onClick={() => setSidebarOpen(true)}
+                            className="p-2 -ml-2 text-slate-400 hover:text-primary lg:hidden"
+                        >
                             <Menu size={22} />
                         </button>
                         <h2 className="hidden lg:block text-lg font-bold text-primary font-display">Admin Command Center</h2>

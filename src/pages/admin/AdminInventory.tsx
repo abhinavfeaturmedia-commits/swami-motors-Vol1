@@ -38,8 +38,8 @@ const AdminInventory = () => {
             </div>
 
             {/* Table */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden">
-                <table className="w-full">
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-x-auto">
+                <table className="w-full min-w-[700px]">
                     <thead>
                         <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
                             <th className="text-left px-5 py-3">Vehicle</th>

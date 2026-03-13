@@ -31,7 +31,7 @@ const Documents = () => {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[
                     { label: 'Valid', val: DOCS.filter(d => d.status === 'Valid').length, icon: 'check_circle', color: 'bg-green-500/10 text-green-600' },
                     { label: 'Expiring Soon', val: DOCS.filter(d => d.status === 'Expiring').length, icon: 'warning', color: 'bg-amber-500/10 text-amber-600' },
@@ -53,8 +53,8 @@ const Documents = () => {
             </div>
 
             {/* Table */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden">
-                <table className="w-full">
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-x-auto">
+                <table className="w-full min-w-[600px]">
                     <thead>
                         <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
                             <th className="text-left px-5 py-3">Vehicle</th>

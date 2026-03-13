@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { X } from 'lucide-react';
 
 const CARS = [
     { id: '1', make: 'Hyundai', model: 'Creta', year: 2021, variant: 'SX 1.5 Petrol Automatic', price: 1450000, priceFormatted: '₹ 14.50 Lakh', emi: '₹24,450', mileage: '24,000', fuel: 'Petrol', transmission: 'Auto', photos: 8, badges: ['Certified', 'New Arrival'], img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCZ9on2reKfaAeW52as0W9TitvVermkqQOTGwGUHGFM5bCQDPr3JQomAy3uKn2C9ta7SmSbrSUUJaxiGih2jDZhMfUpbTcKnZJ-RPJfNxEUS-EZ4nJ-sPFU6kBj2kUZGbL-r5IVAcPmDncOyoqNZbQSpH02EOyXXaZyH82dIaNWIXphtUdSIznx3bz3r3EVA2OCr8aT-X0PqsVL_QOdO5KMvyuQnYom1A1lLdlS20IRmgRzl2v7BYVRIjr_2c4thS8RPJ5yrqGxXQZ_' },
@@ -21,97 +22,126 @@ const Inventory = () => {
     const [sortBy, setSortBy] = useState('newest');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+    const [showFilters, setShowFilters] = useState(false);
 
     const toggleBrand = (brand: string) => {
         setSelectedBrands(prev => prev.includes(brand) ? prev.filter(b => b !== brand) : [...prev, brand]);
     };
 
     return (
-        <div className="container-main py-8">
-            <div className="flex flex-col lg:flex-row gap-8">
+        <div className="container-main py-4 sm:py-8">
+            <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+                {/* Mobile Filter Toggle */}
+                <div className="lg:hidden flex items-center justify-between bg-white p-4 rounded-xl border border-slate-100 shadow-sm mb-2">
+                    <button 
+                        onClick={() => setShowFilters(!showFilters)}
+                        className="flex items-center gap-2 text-sm font-bold text-primary"
+                    >
+                        <span className="material-symbols-outlined">filter_list</span>
+                        {showFilters ? 'Hide Filters' : 'Show Filters'}
+                    </button>
+                    <span className="text-xs text-slate-400 font-medium">45 Cars Found</span>
+                </div>
+
                 {/* Filters Sidebar */}
-                <aside className="lg:w-[16.25rem] shrink-0">
-                    <div className="sticky top-[5.5rem]">
+                <aside className={`lg:w-[16.25rem] shrink-0 ${showFilters ? 'block fixed inset-0 z-[70] bg-white p-6 overflow-y-auto' : 'hidden lg:block'}`}>
+                    <div className="lg:sticky lg:top-[5.5rem]">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="font-bold text-primary font-display text-lg">Filters</h3>
-                            <button className="text-sm font-semibold text-accent hover:text-accent-hover transition-colors">Clear All</button>
-                        </div>
-
-                        {/* Price Range */}
-                        <div className="bg-white rounded-2xl border border-slate-100 p-5 mb-4 shadow-[var(--shadow-card)]">
-                            <div className="flex items-center justify-between mb-4">
-                                <h4 className="font-semibold text-primary text-sm">Price Range</h4>
-                                <span className="text-xs text-slate-400">₹ Lakhs</span>
-                            </div>
-                            <input type="range" min="2" max="50" defaultValue="25" className="w-full accent-accent" />
-                            <div className="flex justify-between text-xs text-slate-400 mt-2">
-                                <span>₹2L</span><span>₹50L</span>
+                            <div className="flex items-center gap-3">
+                                <button className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">Clear All</button>
+                                <button onClick={() => setShowFilters(false)} className="lg:hidden p-1 text-slate-400 hover:text-primary">
+                                    <X size={20} />
+                                </button>
                             </div>
                         </div>
-
-                        {/* Make & Model */}
-                        <div className="bg-white rounded-2xl border border-slate-100 p-5 mb-4 shadow-[var(--shadow-card)]">
-                            <h4 className="font-semibold text-primary text-sm mb-3 flex items-center justify-between">
-                                Make & Model
-                                <span className="material-symbols-outlined text-slate-400 text-lg">expand_less</span>
-                            </h4>
-                            <div className="space-y-2.5">
-                                {BRANDS.map(b => (
-                                    <label key={b.name} className="flex items-center gap-3 cursor-pointer group">
-                                        <div className={`size-5 rounded-md border-2 flex items-center justify-center transition-all ${selectedBrands.includes(b.name) ? 'bg-primary border-primary' : 'border-slate-300 group-hover:border-primary'}`}>
-                                            {selectedBrands.includes(b.name) && <span className="material-symbols-outlined text-white text-sm">check</span>}
-                                        </div>
-                                        <span className="text-sm text-slate-700 flex-1">{b.name}</span>
-                                        <span className="text-xs text-slate-400">({b.count})</span>
-                                        <input type="checkbox" className="hidden" checked={selectedBrands.includes(b.name)} onChange={() => toggleBrand(b.name)} />
-                                    </label>
-                                ))}
+                        
+                        <div className="space-y-4 pb-20 lg:pb-0">
+                            {/* Price Range */}
+                            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h4 className="font-semibold text-primary text-sm">Price Range</h4>
+                                    <span className="text-xs text-slate-400">₹ Lakhs</span>
+                                </div>
+                                <input type="range" min="2" max="50" defaultValue="25" className="w-full accent-accent" />
+                                <div className="flex justify-between text-xs text-slate-400 mt-2">
+                                    <span>₹2L</span><span>₹50L</span>
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Year, Fuel, Transmission dropdowns */}
-                        {['Year', 'Fuel Type', 'Transmission'].map(filter => (
-                            <div key={filter} className="bg-white rounded-2xl border border-slate-100 p-5 mb-4 shadow-[var(--shadow-card)]">
-                                <h4 className="font-semibold text-primary text-sm flex items-center justify-between cursor-pointer">
-                                    {filter}
-                                    <span className="material-symbols-outlined text-slate-400 text-lg">expand_more</span>
+                            {/* Make & Model */}
+                            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
+                                <h4 className="font-semibold text-primary text-sm mb-3 flex items-center justify-between">
+                                    Make & Model
+                                    <span className="material-symbols-outlined text-slate-400 text-lg">expand_less</span>
                                 </h4>
+                                <div className="space-y-2.5">
+                                    {BRANDS.map(b => (
+                                        <label key={b.name} className="flex items-center gap-3 cursor-pointer group">
+                                            <div className={`size-5 rounded-md border-2 flex items-center justify-center transition-all ${selectedBrands.includes(b.name) ? 'bg-primary border-primary' : 'border-slate-300 group-hover:border-primary'}`}>
+                                                {selectedBrands.includes(b.name) && <span className="material-symbols-outlined text-white text-sm">check</span>}
+                                            </div>
+                                            <span className="text-sm text-slate-700 flex-1">{b.name}</span>
+                                            <input type="checkbox" className="hidden" checked={selectedBrands.includes(b.name)} onChange={() => toggleBrand(b.name)} />
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
-                        ))}
 
-                        <button className="w-full h-12 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-colors shadow-sm text-sm">
-                            Apply Filters
-                        </button>
+                            {/* Additional filters */}
+                            {['Year', 'Fuel Type', 'Transmission'].map(filter => (
+                                <div key={filter} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
+                                    <h4 className="font-semibold text-primary text-sm flex items-center justify-between cursor-pointer">
+                                        {filter}
+                                        <span className="material-symbols-outlined text-slate-400 text-lg">expand_more</span>
+                                    </h4>
+                                </div>
+                            ))}
+
+                            <button onClick={() => setShowFilters(false)} className="w-full h-12 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-colors shadow-sm text-sm lg:hidden mt-4">
+                                Apply & View Results
+                            </button>
+                        </div>
                     </div>
                 </aside>
 
                 {/* Main Content */}
                 <div className="flex-1 min-w-0">
                     <div className="mb-6">
-                        <h1 className="text-3xl font-black text-primary font-display mb-2">Used Car Inventory</h1>
-                        <p className="text-slate-500">Discover your perfect ride from our certified collection in Kolhapur.</p>
+                        <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-primary font-display mb-1.5 leading-tight uppercase tracking-tight">Used Car Inventory</h1>
+                        <p className="text-xs sm:text-sm text-slate-500 max-w-lg">Certified pre-owned vehicles in Kolhapur with 120+ points check.</p>
                     </div>
 
                     {/* Controls */}
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-3">
-                        <p className="text-sm text-slate-500 bg-white px-4 py-2 rounded-lg border border-slate-100">
-                            Showing <strong className="text-primary">45 Cars</strong>
-                        </p>
-                        <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2 text-sm text-slate-500">
-                                <span>Sort by:</span>
-                                <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-primary outline-none focus:ring-2 focus:ring-primary/10">
-                                    <option value="newest">Newest First</option>
-                                    <option value="price-low">Price: Low to High</option>
-                                    <option value="price-high">Price: High to Low</option>
-                                    <option value="mileage">Lowest Mileage</option>
-                                </select>
-                            </div>
-                            <div className="hidden sm:flex bg-white border border-slate-200 rounded-lg overflow-hidden">
-                                <button onClick={() => setViewMode('grid')} className={`p-2 ${viewMode === 'grid' ? 'bg-primary text-white' : 'text-slate-400 hover:text-primary'}`}>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between mb-6 gap-3 sm:gap-4">
+                        <div className="flex items-center justify-between sm:justify-start gap-4 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
+                            <p className="text-xs sm:text-sm text-slate-500">
+                                Showing <strong className="text-primary font-black">45</strong> <span className="hidden xs:inline">Cars</span>
+                            </p>
+                            <div className="sm:hidden h-4 w-px bg-slate-200" />
+                            <div className="flex items-center gap-1 sm:hidden">
+                                <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-lg ${viewMode === 'grid' ? 'text-primary' : 'text-slate-300'}`}>
                                     <span className="material-symbols-outlined text-lg">grid_view</span>
                                 </button>
-                                <button onClick={() => setViewMode('list')} className={`p-2 ${viewMode === 'list' ? 'bg-primary text-white' : 'text-slate-400 hover:text-primary'}`}>
+                                <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-lg ${viewMode === 'list' ? 'text-primary' : 'text-slate-300'}`}>
+                                    <span className="material-symbols-outlined text-lg">view_list</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 h-10 flex-1 sm:flex-initial shadow-sm">
+                                <span className="text-[10px] sm:text-xs text-slate-400 font-bold uppercase whitespace-nowrap">Sort:</span>
+                                <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-transparent border-none text-[11px] sm:text-sm font-black text-primary outline-none flex-1">
+                                    <option value="newest">Newest</option>
+                                    <option value="price-low">Lowest Price</option>
+                                    <option value="price-high">Highest Price</option>
+                                </select>
+                            </div>
+                            <div className="hidden sm:flex bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm h-10">
+                                <button onClick={() => setViewMode('grid')} className={`px-3 ${viewMode === 'grid' ? 'bg-primary text-white' : 'text-slate-400 hover:text-primary'}`}>
+                                    <span className="material-symbols-outlined text-lg">grid_view</span>
+                                </button>
+                                <button onClick={() => setViewMode('list')} className={`px-3 ${viewMode === 'list' ? 'bg-primary text-white' : 'text-slate-400 hover:text-primary'}`}>
                                     <span className="material-symbols-outlined text-lg">view_list</span>
                                 </button>
                             </div>
@@ -119,7 +149,7 @@ const Inventory = () => {
                     </div>
 
                     {/* Car Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
                         {CARS.map(car => (
                             <article key={car.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all duration-300 group flex flex-col">
                                 <div className="relative aspect-[16/11] overflow-hidden bg-slate-100">
