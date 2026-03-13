@@ -23,7 +23,7 @@ const CompareModels = () => {
             <p className="text-slate-500 mb-8">See how your top picks stack up side by side.</p>
 
             {/* Car Selectors */}
-            <div className="grid grid-cols-2 gap-8 mb-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8 mb-10">
                 {[leftCar, rightCar].map((car) => (
                     <div key={car.id} className="bg-white rounded-2xl border border-slate-100 p-6 shadow-[var(--shadow-card)] text-center">
                         <div className="aspect-[16/10] rounded-xl overflow-hidden bg-slate-100 mb-4">
@@ -50,9 +50,9 @@ const CompareModels = () => {
                                 const rVal = rightCar.details[row.key as keyof typeof rightCar.details];
                                 return (
                                     <div key={row.key} className={`grid grid-cols-3 ${i > 0 ? 'border-t border-slate-50' : ''}`}>
-                                        <div className="px-6 py-4 text-sm font-bold text-primary flex items-center bg-slate-50/50">{lVal}</div>
-                                        <div className="px-6 py-4 text-xs font-bold text-slate-400 text-center uppercase tracking-wide flex items-center justify-center bg-white border-x border-slate-50">{row.label}</div>
-                                        <div className="px-6 py-4 text-sm font-bold text-primary flex items-center justify-end bg-slate-50/50">{rVal}</div>
+                                        <div className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold text-primary flex items-center bg-slate-50/50">{lVal}</div>
+                                        <div className="px-2 sm:px-6 py-3 sm:py-4 text-[10px] sm:text-xs font-bold text-slate-400 text-center uppercase tracking-wide flex items-center justify-center bg-white border-x border-slate-50">{row.label}</div>
+                                        <div className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold text-primary flex items-center justify-end bg-slate-50/50">{rVal}</div>
                                     </div>
                                 );
                             })}
@@ -62,7 +62,7 @@ const CompareModels = () => {
             </div>
 
             {/* CTA */}
-            <div className="grid grid-cols-2 gap-8 mt-8 mb-16">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-8 mt-8 mb-16">
                 {[leftCar, rightCar].map(car => (
                     <Link key={car.id} to="/book-test-drive" className="h-12 flex items-center justify-center gap-2 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-colors text-sm">
                         <span className="material-symbols-outlined text-lg">description</span> Request Brochure
@@ -74,7 +74,7 @@ const CompareModels = () => {
             <div className="bg-slate-50 rounded-2xl p-8 text-center mb-8">
                 <h3 className="text-xl font-bold text-primary font-display mb-2">Still confused?</h3>
                 <p className="text-slate-500 mb-6">Let our experts in Kolhapur help you choose the right car for your needs.</p>
-                <div className="flex gap-4 justify-center">
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
                     <Link to="/contact" className="h-11 px-6 flex items-center gap-2 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-colors text-sm">Contact Us</Link>
                     <Link to="/contact" className="h-11 px-6 flex items-center gap-2 border-2 border-primary text-primary font-semibold rounded-xl hover:bg-primary hover:text-white transition-all text-sm">Visit Showroom</Link>
                 </div>

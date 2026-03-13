@@ -54,10 +54,12 @@
   html {
     font-size: 14.4px;
     /* 90% of 16px — scales all rem-based sizing proportionally */
+    overflow-x: hidden;
   }
 
   body {
     @apply bg-background-light text-slate-900 font-body antialiased;
+    overflow-x: hidden;
   }
 
   h1,

@@ -106,6 +106,16 @@ const PublicLayout: React.FC = () => {
                                     </Link>
                                 ))}
                             </nav>
+                            <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col gap-2 px-4">
+                                <Link to="/admin/login" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-600 hover:text-primary hover:bg-slate-50 transition-colors">
+                                    <span className="material-symbols-outlined text-base">admin_panel_settings</span>
+                                    Admin Panel
+                                </Link>
+                                <Link to="/auth" onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-center gap-2 h-11 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-light transition-colors shadow-sm">
+                                    <User size={16} />
+                                    Login / Sign Up
+                                </Link>
+                            </div>
                             <div className="mt-4 px-4">
                                 <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-4 h-10 border border-slate-100">
                                     <Search size={16} className="text-slate-400" />

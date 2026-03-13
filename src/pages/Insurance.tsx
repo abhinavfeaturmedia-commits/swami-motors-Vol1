@@ -84,11 +84,11 @@ const Insurance = () => {
             {/* Partners */}
             <section className="py-12 border-y border-slate-100 bg-white">
                 <div className="container-main">
-                    <div className="flex items-center justify-between mb-6">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-6">
                         <h3 className="font-bold text-primary font-display">Our Trusted Insurance Partners</h3>
                         <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Licensed & Regulated</span>
                     </div>
-                    <div className="flex flex-wrap gap-8 items-center">
+                    <div className="flex flex-wrap gap-4 sm:gap-8 items-center">
                         {['HDFC ERGO', 'ICICI Lombard', 'TATA AIG', 'Bajaj Allianz', 'SBI General', 'Kotak'].map(p => (
                             <span key={p} className="text-sm font-semibold text-slate-400 flex items-center gap-2">
                                 <span className="w-2 h-2 rounded-full bg-slate-300" />{p}

@@ -60,7 +60,7 @@ const UserDashboard = () => {
                                                 <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">person</span> Advisor: Vikram Singh</span>
                                             </div>
                                         </div>
-                                        <div className="flex gap-2">
+                                        <div className="flex flex-col sm:flex-row gap-2 mt-3 sm:mt-0">
                                             <button className="h-9 px-4 bg-slate-100 text-primary text-sm font-semibold rounded-lg hover:bg-slate-200 transition-colors">Reschedule</button>
                                             <button className="text-sm font-semibold text-danger hover:underline">Cancel</button>
                                         </div>
@@ -136,7 +136,7 @@ const UserDashboard = () => {
             </div>
 
             {/* Support Hub */}
-            <div className="fixed bottom-6 left-6 bg-primary text-white rounded-2xl p-4 shadow-xl max-w-[12.5rem] z-50">
+            <div className="fixed bottom-4 right-4 sm:right-auto sm:left-6 sm:bottom-6 bg-primary text-white rounded-2xl p-4 shadow-xl max-w-[12.5rem] z-50">
                 <div className="flex items-center gap-2 mb-2">
                     <span className="material-symbols-outlined text-lg">support_agent</span>
                     <p className="text-sm font-bold">Support Hub</p>

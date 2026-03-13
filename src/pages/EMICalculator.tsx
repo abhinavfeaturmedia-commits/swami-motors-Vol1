@@ -140,7 +140,7 @@ const EMICalculator = () => {
 
             {/* Cars within budget */}
             <section className="mt-16">
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-2">
                     <div>
                         <h2 className="text-2xl font-black text-primary font-display">Cars within your budget</h2>
                         <p className="text-sm text-slate-500">Based on your calculated EMI range</p>

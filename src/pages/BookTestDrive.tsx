@@ -17,7 +17,7 @@ const BookTestDrive = () => {
     return (
         <div className="container-main py-10">
             {/* Progress */}
-            <div className="flex items-center gap-4 mb-8">
+            <div className="flex items-center gap-4 mb-8 overflow-x-auto pb-2">
                 {['Select Car', 'Date & Time', 'Confirmation'].map((step, i) => (
                     <div key={step} className="flex items-center gap-2">
                         <div className={`size-7 rounded-full flex items-center justify-center text-xs font-bold ${i <= 1 ? 'bg-primary text-white' : 'bg-slate-200 text-slate-400'}`}>{i + 1}</div>
@@ -84,7 +84,7 @@ const BookTestDrive = () => {
                     {/* Personal Details */}
                     <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-[var(--shadow-card)]">
                         <h3 className="font-bold text-primary font-display mb-4">Your Details</h3>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="text-sm font-medium text-slate-700 mb-1.5 block">Full Name</label>
                                 <input type="text" placeholder="Enter your name" className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />

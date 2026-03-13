@@ -93,7 +93,7 @@ const Inventory = () => {
                     </div>
 
                     {/* Controls */}
-                    <div className="flex items-center justify-between mb-6 gap-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-3">
                         <p className="text-sm text-slate-500 bg-white px-4 py-2 rounded-lg border border-slate-100">
                             Showing <strong className="text-primary">45 Cars</strong>
                         </p>

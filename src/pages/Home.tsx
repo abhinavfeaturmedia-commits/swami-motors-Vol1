@@ -41,7 +41,7 @@ const Home = () => {
 
                             {/* Search filters */}
                             <div className="bg-white rounded-2xl p-5 shadow-xl max-w-lg">
-                                <div className="grid grid-cols-3 gap-3 mb-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                                     <div>
                                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Budget Range</label>
                                         <select className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-primary font-medium outline-none focus:ring-2 focus:ring-primary/10 appearance-none cursor-pointer">
@@ -77,7 +77,7 @@ const Home = () => {
                                         </select>
                                     </div>
                                 </div>
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                                     <Link to="/inventory" className="text-xs font-semibold text-slate-500 hover:text-primary flex items-center gap-1 transition-colors">
                                         <span className="material-symbols-outlined text-sm">tune</span> Advanced Filters
                                     </Link>
