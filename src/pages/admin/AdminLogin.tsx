@@ -33,7 +33,7 @@ const AdminLogin = () => {
             });
 
             if (signInError) {
-                setError('Invalid email or password. Please try again.');
+                setError(`Login Error: ${signInError.message || 'Invalid email or password'}`);
                 return;
             }
 
