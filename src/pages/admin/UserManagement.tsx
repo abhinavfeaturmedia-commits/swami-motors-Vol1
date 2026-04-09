@@ -373,6 +373,7 @@ const UserManagement = () => {
 
             {/* ── Users Table ── */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden">
+                <div className="overflow-x-auto relative">
                 {loading ? (
                     <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
                         <span className="size-6 border-2 border-slate-200 border-t-primary rounded-full animate-spin" />
@@ -462,6 +463,7 @@ const UserManagement = () => {
                         </tbody>
                     </table>
                 )}
+                </div>
             </div>
 
             {/* ── Info Banner ── */}

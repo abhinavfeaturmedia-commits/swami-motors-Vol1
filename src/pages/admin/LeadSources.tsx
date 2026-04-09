@@ -99,47 +99,49 @@ const LeadSources = () => {
                     <div className="p-5 pb-0">
                         <h2 className="font-bold text-primary font-display text-lg">Source Performance</h2>
                     </div>
-                    <table className="w-full mt-3">
-                        <thead>
-                            <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
-                                <th className="text-left px-5 py-2.5">Source</th>
-                                <th className="text-left px-5 py-2.5">Leads</th>
-                                <th className="text-left px-5 py-2.5">Conversions</th>
-                                <th className="text-left px-5 py-2.5">Conv. Rate</th>
-                                <th className="text-left px-5 py-2.5">Share</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {sourcesData.length === 0 && (
-                                <tr>
-                                    <td colSpan={5} className="text-center py-10 text-slate-400">No leads found in database.</td>
+                    <div className="overflow-x-auto relative">
+                        <table className="w-full mt-3 min-w-[600px]">
+                            <thead>
+                                <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                                    <th className="text-left px-5 py-2.5">Source</th>
+                                    <th className="text-left px-5 py-2.5">Leads</th>
+                                    <th className="text-left px-5 py-2.5">Conversions</th>
+                                    <th className="text-left px-5 py-2.5">Conv. Rate</th>
+                                    <th className="text-left px-5 py-2.5">Share</th>
                                 </tr>
-                            )}
-                            {sourcesData.map(s => (
-                                <tr key={s.name} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
-                                    <td className="px-5 py-3.5">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`size-3 rounded-full ${s.color}`} />
-                                            <span className="text-sm font-semibold text-primary">{s.name}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-5 py-3.5 text-sm font-bold text-primary">{s.leads}</td>
-                                    <td className="px-5 py-3.5 text-sm text-slate-600">{s.conversions}</td>
-                                    <td className="px-5 py-3.5">
-                                        <span className={`text-xs font-bold ${parseInt(s.rate) >= 30 ? 'text-green-600' : parseInt(s.rate) >= 20 ? 'text-amber-600' : 'text-red-500'}`}>{s.rate}</span>
-                                    </td>
-                                    <td className="px-5 py-3.5">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-16 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                                <div className={`h-full ${s.color} rounded-full`} style={{ width: `${s.pct}%` }} />
+                            </thead>
+                            <tbody>
+                                {sourcesData.length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="text-center py-10 text-slate-400">No leads found in database.</td>
+                                    </tr>
+                                )}
+                                {sourcesData.map(s => (
+                                    <tr key={s.name} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-5 py-3.5">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`size-3 rounded-full ${s.color}`} />
+                                                <span className="text-sm font-semibold text-primary">{s.name}</span>
                                             </div>
-                                            <span className="text-xs text-slate-500">{s.pct}%</span>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                                        </td>
+                                        <td className="px-5 py-3.5 text-sm font-bold text-primary">{s.leads}</td>
+                                        <td className="px-5 py-3.5 text-sm text-slate-600">{s.conversions}</td>
+                                        <td className="px-5 py-3.5">
+                                            <span className={`text-xs font-bold ${parseInt(s.rate) >= 30 ? 'text-green-600' : parseInt(s.rate) >= 20 ? 'text-amber-600' : 'text-red-500'}`}>{s.rate}</span>
+                                        </td>
+                                        <td className="px-5 py-3.5">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-16 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                    <div className={`h-full ${s.color} rounded-full`} style={{ width: `${s.pct}%` }} />
+                                                </div>
+                                                <span className="text-xs text-slate-500">{s.pct}%</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

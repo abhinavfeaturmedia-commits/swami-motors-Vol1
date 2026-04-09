@@ -14,6 +14,11 @@ interface Car {
     mileage: number | null;
     fuel_type: string | null;
     transmission: string | null;
+    color: string | null;
+    body_type: string | null;
+    ownership: number | null;
+    description: string | null;
+    features: string[] | null;
     status: string;
     source: string | null;
     dealer_id: string | null;
@@ -203,7 +208,8 @@ const AdminInventory = () => {
             </div>
 
             {/* Table */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-x-auto">
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden">
+                <div className="overflow-x-auto relative">
                 <table className="w-full min-w-[750px]">
                     <thead>
                         <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
@@ -324,6 +330,7 @@ const AdminInventory = () => {
                         )}
                     </tbody>
                 </table>
+                </div>
             </div>
 
             {/* Share Modal */}

@@ -68,12 +68,12 @@ const FollowUps = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-black text-primary font-display">Follow-Up Manager</h1>
                     <p className="text-slate-500 text-sm">Task operations · {pendingCount} pending · {overdueCount} overdue</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <button title="Added from Lead Profiles" className="h-10 px-5 bg-accent text-primary font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-accent-hover transition-colors opacity-50 cursor-not-allowed">
                         <span className="material-symbols-outlined text-lg">info</span> Auto-Generated via CRM
                     </button>

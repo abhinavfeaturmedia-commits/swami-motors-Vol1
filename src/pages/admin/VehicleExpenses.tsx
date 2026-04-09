@@ -226,7 +226,7 @@ const VehicleExpenses = () => {
                                     <td className="px-5 py-3.5 text-sm font-bold text-red-600">{formatCurrency(e.amount)}</td>
                                     <td className="px-5 py-3.5 text-sm text-slate-500">{new Date(e.expense_date).toLocaleDateString()}</td>
                                     <td className="px-5 py-3.5 text-right border-l border-slate-100">
-                                        <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <div className="flex gap-2 justify-end md:opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button onClick={() => handleEditClick(e)} className="text-blue-500 hover:text-blue-700 bg-blue-50 p-1.5 rounded-lg transition-colors"><span className="material-symbols-outlined text-[18px]">edit</span></button>
                                             <button onClick={() => handleDeleteExpense(e.id)} className="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-lg transition-colors"><span className="material-symbols-outlined text-[18px]">delete</span></button>
                                         </div>

@@ -113,31 +113,33 @@ const AdminSettings = () => {
             {/* Working Hours */}
             <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-[var(--shadow-card)]">
                 <h2 className="font-bold text-primary font-display text-lg mb-5">Operative Working Hours</h2>
-                <div className="space-y-3">
-                    {DAYS.map(day => {
-                        const dayData = workingHours[day] || { start: '09:30', end: '19:30', status: 'Open' };
-                        return (
-                            <div key={day} className="flex items-center gap-4">
-                                <span className="text-sm font-medium text-slate-700 w-28">{day}</span>
-                                <input type="time" value={dayData.start} onChange={e => handleHourChange(day, 'start', e.target.value)} className="h-9 w-[120px] bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm text-primary outline-none" />
-                                <span className="text-xs text-slate-400">to</span>
-                                <input type="time" value={dayData.end} onChange={e => handleHourChange(day, 'end', e.target.value)} className="h-9 w-[120px] bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm text-primary outline-none" />
-                                <select value={dayData.status} onChange={e => handleHourChange(day, 'status', e.target.value)} className={`h-9 border border-transparent rounded-lg px-2 text-xs font-bold outline-none cursor-pointer ${dayData.status === 'Half Day' ? 'bg-amber-100 text-amber-700' : dayData.status === 'Closed' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                    <option value="Open">Open</option>
-                                    <option value="Half Day">Half Day</option>
-                                    <option value="Closed">Closed</option>
-                                </select>
-                            </div>
-                        )
-                    })}
-                    {/* Sunday specific */}
-                    <div className="flex items-center gap-4">
-                        <span className="text-sm font-medium text-slate-700 w-28">Sunday</span>
-                        <select value={workingHours['Sunday']?.status || 'Closed'} onChange={e => handleHourChange('Sunday', 'status', e.target.value)} className="h-9 bg-red-100 text-red-700 border border-transparent rounded-lg px-2 text-xs font-bold outline-none cursor-pointer">
-                            <option value="Closed">Closed</option>
-                            <option value="Half Day">Half Day</option>
-                            <option value="Open">Open</option>
-                        </select>
+                <div className="overflow-x-auto">
+                    <div className="space-y-3 min-w-[500px] pb-2">
+                        {DAYS.map(day => {
+                            const dayData = workingHours[day] || { start: '09:30', end: '19:30', status: 'Open' };
+                            return (
+                                <div key={day} className="flex items-center gap-4">
+                                    <span className="text-sm font-medium text-slate-700 w-28 shrink-0">{day}</span>
+                                    <input type="time" value={dayData.start} onChange={e => handleHourChange(day, 'start', e.target.value)} className="h-9 w-[120px] shrink-0 bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm text-primary outline-none" />
+                                    <span className="text-xs text-slate-400 shrink-0">to</span>
+                                    <input type="time" value={dayData.end} onChange={e => handleHourChange(day, 'end', e.target.value)} className="h-9 w-[120px] shrink-0 bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm text-primary outline-none" />
+                                    <select value={dayData.status} onChange={e => handleHourChange(day, 'status', e.target.value)} className={`h-9 border border-transparent rounded-lg px-2 text-xs font-bold outline-none cursor-pointer shrink-0 ${dayData.status === 'Half Day' ? 'bg-amber-100 text-amber-700' : dayData.status === 'Closed' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                        <option value="Open">Open</option>
+                                        <option value="Half Day">Half Day</option>
+                                        <option value="Closed">Closed</option>
+                                    </select>
+                                </div>
+                            )
+                        })}
+                        {/* Sunday specific */}
+                        <div className="flex items-center gap-4">
+                            <span className="text-sm font-medium text-slate-700 w-28 shrink-0">Sunday</span>
+                            <select value={workingHours['Sunday']?.status || 'Closed'} onChange={e => handleHourChange('Sunday', 'status', e.target.value)} className="h-9 shrink-0 bg-red-100 text-red-700 border border-transparent rounded-lg px-2 text-xs font-bold outline-none cursor-pointer">
+                                <option value="Closed">Closed</option>
+                                <option value="Half Day">Half Day</option>
+                                <option value="Open">Open</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
