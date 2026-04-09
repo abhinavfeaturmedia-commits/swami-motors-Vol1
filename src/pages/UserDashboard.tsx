@@ -1,14 +1,139 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { getPrimaryImage, formatPriceLakh, formatDate } from '../lib/utils';
+
+interface Booking {
+    id: string;
+    type: string;
+    message: string | null;
+    status: string;
+    created_at: string;
+    full_name: string;
+    car_make: string | null;
+    car_model: string | null;
+    car_year: number | null;
+}
+
+interface WishlistCar {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    price: number;
+    images: string[];
+    fuel_type: string;
+    transmission: string;
+}
+
+const STATUS_COLORS: Record<string, string> = {
+    new: 'bg-blue-100 text-blue-700',
+    contacted: 'bg-amber-100 text-amber-700',
+    negotiation: 'bg-purple-100 text-purple-700',
+    closed_won: 'bg-green-100 text-green-700',
+    closed_lost: 'bg-slate-100 text-slate-500',
+};
 
 const UserDashboard = () => {
+    const { user, profile, signOut } = useAuth();
     const [activeTab, setActiveTab] = useState('bookings');
+
+    // ─── Bookings from leads table ────────────────────────────────────────────
+    const [bookings, setBookings] = useState<Booking[]>([]);
+    const [bookingsLoading, setBookingsLoading] = useState(true);
+
+    // ─── Wishlist from localStorage ───────────────────────────────────────────
+    const [wishlistCars, setWishlistCars] = useState<WishlistCar[]>([]);
+    const [wishlistLoading, setWishlistLoading] = useState(false);
+
     const tabs = [
-        { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
         { id: 'bookings', label: 'My Bookings', icon: 'event_note' },
         { id: 'shortlisted', label: 'Shortlisted Cars', icon: 'favorite' },
-        { id: 'settings', label: 'Profile Settings', icon: 'settings' },
+        { id: 'settings', label: 'Profile', icon: 'person' },
     ];
+
+    // ─── Fetch bookings ───────────────────────────────────────────────────────
+    useEffect(() => {
+        if (!profile?.phone && !profile?.email) {
+            setBookingsLoading(false);
+            return;
+        }
+
+        const fetchBookings = async () => {
+            setBookingsLoading(true);
+            // Match leads by phone or email (depending on what the user submitted)
+            let query = supabase
+                .from('leads')
+                .select('id, type, message, status, created_at, full_name, car_make, car_model, car_year')
+                .order('created_at', { ascending: false });
+
+            if (profile.phone) {
+                query = query.eq('phone', profile.phone);
+            } else if (profile.email) {
+                query = query.eq('email', profile.email);
+            }
+
+            const { data } = await query;
+            setBookings(data || []);
+            setBookingsLoading(false);
+        };
+
+        fetchBookings();
+    }, [profile]);
+
+    // ─── Load wishlist from Supabase ─────────────────────────────────────
+    useEffect(() => {
+        const loadWishlist = async () => {
+            if (!user) {
+                setWishlistCars([]);
+                return;
+            }
+            setWishlistLoading(true);
+
+            const { data: wishlistData } = await supabase
+                .from('user_wishlist')
+                .select('inventory_id')
+                .eq('user_id', user.id);
+
+            const savedIds = wishlistData?.map(w => w.inventory_id) || [];
+
+            if (savedIds.length === 0) {
+                setWishlistCars([]);
+                setWishlistLoading(false);
+                return;
+            }
+
+            const { data } = await supabase
+                .from('inventory')
+                .select('id, make, model, year, price, images, fuel_type, transmission')
+                .in('id', savedIds)
+                .in('status', ['available', 'reserved']);
+
+            setWishlistCars(data || []);
+            setWishlistLoading(false);
+        };
+
+        loadWishlist();
+        // Refresh when tab switches to wishlist
+    }, [activeTab, user]);
+
+    const removeFromWishlist = async (id: string) => {
+        if (!user) return;
+        setWishlistCars(prev => prev.filter(c => c.id !== id));
+        await supabase.from('user_wishlist').delete().match({ user_id: user.id, inventory_id: id });
+    };
+
+    const getLeadTypeLabel = (type: string) => {
+        const map: Record<string, string> = {
+            test_drive: 'Test Drive',
+            contact: 'General Inquiry',
+            sell_car: 'Sell My Car',
+            insurance: 'Insurance',
+            service: 'Service Booking',
+        };
+        return map[type] || type;
+    };
 
     return (
         <div className="container-main py-8">
@@ -16,13 +141,34 @@ const UserDashboard = () => {
                 {/* Sidebar */}
                 <aside className="lg:w-[15rem] shrink-0">
                     <div className="sticky top-[5.5rem] space-y-1">
+                        {/* User info */}
+                        <div className="bg-white rounded-2xl border border-slate-100 p-4 mb-4 shadow-[var(--shadow-card)]">
+                            <div className="size-12 rounded-full bg-primary flex items-center justify-center text-white text-lg font-bold mb-3">
+                                {profile?.full_name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
+                            </div>
+                            <p className="font-bold text-primary text-sm truncate">{profile?.full_name || 'Customer'}</p>
+                            <p className="text-xs text-slate-400 truncate">{profile?.phone || profile?.email || user?.email || ''}</p>
+                        </div>
+
                         <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 px-3">Account Menu</p>
                         {tabs.map(tab => (
-                            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === tab.id ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-slate-600 hover:bg-slate-100'}`}>
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === tab.id ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-slate-600 hover:bg-slate-100'}`}
+                            >
                                 <span className="material-symbols-outlined text-lg">{tab.icon}</span>
                                 {tab.label}
                             </button>
                         ))}
+
+                        <button
+                            onClick={signOut}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-red-500 hover:bg-red-50 transition-all mt-2"
+                        >
+                            <span className="material-symbols-outlined text-lg">logout</span>
+                            Sign Out
+                        </button>
                     </div>
                 </aside>
 
@@ -30,119 +176,163 @@ const UserDashboard = () => {
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-8">
                         <div>
-                            <h1 className="text-2xl font-black text-primary font-display">User Dashboard</h1>
-                            <p className="text-slate-500 text-sm">Welcome back, Rahul. Manage your premium automotive interests in Kolhapur.</p>
+                            <h1 className="text-2xl font-black text-primary font-display">My Dashboard</h1>
+                            <p className="text-slate-500 text-sm">Manage your bookings and saved vehicles.</p>
                         </div>
                         <Link to="/inventory" className="hidden sm:flex items-center gap-2 h-10 px-5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-light transition-colors">
-                            <span className="material-symbols-outlined text-lg">add</span> Browse New Cars
+                            <span className="material-symbols-outlined text-lg">add</span> Browse Cars
                         </Link>
                     </div>
 
-                    {/* My Bookings */}
-                    <section className="mb-10">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-bold text-primary font-display flex items-center gap-2"><span className="material-symbols-outlined text-accent">event_note</span> My Bookings</h2>
-                            <a href="#" className="text-sm font-semibold text-accent hover:underline">View all history</a>
-                        </div>
-                        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-[var(--shadow-card)]">
-                            <div className="flex flex-col md:flex-row gap-6">
-                                <div className="w-full md:w-48 h-36 rounded-xl overflow-hidden bg-slate-100 shrink-0">
-                                    <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZ9on2reKfaAeW52as0W9TitvVermkqQOTGwGUHGFM5bCQDPr3JQomAy3uKn2C9ta7SmSbrSUUJaxiGih2jDZhMfUpbTcKnZJ-RPJfNxEUS-EZ4nJ-sPFU6kBj2kUZGbL-r5IVAcPmDncOyoqNZbQSpH02EOyXXaZyH82dIaNWIXphtUdSIznx3bz3r3EVA2OCr8aT-X0PqsVL_QOdO5KMvyuQnYom1A1lLdlS20IRmgRzl2v7BYVRIjr_2c4thS8RPJ5yrqGxXQZ_" alt="BMW M4" className="w-full h-full object-cover" />
-                                </div>
-                                <div className="flex-1">
-                                    <div className="flex items-start justify-between">
-                                        <div>
-                                            <span className="inline-flex items-center gap-1 bg-info-light text-info text-[10px] font-bold px-2 py-0.5 rounded-md uppercase mb-2"><span className="material-symbols-outlined text-xs">info</span> Test Drive Scheduled</span>
-                                            <h3 className="text-lg font-bold text-primary font-display">2024 BMW M4 Competition</h3>
-                                            <p className="text-sm text-slate-500">Scheduled for: 24th Oct, 2023 at 11:00 AM</p>
-                                            <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
-                                                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">location_on</span> Kolhapur Showroom</span>
-                                                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">person</span> Advisor: Vikram Singh</span>
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-col sm:flex-row gap-2 mt-3 sm:mt-0">
-                                            <button className="h-9 px-4 bg-slate-100 text-primary text-sm font-semibold rounded-lg hover:bg-slate-200 transition-colors">Reschedule</button>
-                                            <button className="text-sm font-semibold text-danger hover:underline">Cancel</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                    {/* My Bookings Tab */}
+                    {activeTab === 'bookings' && (
+                        <section className="mb-10">
+                            <h2 className="text-lg font-bold text-primary font-display flex items-center gap-2 mb-4">
+                                <span className="material-symbols-outlined text-accent">event_note</span> My Bookings & Enquiries
+                            </h2>
 
-                            {/* Progress Stepper */}
-                            <div className="mt-6 pt-6 border-t border-slate-100">
-                                <div className="flex items-center justify-between max-w-md mx-auto">
-                                    {['Booked', 'Scheduled', 'Offer', 'Delivery'].map((step, i) => (
-                                        <div key={step} className="flex items-center gap-0 flex-1">
-                                            <div className="flex flex-col items-center">
-                                                <div className={`size-8 rounded-full flex items-center justify-center text-xs font-bold ${i <= 1 ? 'bg-primary text-white' : 'bg-slate-200 text-slate-400'}`}>
-                                                    {i <= 1 ? <span className="material-symbols-outlined text-sm">check</span> : <span className="material-symbols-outlined text-sm">{['receipt', 'handshake', 'local_offer', 'key'][i]}</span>}
+                            {bookingsLoading ? (
+                                <div className="space-y-3">
+                                    {[1, 2, 3].map(i => (
+                                        <div key={i} className="bg-white rounded-2xl border border-slate-100 p-5 animate-pulse h-20" />
+                                    ))}
+                                </div>
+                            ) : bookings.length === 0 ? (
+                                <div className="bg-white rounded-2xl border border-slate-100 p-10 shadow-[var(--shadow-card)] flex flex-col items-center justify-center text-center">
+                                    <div className="size-16 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-4">
+                                        <span className="material-symbols-outlined text-3xl text-slate-300">event_note</span>
+                                    </div>
+                                    <h3 className="font-bold text-primary font-display text-lg mb-1">No bookings yet</h3>
+                                    <p className="text-sm text-slate-400 max-w-xs mb-5">Your test drive bookings and enquiries will appear here.</p>
+                                    <Link to="/book-test-drive" className="inline-flex items-center gap-2 h-10 px-6 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-light transition-colors">
+                                        <span className="material-symbols-outlined text-lg">directions_car</span> Book a Test Drive
+                                    </Link>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {bookings.map(b => (
+                                        <div key={b.id} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex items-start gap-3">
+                                                    <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                                                        <span className="material-symbols-outlined text-lg">
+                                                            {b.type === 'test_drive' ? 'directions_car'
+                                                                : b.type === 'sell_car' ? 'sell'
+                                                                : b.type === 'insurance' ? 'shield'
+                                                                : 'chat'}
+                                                        </span>
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-primary text-sm">{getLeadTypeLabel(b.type)}</p>
+                                                        {(b.car_make || b.car_model) && (
+                                                            <p className="text-xs text-slate-500">{b.car_year} {b.car_make} {b.car_model}</p>
+                                                        )}
+                                                        {b.message && (
+                                                            <p className="text-xs text-slate-400 mt-1 line-clamp-1">{b.message}</p>
+                                                        )}
+                                                        <p className="text-xs text-slate-400 mt-1">{formatDate(b.created_at)}</p>
+                                                    </div>
                                                 </div>
-                                                <p className={`text-[10px] font-bold mt-1.5 uppercase ${i <= 1 ? 'text-primary' : 'text-slate-400'}`}>{step}</p>
+                                                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase shrink-0 ${STATUS_COLORS[b.status] || 'bg-slate-100 text-slate-500'}`}>
+                                                    {b.status?.replace('_', ' ')}
+                                                </span>
                                             </div>
-                                            {i < 3 && <div className={`flex-1 h-0.5 mx-2 mt-[-16px] ${i < 1 ? 'bg-primary' : 'bg-slate-200'}`} />}
                                         </div>
                                     ))}
                                 </div>
-                            </div>
-                        </div>
-                    </section>
+                            )}
+                        </section>
+                    )}
 
-                    {/* Shortlisted Cars */}
-                    <section>
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-bold text-primary font-display flex items-center gap-2"><span className="material-symbols-outlined text-red-400">favorite</span> Shortlisted Cars</h2>
-                            <span className="text-sm text-slate-400">Sort by: Price High to Low ▾</span>
-                        </div>
-                        <div className="space-y-4">
-                            {[
-                                { name: '2023 Range Rover Sport', price: '₹1,64,00,000', mileage: '1,200 km', fuel: 'Diesel', trans: 'Automatic', status: 'Available', tags: ['New Arrival'] },
-                                { name: '2022 Porsche 911 Carrera', price: '₹1,86,00,000', mileage: '8,500 km', fuel: 'Petrol', trans: 'Manual', status: 'Sold', tags: [] },
-                            ].map(car => (
-                                <div key={car.name} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)] flex flex-col md:flex-row gap-5">
-                                    <div className="w-full md:w-48 h-36 rounded-xl overflow-hidden bg-slate-100 shrink-0 relative">
-                                        <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuA1XK2L7EpsFR7K_eosnwu-nObzshJ1Ty2a8myYaJLGxNfVRumnjS7qbstQgmr0orhubbj2qWZONaSEPe_N7kcPM_1QfK25z_ISQyqhepk7R2dKxgZkvCaLxu1sknYBEuc8ql5XtjjvTxpkgGtcvcz9YskEEhJWegVcLP20ML2BowuulsKcxPJys4ux6Vi6vSqWwbUnsgtemZ2KMzcaeJsz8ZDBvA8U6qYDVmNQ5ksSaho1Svizzl2FUtSrad_4n_fgXjaKl4oo-CEH" alt={car.name} className="w-full h-full object-cover" />
-                                        <button className="absolute top-2 right-2 p-1.5 bg-white rounded-full text-red-400"><span className="material-symbols-outlined text-lg">favorite</span></button>
+                    {/* Shortlisted Cars Tab */}
+                    {activeTab === 'shortlisted' && (
+                        <section>
+                            <h2 className="text-lg font-bold text-primary font-display flex items-center gap-2 mb-4">
+                                <span className="material-symbols-outlined text-red-400">favorite</span> Shortlisted Cars
+                            </h2>
+
+                            {wishlistLoading ? (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {[1, 2].map(i => <div key={i} className="bg-white rounded-2xl h-48 animate-pulse border border-slate-100" />)}
+                                </div>
+                            ) : wishlistCars.length === 0 ? (
+                                <div className="bg-white rounded-2xl border border-slate-100 p-10 shadow-[var(--shadow-card)] flex flex-col items-center justify-center text-center">
+                                    <div className="size-16 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-4">
+                                        <span className="material-symbols-outlined text-3xl text-slate-300">favorite</span>
                                     </div>
-                                    <div className="flex-1">
-                                        <div className="flex items-start justify-between mb-2">
-                                            <div>
-                                                <h3 className="font-bold text-primary font-display text-lg">{car.name}</h3>
-                                                <p className="text-accent font-bold">{car.price}</p>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase ${car.status === 'Available' ? 'bg-success-light text-success' : 'bg-danger-light text-danger'}`}>{car.status}</span>
-                                                {car.tags.map(t => <span key={t} className="text-[10px] font-bold px-2 py-0.5 rounded-md uppercase bg-primary text-white">{t}</span>)}
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-6 text-xs text-slate-500 mb-4">
-                                            <span><strong className="text-slate-700">Mileage</strong> {car.mileage}</span>
-                                            <span><strong className="text-slate-700">Fuel</strong> {car.fuel}</span>
-                                            <span><strong className="text-slate-700">Transmission</strong> {car.trans}</span>
-                                        </div>
-                                        <div className="flex gap-3">
-                                            <button className={`flex-1 h-10 text-sm font-semibold rounded-xl transition-colors ${car.status === 'Available' ? 'bg-primary text-white hover:bg-primary-light' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
-                                                {car.status === 'Available' ? 'Contact Dealer' : 'Notify Similar'}
-                                            </button>
-                                            <Link to={`/car/1`} className="flex-1 h-10 flex items-center justify-center text-sm font-semibold border border-slate-200 rounded-xl text-primary hover:bg-slate-50 transition-colors">
-                                                View {car.status === 'Sold' ? 'Specs' : 'Details'}
+                                    <h3 className="font-bold text-primary font-display text-lg mb-1">No saved cars</h3>
+                                    <p className="text-sm text-slate-400 max-w-xs mb-5">Browse inventory and tap the ♥ button to save cars here.</p>
+                                    <Link to="/inventory" className="inline-flex items-center gap-2 h-10 px-6 bg-accent/10 text-accent rounded-xl text-sm font-semibold hover:bg-accent hover:text-primary transition-all">
+                                        <span className="material-symbols-outlined text-lg">search</span> Explore Inventory
+                                    </Link>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {wishlistCars.map(car => (
+                                        <div key={car.id} className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-[var(--shadow-card)] group">
+                                            <Link to={`/car/${car.id}`} className="block">
+                                                <div className="aspect-[16/10] overflow-hidden bg-slate-100">
+                                                    <img src={getPrimaryImage(car.images)} alt={`${car.year} ${car.make} ${car.model}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                </div>
                                             </Link>
+                                            <div className="p-4">
+                                                <div className="flex items-start justify-between">
+                                                    <div>
+                                                        <h3 className="font-bold text-primary">{car.year} {car.make} {car.model}</h3>
+                                                        <p className="text-xs text-slate-500">{car.fuel_type} • {car.transmission}</p>
+                                                        <p className="text-base font-black text-primary mt-1">₹{formatPriceLakh(car.price)} Lakh</p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => removeFromWishlist(car.id)}
+                                                        className="p-1.5 hover:bg-red-50 rounded-full text-red-400 transition-colors"
+                                                        title="Remove from wishlist"
+                                                    >
+                                                        <span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: "'FILL' 1" }}>favorite</span>
+                                                    </button>
+                                                </div>
+                                                <Link to={`/car/${car.id}`} className="mt-3 w-full h-9 flex items-center justify-center gap-1 text-sm font-semibold text-primary border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+                                                    View Details
+                                                </Link>
+                                            </div>
                                         </div>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                    )}
+
+                    {/* Profile Tab */}
+                    {activeTab === 'settings' && (
+                        <section>
+                            <h2 className="text-lg font-bold text-primary font-display flex items-center gap-2 mb-4">
+                                <span className="material-symbols-outlined text-accent">person</span> My Profile
+                            </h2>
+                            <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-[var(--shadow-card)] space-y-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">Full Name</p>
+                                        <p className="text-sm font-semibold text-primary">{profile?.full_name || '—'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">Email</p>
+                                        <p className="text-sm font-semibold text-primary">{user?.email || profile?.email || '—'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">Phone</p>
+                                        <p className="text-sm font-semibold text-primary">{profile?.phone || '—'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">Account Type</p>
+                                        <p className="text-sm font-semibold text-primary capitalize">{profile?.role || 'Customer'}</p>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                    </section>
+                                <div className="pt-4 border-t border-slate-100">
+                                    <p className="text-xs text-slate-400">To update your profile details, please <Link to="/contact" className="text-accent font-semibold hover:underline">contact us</Link>.</p>
+                                </div>
+                            </div>
+                        </section>
+                    )}
                 </div>
-            </div>
-
-            {/* Support Hub */}
-            <div className="fixed bottom-4 right-4 sm:right-auto sm:left-6 sm:bottom-6 bg-primary text-white rounded-2xl p-4 shadow-xl max-w-[12.5rem] z-50">
-                <div className="flex items-center gap-2 mb-2">
-                    <span className="material-symbols-outlined text-lg">support_agent</span>
-                    <p className="text-sm font-bold">Support Hub</p>
-                </div>
-                <p className="text-xs text-slate-300 mb-3">Need help with a booking?</p>
-                <button className="w-full h-8 bg-white/10 text-white text-xs font-semibold rounded-lg hover:bg-white/20 transition-colors">Contact Dealer</button>
             </div>
         </div>
     );

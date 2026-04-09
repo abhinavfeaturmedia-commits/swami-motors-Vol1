@@ -1,74 +1,160 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
-const CARS = [
-    { id: '1', name: '2022 Hyundai Creta SX', img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCZ9on2reKfaAeW52as0W9TitvVermkqQOTGwGUHGFM5bCQDPr3JQomAy3uKn2C9ta7SmSbrSUUJaxiGih2jDZhMfUpbTcKnZJ-RPJfNxEUS-EZ4nJ-sPFU6kBj2kUZGbL-r5IVAcPmDncOyoqNZbQSpH02EOyXXaZyH82dIaNWIXphtUdSIznx3bz3r3EVA2OCr8aT-X0PqsVL_QOdO5KMvyuQnYom1A1lLdlS20IRmgRzl2v7BYVRIjr_2c4thS8RPJ5yrqGxXQZ_', details: { type: 'SUV', year: '2022', price: '₹14.50 Lakh', engine: '1.5L Turbo Petrol', power: '150 BHP', torque: '253 Nm', transmission: 'Automatic', drivetrain: 'FWD', fuel: 'Petrol', mileage: '16.8 km/l', length: '4300mm', width: '1790mm', height: '1635mm', wheelbase: '2610mm', sunroof: '✓', cruise: '✓', reverse_cam: '✓', adas: '✗', } },
-    { id: '2', name: '2022 Tata Nexon XZ+', img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAaKaKnGbHYFJCDX_cjtEoTnOXSXRK1uOJAuY6xFM7kHp1lRjh4SrbIY13EtB-lwh_114ezqDBbNp5k2MOvbj_PNfwJjMA1w8u_fpQBxshaORXq2tfnEb1wSb7IgJcccWGiTcxGrHqjKxC1gRJADNvYzyCMnomGUynio4g4v59OhKtWfnneo_bWxmB6w4I_K-C3b35seWjirJAHTfQPNvbuys4WYUgrG9v6VQTl4drFcuU4qZnN88NmIXTdpXCdgnADTxWjYRYJuEfR', details: { type: 'SUV', year: '2022', price: '₹11.50 Lakh', engine: '1.2L Turbo Petrol', power: '120 BHP', torque: '170 Nm', transmission: 'Manual', drivetrain: 'FWD', fuel: 'Petrol', mileage: '17.4 km/l', length: '3993mm', width: '1811mm', height: '1606mm', wheelbase: '2498mm', sunroof: '✓', cruise: '✓', reverse_cam: '✓', adas: '✓', } },
-];
+interface Car {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    price: number;
+    fuel_type: string;
+    transmission: string;
+    mileage: number;
+    condition: string;
+    images: string[];
+}
 
 const SECTIONS = [
-    { title: 'Vehicle Details', rows: [{ key: 'type', label: 'Body Type' }, { key: 'year', label: 'Year' }, { key: 'price', label: 'Price' }] },
-    { title: 'Engine & Performance', rows: [{ key: 'engine', label: 'Engine' }, { key: 'power', label: 'Power' }, { key: 'torque', label: 'Torque' }, { key: 'transmission', label: 'Transmission' }, { key: 'drivetrain', label: 'Drivetrain' }, { key: 'fuel', label: 'Fuel Type' }, { key: 'mileage', label: 'Mileage' }] },
-    { title: 'Dimensions', rows: [{ key: 'length', label: 'Length' }, { key: 'width', label: 'Width' }, { key: 'height', label: 'Height' }, { key: 'wheelbase', label: 'Wheelbase' }] },
-    { title: 'Key Features', rows: [{ key: 'sunroof', label: 'Sunroof' }, { key: 'cruise', label: 'Cruise Control' }, { key: 'reverse_cam', label: 'Reverse Camera' }, { key: 'adas', label: 'ADAS' }] },
+    { title: 'Vehicle Details', rows: [{ key: 'year', label: 'Year' }, { key: 'price', label: 'Price' }, { key: 'condition', label: 'Condition' }] },
+    { title: 'Engine & Performance', rows: [{ key: 'fuel_type', label: 'Fuel Type' }, { key: 'transmission', label: 'Transmission' }] },
+    { title: 'Usage', rows: [{ key: 'mileage', label: 'Odometer (km)' }] },
 ];
 
 const CompareModels = () => {
-    const [leftCar] = useState(CARS[0]);
-    const [rightCar] = useState(CARS[1]);
+    const [inventory, setInventory] = useState<Car[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [leftId, setLeftId] = useState('');
+    const [rightId, setRightId] = useState('');
+
+    useEffect(() => {
+        const fetchInventory = async () => {
+            const { data, error } = await supabase
+                .from('inventory')
+                .select('id, make, model, year, price, fuel_type, transmission, mileage, condition, images')
+                .in('status', ['available', 'reserved'])
+                .order('created_at', { ascending: false });
+            if (!error && data) {
+                setInventory(data);
+                if (data.length >= 1) setLeftId(data[0].id);
+                if (data.length >= 2) setRightId(data[1].id);
+            }
+            setLoading(false);
+        };
+        fetchInventory();
+    }, []);
+
+    const getPrimaryImage = (images: string[] | null) => {
+        if (!images || images.length === 0) return 'https://placehold.co/800x500/slate/white?text=No+Photo';
+        const img = images[0];
+        if (img.startsWith('http')) return img;
+        return `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/car-images/${img}`;
+    };
+
+    const leftCar = inventory.find(c => c.id === leftId) || null;
+    const rightCar = inventory.find(c => c.id === rightId) || null;
+
+    const getVal = (car: Car | null, key: string): string => {
+        if (!car) return '—';
+        const val = (car as any)[key];
+        if (val === undefined || val === null || val === '') return '—';
+        if (key === 'price') return `₹${(Number(val) / 100000).toFixed(2)} L`;
+        if (key === 'mileage') return `${Number(val).toLocaleString('en-IN')} km`;
+        return String(val);
+    };
+
+    if (loading) {
+        return <div className="container-main py-20 text-center text-slate-400 font-medium">Loading inventory...</div>;
+    }
+
+    if (inventory.length < 2) {
+        return (
+            <div className="container-main py-20 text-center">
+                <div className="size-16 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-4 mx-auto">
+                    <span className="material-symbols-outlined text-3xl text-slate-300">compare</span>
+                </div>
+                <h2 className="text-xl font-bold text-primary font-display mb-2">Not Enough Cars to Compare</h2>
+                <p className="text-slate-400 mb-6">We need at least 2 vehicles in inventory to enable the comparison tool.</p>
+                <Link to="/inventory" className="inline-flex items-center gap-2 h-10 px-6 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-light transition-colors">View Inventory</Link>
+            </div>
+        );
+    }
 
     return (
         <div className="container-main py-12">
             <h1 className="text-3xl font-black text-primary font-display mb-2">Compare Models</h1>
-            <p className="text-slate-500 mb-8">See how your top picks stack up side by side.</p>
+            <p className="text-slate-500 mb-8">Select two vehicles from our live inventory to compare side by side.</p>
 
             {/* Car Selectors */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8 mb-10">
-                {[leftCar, rightCar].map((car) => (
-                    <div key={car.id} className="bg-white rounded-2xl border border-slate-100 p-6 shadow-[var(--shadow-card)] text-center">
+                {[
+                    { car: leftCar, id: leftId, setId: setLeftId, excludeId: rightId },
+                    { car: rightCar, id: rightId, setId: setRightId, excludeId: leftId },
+                ].map(({ car, id, setId, excludeId }, idx) => (
+                    <div key={idx} className="bg-white rounded-2xl border border-slate-100 p-6 shadow-[var(--shadow-card)] text-center">
                         <div className="aspect-[16/10] rounded-xl overflow-hidden bg-slate-100 mb-4">
-                            <img src={car.img} alt={car.name} className="w-full h-full object-cover" />
+                            {car ? (
+                                <img src={getPrimaryImage(car.images)} alt={`${car.year} ${car.make} ${car.model}`} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                    <span className="material-symbols-outlined text-4xl">directions_car</span>
+                                </div>
+                            )}
                         </div>
-                        <select className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-medium text-primary outline-none">
-                            <option>{car.name}</option>
+                        <select
+                            value={id}
+                            onChange={e => setId(e.target.value)}
+                            className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-medium text-primary outline-none focus:ring-2 focus:ring-primary/10"
+                        >
+                            <option value="">— Select a Car —</option>
+                            {inventory.filter(c => c.id !== excludeId).map(c => (
+                                <option key={c.id} value={c.id}>{c.year} {c.make} {c.model}</option>
+                            ))}
                         </select>
                     </div>
                 ))}
             </div>
 
             {/* Comparison Table */}
-            <div className="space-y-8">
-                {SECTIONS.map(section => (
-                    <div key={section.title}>
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="h-0.5 w-6 bg-accent rounded-full" />
-                            <h2 className="text-lg font-bold text-primary font-display">{section.title}</h2>
-                        </div>
-                        <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-[var(--shadow-card)]">
-                            {section.rows.map((row, i) => {
-                                const lVal = leftCar.details[row.key as keyof typeof leftCar.details];
-                                const rVal = rightCar.details[row.key as keyof typeof rightCar.details];
-                                return (
+            {leftCar && rightCar ? (
+                <div className="space-y-8">
+                    {SECTIONS.map(section => (
+                        <div key={section.title}>
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="h-0.5 w-6 bg-accent rounded-full" />
+                                <h2 className="text-lg font-bold text-primary font-display">{section.title}</h2>
+                            </div>
+                            <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-[var(--shadow-card)]">
+                                {section.rows.map((row, i) => (
                                     <div key={row.key} className={`grid grid-cols-3 ${i > 0 ? 'border-t border-slate-50' : ''}`}>
-                                        <div className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold text-primary flex items-center bg-slate-50/50">{lVal}</div>
+                                        <div className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold text-primary flex items-center bg-slate-50/50">{getVal(leftCar, row.key)}</div>
                                         <div className="px-2 sm:px-6 py-3 sm:py-4 text-[10px] sm:text-xs font-bold text-slate-400 text-center uppercase tracking-wide flex items-center justify-center bg-white border-x border-slate-50">{row.label}</div>
-                                        <div className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold text-primary flex items-center justify-end bg-slate-50/50">{rVal}</div>
+                                        <div className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold text-primary flex items-center justify-end bg-slate-50/50">{getVal(rightCar, row.key)}</div>
                                     </div>
-                                );
-                            })}
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="text-center py-10 text-slate-400 text-sm">Select two cars above to see the comparison.</div>
+            )}
 
             {/* CTA */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-8 mt-8 mb-16">
-                {[leftCar, rightCar].map(car => (
-                    <Link key={car.id} to="/book-test-drive" className="h-12 flex items-center justify-center gap-2 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-colors text-sm">
-                        <span className="material-symbols-outlined text-lg">description</span> Request Brochure
-                    </Link>
-                ))}
-            </div>
+            {leftCar && rightCar && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-8 mt-8 mb-16">
+                    {[leftCar, rightCar].map(car => (
+                        <div key={car.id} className="flex flex-col sm:flex-row gap-2">
+                            <Link to={`/car/${car.id}`} className="flex-1 h-12 flex items-center justify-center gap-2 bg-white text-primary border-2 border-primary font-bold rounded-xl hover:bg-slate-50 transition-colors text-sm">
+                                View Details
+                            </Link>
+                            <Link to={`/book-test-drive?car=${car.id}`} className="flex-1 h-12 flex items-center justify-center gap-2 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-colors text-sm">
+                                <span className="material-symbols-outlined text-lg">directions_car</span> Test Drive
+                            </Link>
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* Confused */}
             <div className="bg-slate-50 rounded-2xl p-8 text-center mb-8">

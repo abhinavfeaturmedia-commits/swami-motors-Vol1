@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Search, Heart, User, Menu, X, Phone, Mail, MapPin } from 'lucide-react';
+import { Search, Heart, User, Menu, X, Phone, Mail, MapPin, Facebook, Instagram, Twitter, Youtube } from 'lucide-react';
 
 const PublicLayout: React.FC = () => {
     const location = useLocation();
@@ -12,6 +12,7 @@ const PublicLayout: React.FC = () => {
         { name: 'Sell Car', path: '/sell' },
         { name: 'Services', path: '/services' },
         { name: 'Finance', path: '/finance' },
+        { name: 'About', path: '/about' },
         { name: 'Contact', path: '/contact' },
     ];
 
@@ -33,7 +34,7 @@ const PublicLayout: React.FC = () => {
                             </div>
                             <div className="block min-w-0 flex-1">
                                 <h1 className="text-primary text-sm sm:text-lg font-bold leading-tight tracking-tight font-display truncate">
-                                    <span className="xs:hidden">SSSM Motors</span>
+                                    <span className="xs:hidden">Shree Swami Samarth Motors</span>
                                     <span className="hidden xs:inline">Shree Swami Samarth Motors</span>
                                 </h1>
                             </div>
@@ -144,9 +145,14 @@ const PublicLayout: React.FC = () => {
                                 Your trusted destination for quality pre-owned cars in Kolhapur. We bring you the best deals with certified assurance.
                             </p>
                             <div className="flex items-center gap-3">
-                                {['facebook', 'instagram', 'twitter', 'youtube'].map(social => (
-                                    <a key={social} href="#" className="size-9 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 hover:bg-accent hover:text-primary transition-all duration-300">
-                                        <span className="material-symbols-outlined text-lg">{social === 'youtube' ? 'play_circle' : social}</span>
+                                {[
+                                    { id: 'facebook', icon: <Facebook size={18} /> },
+                                    { id: 'instagram', icon: <Instagram size={18} /> },
+                                    { id: 'twitter', icon: <Twitter size={18} /> },
+                                    { id: 'youtube', icon: <Youtube size={18} /> }
+                                ].map(social => (
+                                    <a key={social.id} href="#" className="flex-none size-9 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 hover:bg-accent hover:text-primary transition-all duration-300">
+                                        {social.icon}
                                     </a>
                                 ))}
                             </div>
@@ -161,6 +167,7 @@ const PublicLayout: React.FC = () => {
                                     { name: 'Sell Your Car', path: '/sell' },
                                     { name: 'Financing Options', path: '/finance' },
                                     { name: 'Compare Models', path: '/compare' },
+                                    { name: 'About Us', path: '/about' },
                                     { name: 'FAQ', path: '/faq' },
                                 ].map(link => (
                                     <li key={link.path}>
@@ -202,7 +209,7 @@ const PublicLayout: React.FC = () => {
                                 </li>
                                 <li className="flex items-center gap-3">
                                     <Mail size={16} className="text-accent shrink-0" />
-                                    <span>sales@sssmotors.com</span>
+                                    <a href="mailto:sales@swamimotors.com" className="hover:text-accent transition-colors">sales@swamimotors.com</a>
                                 </li>
                             </ul>
                         </div>
@@ -216,9 +223,9 @@ const PublicLayout: React.FC = () => {
                             © {new Date().getFullYear()} Shree Swami Samarth Motors. Effortless Discovery Since 2011.
                         </p>
                         <div className="flex gap-6 text-xs text-slate-500">
-                            <a href="#" className="hover:text-accent transition-colors">Privacy</a>
-                            <a href="#" className="hover:text-accent transition-colors">Terms</a>
-                            <a href="#" className="hover:text-accent transition-colors">Sitemap</a>
+                            <Link to="/about" className="hover:text-accent transition-colors">About</Link>
+                            <Link to="/contact" className="hover:text-accent transition-colors">Contact</Link>
+                            <Link to="/faq" className="hover:text-accent transition-colors">FAQ</Link>
                             <Link to="/admin/login" className="hover:text-accent transition-colors">Admin</Link>
                         </div>
                     </div>

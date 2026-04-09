@@ -1,32 +1,152 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { X } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { X, Heart } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
+import { useAuth } from '../contexts/AuthContext';
 
-const CARS = [
-    { id: '1', make: 'Hyundai', model: 'Creta', year: 2021, variant: 'SX 1.5 Petrol Automatic', price: 1450000, priceFormatted: '₹ 14.50 Lakh', emi: '₹24,450', mileage: '24,000', fuel: 'Petrol', transmission: 'Auto', photos: 8, badges: ['Certified', 'New Arrival'], img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCZ9on2reKfaAeW52as0W9TitvVermkqQOTGwGUHGFM5bCQDPr3JQomAy3uKn2C9ta7SmSbrSUUJaxiGih2jDZhMfUpbTcKnZJ-RPJfNxEUS-EZ4nJ-sPFU6kBj2kUZGbL-r5IVAcPmDncOyoqNZbQSpH02EOyXXaZyH82dIaNWIXphtUdSIznx3bz3r3EVA2OCr8aT-X0PqsVL_QOdO5KMvyuQnYom1A1lLdlS20IRmgRzl2v7BYVRIjr_2c4thS8RPJ5yrqGxXQZ_' },
-    { id: '2', make: 'Honda', model: 'City', year: 2020, variant: 'ZX Diesel Manual', price: 1125000, priceFormatted: '₹ 11.25 Lakh', emi: '₹18,900', mileage: '45,000', fuel: 'Diesel', transmission: 'Manual', photos: 6, badges: ['Certified'], img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAaKaKnGbHYFJCDX_cjtEoTnOXSXRK1uOJAuY6xFM7kHp1lRjh4SrbIY13EtB-lwh_114ezqDBbNp5k2MOvbj_PNfwJjMA1w8u_fpQBxshaORXq2tfnEb1wSb7IgJcccWGiTcxGrHqjKxC1gRJADNvYzyCMnomGUynio4g4v59OhKtWfnneo_bWxmB6w4I_K-C3b35seWjirJAHTfQPNvbuys4WYUgrG9v6VQTl4drFcuU4qZnN88NmIXTdpXCdgnADTxWjYRYJuEfR', oldPrice: '₹ 11.75' },
-    { id: '3', make: 'Tata', model: 'Nexon', year: 2022, variant: 'XZ+ Petrol Automatic', price: 985000, priceFormatted: '₹ 9.85 Lakh', emi: '₹16,500', mileage: '12,500', fuel: 'Petrol', transmission: 'Auto', photos: 5, badges: ['Certified'], img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAicROhp9Gf-xzl-F5bNh2DjhBvVjM0t7ucbZNljF7upz9rq-p_8ljMdlqSRXmjZxsHOjtv1vWKs0kT2eRkFpLeiVdeTU8gymd2DLYq1bpuInOt9hJ0FZS7-g-ezBysRMoUzjGsZGYiSggig69oaBm7r_EuJjqTACUVFkzJnfBp42eh4UhYn_xfstqiAmf_tJom5VsITEASM1Kk8hW62SLGl-qS58ebghm-p7UQV73CYWsT-4qFxseupM2iWsPL6uMYT34NG4TMH1-X' },
-    { id: '4', make: 'Toyota', model: 'Fortuner', year: 2019, variant: '4×4 Diesel Automatic', price: 3250000, priceFormatted: '₹ 32.50 Lakh', emi: '₹54,200', mileage: '58,000', fuel: 'Diesel', transmission: 'Auto', photos: 8, badges: ['Certified'], img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuA1XK2L7EpsFR7K_eosnwu-nObzshJ1Ty2a8myYaJLGxNfVRumnjS7qbstQgmr0orhubbj2qWZONaSEPe_N7kcPM_1QfK25z_ISQyqhepk7R2dKxgZkvCaLxu1sknYBEuc8ql5XtjjvTxpkgGtcvcz9YskEEhJWegVcLP20ML2BowuulsKcxPJys4ux6Vi6vSqWwbUnsgtemZ2KMzcaeJsz8ZDBvA8U6qYDVmNQ5ksSaho1Svizzl2FUtSrad_4n_fgXjaKl4oo-CEH' },
-    { id: '5', make: 'Maruti', model: 'Swift', year: 2020, variant: 'ZXi Plus Petrol', price: 645000, priceFormatted: '₹ 6.45 Lakh', emi: '₹10,800', mileage: '32,000', fuel: 'Petrol', transmission: 'Manual', photos: 5, badges: ['Value Pick'], img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAaKaKnGbHYFJCDX_cjtEoTnOXSXRK1uOJAuY6xFM7kHp1lRjh4SrbIY13EtB-lwh_114ezqDBbNp5k2MOvbj_PNfwJjMA1w8u_fpQBxshaORXq2tfnEb1wSb7IgJcccWGiTcxGrHqjKxC1gRJADNvYzyCMnomGUynio4g4v59OhKtWfnneo_bWxmB6w4I_K-C3b35seWjirJAHTfQPNvbuys4WYUgrG9v6VQTl4drFcuU4qZnN88NmIXTdpXCdgnADTxWjYRYJuEfR' },
-    { id: '6', make: 'Renault', model: 'Kwid', year: 2021, variant: 'Climber AMT', price: 480000, priceFormatted: '₹ 4.80 Lakh', emi: '₹8,100', mileage: '18,000', fuel: 'Petrol', transmission: 'Auto', photos: 4, badges: ['Certified'], img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAicROhp9Gf-xzl-F5bNh2DjhBvVjM0t7ucbZNljF7upz9rq-p_8ljMdlqSRXmjZxsHOjtv1vWKs0kT2eRkFpLeiVdeTU8gymd2DLYq1bpuInOt9hJ0FZS7-g-ezBysRMoUzjGsZGYiSggig69oaBm7r_EuJjqTACUVFkzJnfBp42eh4UhYn_xfstqiAmf_tJom5VsITEASM1Kk8hW62SLGl-qS58ebghm-p7UQV73CYWsT-4qFxseupM2iWsPL6uMYT34NG4TMH1-X' },
-];
-
-const BRANDS = [
-    { name: 'Maruti Suzuki', count: 12 },
-    { name: 'Hyundai', count: 8 },
-    { name: 'Tata', count: 6 },
-    { name: 'Toyota', count: 4 },
-];
+interface Car {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    price: number;
+    fuel_type: string;
+    transmission: string;
+    mileage: number;
+    images: string[];
+    status: string;
+    created_at: string;
+    condition: string;
+}
 
 const Inventory = () => {
+    const [searchParams] = useSearchParams();
+    
+    const [cars, setCars] = useState<Car[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+    const { user } = useAuth();
+
     const [sortBy, setSortBy] = useState('newest');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-    const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
     const [showFilters, setShowFilters] = useState(false);
+    
+    // Filters
+    const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+    const [selectedYears, setSelectedYears] = useState<string[]>([]);
+    const [selectedBudget, setSelectedBudget] = useState<string>('');
+
+    // Wishlist state
+    const [wishlist, setWishlist] = useState<string[]>([]);
+
+    useEffect(() => {
+        // Load wishlist
+        const loadWishlist = async () => {
+            if (!user) {
+                setWishlist([]);
+                return;
+            }
+            const { data } = await supabase.from('user_wishlist').select('inventory_id').eq('user_id', user.id);
+            setWishlist(data?.map(w => w.inventory_id) || []);
+        };
+        loadWishlist();
+
+        // Parse search params into local state exactly ONCE on mount
+        const initialBudget = searchParams.get('budget');
+        const initialMake = searchParams.get('make');
+        const initialYear = searchParams.get('year');
+        
+        if (initialBudget) setSelectedBudget(initialBudget);
+        if (initialMake) setSelectedBrands([initialMake]);
+        if (initialYear) setSelectedYears([initialYear]);
+
+        const fetchInventory = async () => {
+            setLoading(true);
+            setError(false);
+            const { data, error: err } = await supabase
+                .from('inventory')
+                .select('*')
+                .in('status', ['available', 'reserved'])
+                .order('created_at', { ascending: false });
+                
+            if (err) {
+                setError(true);
+            } else if (data) {
+                setCars(data);
+            }
+            setLoading(false);
+        };
+        fetchInventory();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Only run once
+
+    const toggleWishlist = async (e: React.MouseEvent, id: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (!user) {
+            alert('Please login to save cars to your wishlist.');
+            return;
+        }
+        
+        if (wishlist.includes(id)) {
+            setWishlist(prev => prev.filter(wId => wId !== id));
+            await supabase.from('user_wishlist').delete().match({ user_id: user.id, inventory_id: id });
+        } else {
+            setWishlist(prev => [...prev, id]);
+            await supabase.from('user_wishlist').insert({ user_id: user.id, inventory_id: id });
+        }
+    };
 
     const toggleBrand = (brand: string) => {
         setSelectedBrands(prev => prev.includes(brand) ? prev.filter(b => b !== brand) : [...prev, brand]);
     };
+
+    const toggleYear = (year: string) => {
+        setSelectedYears(prev => prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]);
+    };
+
+    // Calculate dynamic brands array based on fetched inventory
+    const brandCounts = useMemo(() => {
+        const counts = cars.reduce((acc, car) => {
+            acc[car.make] = (acc[car.make] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+        return Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a,b) => b.count - a.count);
+    }, [cars]);
+
+    // Calculate dynamic years based on inventory
+    const availableYears = useMemo(() => {
+        return Array.from(new Set(cars.map(c => String(c.year)))).sort().reverse();
+    }, [cars]);
+
+    // Apply filtering and sorting
+    let displayCars = cars.filter(car => {
+        // Brand filter
+        if (selectedBrands.length > 0 && !selectedBrands.includes(car.make)) return false;
+        
+        // Year filter
+        if (selectedYears.length > 0 && !selectedYears.includes(String(car.year))) return false;
+        
+        // Budget filter
+        if (selectedBudget) {
+            if (selectedBudget === 'under5' && car.price > 500000) return false;
+            if (selectedBudget === '5to10' && (car.price < 500000 || car.price > 1000000)) return false;
+            if (selectedBudget === '10to20' && (car.price < 1000000 || car.price > 2000000)) return false;
+            if (selectedBudget === '20plus' && car.price < 2000000) return false;
+        }
+
+        return true;
+    });
+    
+    if (sortBy === 'price-low') {
+        displayCars.sort((a, b) => a.price - b.price);
+    } else if (sortBy === 'price-high') {
+        displayCars.sort((a, b) => b.price - a.price);
+    } else {
+        displayCars.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
 
     return (
         <div className="container-main py-4 sm:py-8">
@@ -40,7 +160,7 @@ const Inventory = () => {
                         <span className="material-symbols-outlined">filter_list</span>
                         {showFilters ? 'Hide Filters' : 'Show Filters'}
                     </button>
-                    <span className="text-xs text-slate-400 font-medium">45 Cars Found</span>
+                    <span className="text-xs text-slate-400 font-medium">{displayCars.length} Cars Found</span>
                 </div>
 
                 {/* Filters Sidebar */}
@@ -49,7 +169,7 @@ const Inventory = () => {
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="font-bold text-primary font-display text-lg">Filters</h3>
                             <div className="flex items-center gap-3">
-                                <button className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">Clear All</button>
+                                <button onClick={() => { setSelectedBrands([]); setSelectedYears([]); setSelectedBudget(''); }} className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">Clear All</button>
                                 <button onClick={() => setShowFilters(false)} className="lg:hidden p-1 text-slate-400 hover:text-primary">
                                     <X size={20} />
                                 </button>
@@ -57,15 +177,27 @@ const Inventory = () => {
                         </div>
                         
                         <div className="space-y-4 pb-20 lg:pb-0">
-                            {/* Price Range */}
+                            {/* Budget Range */}
                             <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h4 className="font-semibold text-primary text-sm">Price Range</h4>
-                                    <span className="text-xs text-slate-400">₹ Lakhs</span>
-                                </div>
-                                <input type="range" min="2" max="50" defaultValue="25" className="w-full accent-accent" />
-                                <div className="flex justify-between text-xs text-slate-400 mt-2">
-                                    <span>₹2L</span><span>₹50L</span>
+                                <h4 className="font-semibold text-primary text-sm mb-3 flex items-center justify-between">
+                                    Budget
+                                </h4>
+                                <div className="space-y-2.5 text-sm text-slate-700">
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <input type="radio" name="budget" checked={selectedBudget === ''} onChange={() => setSelectedBudget('')} className="accent-primary" /> Any Budget
+                                    </label>
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <input type="radio" name="budget" checked={selectedBudget === 'under5'} onChange={() => setSelectedBudget('under5')} className="accent-primary" /> Under ₹5 Lakh
+                                    </label>
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <input type="radio" name="budget" checked={selectedBudget === '5to10'} onChange={() => setSelectedBudget('5to10')} className="accent-primary" /> ₹5 Lakh - ₹10 Lakh
+                                    </label>
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <input type="radio" name="budget" checked={selectedBudget === '10to20'} onChange={() => setSelectedBudget('10to20')} className="accent-primary" /> ₹10 Lakh - ₹20 Lakh
+                                    </label>
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <input type="radio" name="budget" checked={selectedBudget === '20plus'} onChange={() => setSelectedBudget('20plus')} className="accent-primary" /> ₹20 Lakh+
+                                    </label>
                                 </div>
                             </div>
 
@@ -75,28 +207,37 @@ const Inventory = () => {
                                     Make & Model
                                     <span className="material-symbols-outlined text-slate-400 text-lg">expand_less</span>
                                 </h4>
-                                <div className="space-y-2.5">
-                                    {BRANDS.map(b => (
+                                <div className="space-y-2.5 max-h-48 overflow-y-auto pr-2">
+                                    {brandCounts.length === 0 && <p className="text-sm text-slate-400">Loading brands...</p>}
+                                    {brandCounts.map(b => (
                                         <label key={b.name} className="flex items-center gap-3 cursor-pointer group">
-                                            <div className={`size-5 rounded-md border-2 flex items-center justify-center transition-all ${selectedBrands.includes(b.name) ? 'bg-primary border-primary' : 'border-slate-300 group-hover:border-primary'}`}>
+                                            <div className={`size-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${selectedBrands.includes(b.name) ? 'bg-primary border-primary' : 'border-slate-300 group-hover:border-primary'}`}>
                                                 {selectedBrands.includes(b.name) && <span className="material-symbols-outlined text-white text-sm">check</span>}
                                             </div>
-                                            <span className="text-sm text-slate-700 flex-1">{b.name}</span>
+                                            <span className="text-sm text-slate-700 flex-1 truncate">{b.name} <span className="text-xs text-slate-400 ml-1">({b.count})</span></span>
                                             <input type="checkbox" className="hidden" checked={selectedBrands.includes(b.name)} onChange={() => toggleBrand(b.name)} />
                                         </label>
                                     ))}
                                 </div>
                             </div>
 
-                            {/* Additional filters */}
-                            {['Year', 'Fuel Type', 'Transmission'].map(filter => (
-                                <div key={filter} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
-                                    <h4 className="font-semibold text-primary text-sm flex items-center justify-between cursor-pointer">
-                                        {filter}
-                                        <span className="material-symbols-outlined text-slate-400 text-lg">expand_more</span>
-                                    </h4>
+                            {/* Year */}
+                            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
+                                <h4 className="font-semibold text-primary text-sm mb-3 flex items-center justify-between">
+                                    Model Year
+                                </h4>
+                                <div className="space-y-2.5 max-h-40 overflow-y-auto pr-2">
+                                    {availableYears.map(year => (
+                                        <label key={year} className="flex items-center gap-3 cursor-pointer group">
+                                            <div className={`size-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${selectedYears.includes(year) ? 'bg-primary border-primary' : 'border-slate-300 group-hover:border-primary'}`}>
+                                                {selectedYears.includes(year) && <span className="material-symbols-outlined text-white text-sm">check</span>}
+                                            </div>
+                                            <span className="text-sm text-slate-700 flex-1">{year}</span>
+                                            <input type="checkbox" className="hidden" checked={selectedYears.includes(year)} onChange={() => toggleYear(year)} />
+                                        </label>
+                                    ))}
                                 </div>
-                            ))}
+                            </div>
 
                             <button onClick={() => setShowFilters(false)} className="w-full h-12 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-colors shadow-sm text-sm lg:hidden mt-4">
                                 Apply & View Results
@@ -116,7 +257,7 @@ const Inventory = () => {
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between mb-6 gap-3 sm:gap-4">
                         <div className="flex items-center justify-between sm:justify-start gap-4 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
                             <p className="text-xs sm:text-sm text-slate-500">
-                                Showing <strong className="text-primary font-black">45</strong> <span className="hidden xs:inline">Cars</span>
+                                Showing <strong className="text-primary font-black">{displayCars.length}</strong> <span className="hidden xs:inline">Cars</span>
                             </p>
                             <div className="sm:hidden h-4 w-px bg-slate-200" />
                             <div className="flex items-center gap-1 sm:hidden">
@@ -149,71 +290,83 @@ const Inventory = () => {
                     </div>
 
                     {/* Car Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
-                        {CARS.map(car => (
-                            <article key={car.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all duration-300 group flex flex-col">
-                                <div className="relative aspect-[16/11] overflow-hidden bg-slate-100">
-                                    <img alt={`${car.year} ${car.make} ${car.model}`} src={car.img} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                    <div className="absolute top-3 left-3 flex gap-2">
-                                        {car.badges.map(badge => (
-                                            <span key={badge} className={`text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider text-white ${badge === 'New Arrival' ? 'bg-primary' : badge === 'Value Pick' ? 'bg-green-600' : 'bg-green-700'}`}>
-                                                <span className="inline-flex items-center gap-1">{badge === 'Certified' && <span className="material-symbols-outlined text-xs">verified</span>}{badge}</span>
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <button className="absolute top-3 right-3 p-2 bg-white/90 rounded-full text-slate-400 hover:text-red-500 shadow-sm backdrop-blur-sm transition-colors">
-                                        <span className="material-symbols-outlined text-lg">favorite</span>
-                                    </button>
-                                    <div className="absolute bottom-3 left-3 bg-black/60 text-white text-[10px] font-medium px-2 py-1 rounded backdrop-blur-sm flex items-center gap-1">
-                                        <span className="material-symbols-outlined text-xs">photo_library</span> {car.photos} Photos
-                                    </div>
-                                </div>
-                                <div className="p-5 flex flex-col flex-1">
-                                    <h3 className="text-base font-bold text-primary font-display">{car.year} {car.make} {car.model}</h3>
-                                    <p className="text-xs text-slate-500 mb-3">{car.variant}</p>
-                                    <div className="flex items-center gap-3 text-xs text-slate-500 mb-4">
-                                        <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm">speed</span>{car.mileage} km</span>
-                                        <span className="w-0.5 h-0.5 rounded-full bg-slate-300" />
-                                        <span>{car.fuel}</span>
-                                        <span className="w-0.5 h-0.5 rounded-full bg-slate-300" />
-                                        <span>{car.transmission}</span>
-                                    </div>
-                                    <div className="mt-auto">
-                                        <div className="flex items-baseline gap-2 mb-1">
-                                            <span className="text-xl font-black text-primary font-display">₹ {car.priceFormatted.replace('₹ ', '')}</span>
-                                            {car.oldPrice && <span className="text-sm text-slate-400 line-through">{car.oldPrice}</span>}
-                                        </div>
-                                        <p className="text-[11px] text-accent font-medium mb-4">
-                                            <span className="material-symbols-outlined text-xs align-text-top">trending_down</span> EMI starts @ {car.emi}/mo
-                                        </p>
-                                        <div className="flex gap-2">
-                                            <Link to={`/car/${car.id}`} className="flex-1 h-10 flex items-center justify-center text-sm font-semibold text-primary border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
-                                                View Details
-                                            </Link>
-                                            <Link to="/book-test-drive" className="flex-1 h-10 flex items-center justify-center text-sm font-semibold text-white bg-primary rounded-xl hover:bg-primary-light transition-colors">
-                                                Book Test Drive
-                                            </Link>
-                                        </div>
-                                    </div>
-                                </div>
-                            </article>
-                        ))}
-                    </div>
+                    {loading ? (
+                        <div className="py-20 text-center text-slate-400 font-medium">Fetching live inventory...</div>
+                    ) : error ? (
+                        <div className="py-20 text-center">
+                            <span className="material-symbols-outlined text-red-400 text-4xl mb-2">error</span>
+                            <p className="text-slate-500 font-medium">Failed to load inventory.</p>
+                            <button onClick={() => window.location.reload()} className="mt-3 px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-semibold hover:bg-red-100">Try Again</button>
+                        </div>
+                    ) : displayCars.length === 0 ? (
+                        <div className="py-20 text-center text-slate-400 font-medium">No cars found matching your criteria.</div>
+                    ) : (
+                        <div className={`grid gap-4 sm:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'}`}>
+                            {displayCars.map(car => {
+                                const isSaved = wishlist.includes(car.id);
+                                return (
+                                    <article key={car.id} className={`bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all duration-300 group relative ${viewMode === 'list' ? 'flex flex-col sm:flex-row' : 'flex flex-col'}`}>
+                                        <Link to={`/car/${car.id}`} className={`flex flex-col flex-1 ${viewMode === 'list' ? 'sm:flex-row' : ''}`}>
+                                            <div className={`relative overflow-hidden bg-slate-100 ${viewMode === 'list' ? 'w-full sm:w-1/3 aspect-[16/11] sm:aspect-auto sm:h-full' : 'aspect-[16/11]'}`}>
+                                                <img alt={`${car.year} ${car.make} ${car.model}`} src={getPrimaryImage(car.images)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                <div className="absolute top-3 left-3 flex gap-2">
+                                                    {car.condition === 'Excellent' && (
+                                                        <span className="text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider text-white bg-green-600">
+                                                            <span className="inline-flex items-center gap-1"><span className="material-symbols-outlined text-xs">verified</span>Certified</span>
+                                                        </span>
+                                                    )}
+                                                    {car.status === 'reserved' && (
+                                                        <span className="text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider text-white bg-amber-600">
+                                                            Reserved
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="absolute bottom-3 left-3 bg-black/60 text-white text-[10px] font-medium px-2 py-1 rounded backdrop-blur-sm flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-xs">photo_library</span> {car.images?.length || 0} Photos
+                                                </div>
+                                            </div>
 
-                    {/* Pagination */}
-                    <div className="flex items-center justify-center gap-2 mt-10">
-                        <button className="size-10 rounded-lg border border-slate-200 text-slate-400 flex items-center justify-center hover:bg-slate-50">
-                            <span className="material-symbols-outlined text-lg">chevron_left</span>
-                        </button>
-                        {[1, 2, 3, '...', 12].map((p, i) => (
-                            <button key={i} className={`size-10 rounded-lg text-sm font-semibold flex items-center justify-center transition-colors ${p === 1 ? 'bg-primary text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                                {p}
-                            </button>
-                        ))}
-                        <button className="size-10 rounded-lg border border-slate-200 text-slate-400 flex items-center justify-center hover:bg-slate-50">
-                            <span className="material-symbols-outlined text-lg">chevron_right</span>
-                        </button>
-                    </div>
+                                            <div className="p-5 flex flex-col flex-1">
+                                                <h3 className="text-base font-bold text-primary font-display line-clamp-1" title={`${car.year} ${car.make} ${car.model}`}>
+                                                    {car.year} {car.make} {car.model}
+                                                </h3>
+                                                <p className="text-xs text-slate-500 mb-3 line-clamp-1">{car.fuel_type} • {car.transmission}</p>
+                                                
+                                                <div className="flex items-center gap-3 text-xs text-slate-500 mb-4">
+                                                    <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm">speed</span>{(car.mileage || 0).toLocaleString()} km</span>
+                                                    <span className="w-0.5 h-0.5 rounded-full bg-slate-300" />
+                                                    <span>{car.fuel_type}</span>
+                                                    <span className="w-0.5 h-0.5 rounded-full bg-slate-300" />
+                                                    <span>{car.transmission}</span>
+                                                </div>
+                                            </div>
+                                        </Link>
+
+                                        <button 
+                                            className={`absolute top-3 right-3 p-2 bg-white/90 rounded-full transition-colors shadow-sm backdrop-blur-sm z-10 ${isSaved ? 'text-red-500' : 'text-slate-400 hover:text-red-500'}`}
+                                            onClick={(e) => toggleWishlist(e, car.id)}
+                                        >
+                                            <Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />
+                                        </button>
+                                        
+                                        <div className={`px-5 pb-5 mt-auto ${viewMode === 'list' ? 'sm:w-1/3 sm:border-l sm:border-slate-100 sm:flex sm:flex-col sm:justify-center' : ''}`}>
+                                            <div className="flex items-baseline gap-2 mb-4">
+                                                <span className="text-xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)} Lakh</span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <Link to={`/book-test-drive?car=${car.id}`} className="flex-1 h-10 flex items-center justify-center text-sm font-semibold text-primary border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+                                                    Test Drive
+                                                </Link>
+                                                <a href={`https://wa.me/919876543210?text=I'm interested in the ${car.year} ${car.make} ${car.model}`} target="_blank" rel="noreferrer" className="flex-1 h-10 flex items-center justify-center text-sm font-semibold text-white bg-primary rounded-xl hover:bg-primary-light transition-colors gap-1.5">
+                                                    <span className="material-symbols-outlined text-sm">chat</span> Contact
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

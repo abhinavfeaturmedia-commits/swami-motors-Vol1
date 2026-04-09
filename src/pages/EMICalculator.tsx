@@ -1,26 +1,67 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import { formatPriceLakh, getPrimaryImage } from '../lib/utils';
+
+interface Car {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    price: number;
+    fuel_type: string;
+    transmission: string;
+    images: string[];
+}
 
 const EMICalculator = () => {
-    const [loanAmount, setLoanAmount] = useState(1000000);
+    const [searchParams] = useSearchParams();
+    const initialPrice = Number(searchParams.get('price')) || 1000000;
+
+    const [loanAmount, setLoanAmount] = useState(initialPrice);
     const [interestRate, setInterestRate] = useState(9.5);
     const [tenureYears, setTenureYears] = useState(5);
     const [tenureMode, setTenureMode] = useState<'years' | 'months'>('years');
 
+    // ─── Budget cars ──────────────────────────────────────────────────────────
+    const [budgetCars, setBudgetCars] = useState<Car[]>([]);
+    const [carsLoading, setCarsLoading] = useState(false);
+
     const tenureMonths = tenureMode === 'years' ? tenureYears * 12 : tenureYears;
     const monthlyRate = interestRate / 100 / 12;
-    const emi = loanAmount * monthlyRate * Math.pow(1 + monthlyRate, tenureMonths) / (Math.pow(1 + monthlyRate, tenureMonths) - 1);
+    const emi = monthlyRate > 0
+        ? loanAmount * monthlyRate * Math.pow(1 + monthlyRate, tenureMonths) / (Math.pow(1 + monthlyRate, tenureMonths) - 1)
+        : loanAmount / tenureMonths;
     const totalPayable = emi * tenureMonths;
     const totalInterest = totalPayable - loanAmount;
-
     const principalPercent = (loanAmount / totalPayable) * 100;
+
+    // ─── Fetch cars within budget ─────────────────────────────────────────────
+    const fetchBudgetCars = useCallback(async (budget: number) => {
+        setCarsLoading(true);
+        // Loan amount ≈ 80% of on-road price → add 25% buffer
+        const maxPrice = Math.round(budget * 1.25);
+        const { data } = await supabase
+            .from('inventory')
+            .select('id, make, model, year, price, fuel_type, transmission, images')
+            .in('status', ['available', 'reserved'])
+            .lte('price', maxPrice)
+            .order('price', { ascending: false })
+            .limit(3);
+        setBudgetCars(data || []);
+        setCarsLoading(false);
+    }, []);
+
+    // Debounce so we don't hammer Supabase on every slider tick
+    useEffect(() => {
+        const timer = setTimeout(() => fetchBudgetCars(loanAmount), 600);
+        return () => clearTimeout(timer);
+    }, [loanAmount, fetchBudgetCars]);
 
     return (
         <div className="container-main py-12">
             <nav className="flex items-center gap-2 text-sm text-slate-500 mb-6">
                 <Link to="/" className="hover:text-primary">Home</Link>
-                <span className="material-symbols-outlined text-xs">chevron_right</span>
-                <Link to="/finance" className="hover:text-primary">Finance</Link>
                 <span className="material-symbols-outlined text-xs">chevron_right</span>
                 <span className="text-primary font-medium">EMI Calculator</span>
             </nav>
@@ -43,7 +84,12 @@ const EMICalculator = () => {
                             </label>
                             <div className="flex items-center gap-1 bg-slate-50 rounded-lg px-3 py-1.5 border border-slate-200">
                                 <span className="text-sm text-slate-400">₹</span>
-                                <input type="text" value={loanAmount.toLocaleString('en-IN')} onChange={e => setLoanAmount(parseInt(e.target.value.replace(/,/g, '')) || 0)} className="w-24 text-sm font-bold text-primary text-right outline-none bg-transparent" />
+                                <input
+                                    type="text"
+                                    value={loanAmount.toLocaleString('en-IN')}
+                                    onChange={e => setLoanAmount(parseInt(e.target.value.replace(/,/g, '')) || 0)}
+                                    className="w-24 text-sm font-bold text-primary text-right outline-none bg-transparent"
+                                />
                             </div>
                         </div>
                         <input type="range" min={100000} max={5000000} step={50000} value={loanAmount} onChange={e => setLoanAmount(Number(e.target.value))} className="w-full accent-accent" />
@@ -87,7 +133,7 @@ const EMICalculator = () => {
 
                     <div className="bg-slate-50 rounded-xl p-4 flex items-start gap-3 text-xs text-slate-500">
                         <span className="material-symbols-outlined text-sm text-slate-400">info</span>
-                        <span>Interest rates are subject to change based on your credit score and the car model selected. <a href="#" className="text-accent font-semibold hover:underline">View current rates for all models.</a></span>
+                        <span>Interest rates are subject to change based on your credit score and the car model selected. Rates shown are indicative only.</span>
                     </div>
                 </div>
 
@@ -104,7 +150,9 @@ const EMICalculator = () => {
                             <div className="relative size-40">
                                 <svg viewBox="0 0 36 36" className="size-full -rotate-90">
                                     <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e2e8f0" strokeWidth="3" />
-                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#0f1729" strokeWidth="3" strokeDasharray={`${principalPercent} ${100 - principalPercent}`} className="transition-all duration-500" />
+                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#0f1729" strokeWidth="3"
+                                        strokeDasharray={`${principalPercent} ${100 - principalPercent}`}
+                                        className="transition-all duration-500" />
                                 </svg>
                                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                                     <p className="text-[10px] font-bold text-slate-400 uppercase">Total Amount</p>
@@ -112,7 +160,6 @@ const EMICalculator = () => {
                                 </div>
                             </div>
                         </div>
-
                         <div className="space-y-3">
                             <div className="flex items-center justify-between">
                                 <span className="flex items-center gap-2 text-sm text-slate-600"><span className="w-3 h-3 rounded-full bg-primary" /> Principal Amount</span>
@@ -129,9 +176,12 @@ const EMICalculator = () => {
                         </div>
                     </div>
 
-                    <button className="w-full h-12 bg-gradient-to-r from-accent to-amber-400 text-primary font-bold rounded-xl hover:opacity-90 transition-all shadow-lg text-sm flex items-center justify-center gap-2">
+                    <Link
+                        to="/contact?subject=finance"
+                        className="w-full h-12 bg-gradient-to-r from-accent to-amber-400 text-primary font-bold rounded-xl hover:opacity-90 transition-all shadow-lg text-sm flex items-center justify-center gap-2"
+                    >
                         Apply for Finance <span className="material-symbols-outlined text-lg">arrow_forward</span>
-                    </button>
+                    </Link>
                     <p className="text-xs text-slate-400 text-center flex items-center justify-center gap-1">
                         <span className="material-symbols-outlined text-xs">bolt</span> Approval in as fast as 30 minutes
                     </p>
@@ -143,32 +193,65 @@ const EMICalculator = () => {
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-2">
                     <div>
                         <h2 className="text-2xl font-black text-primary font-display">Cars within your budget</h2>
-                        <p className="text-sm text-slate-500">Based on your calculated EMI range</p>
+                        <p className="text-sm text-slate-500">Based on your loan amount of ₹{formatPriceLakh(loanAmount)} Lakh</p>
                     </div>
-                    <Link to="/inventory" className="text-sm font-semibold text-primary hover:text-accent flex items-center gap-1">View all cars <span className="material-symbols-outlined text-sm">arrow_forward</span></Link>
+                    <Link to="/inventory" className="text-sm font-semibold text-primary hover:text-accent flex items-center gap-1">
+                        View all cars <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                    </Link>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {[
-                        { name: 'Hyundai Verna SX', type: 'Petrol • Automatic', price: '₹10.89 Lakh', tag: 'New Arrival' },
-                        { name: 'Tata Nexon XZ+', type: 'Diesel • Manual', price: '₹11.50 Lakh' },
-                        { name: 'Mahindra XUV700', type: 'Diesel • Automatic', price: '₹14.00 Lakh', tag: 'Best Seller' },
-                    ].map((car, i) => (
-                        <div key={i} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all group">
-                            <div className="relative aspect-[16/10] bg-slate-100 overflow-hidden">
-                                <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZ9on2reKfaAeW52as0W9TitvVermkqQOTGwGUHGFM5bCQDPr3JQomAy3uKn2C9ta7SmSbrSUUJaxiGih2jDZhMfUpbTcKnZJ-RPJfNxEUS-EZ4nJ-sPFU6kBj2kUZGbL-r5IVAcPmDncOyoqNZbQSpH02EOyXXaZyH82dIaNWIXphtUdSIznx3bz3r3EVA2OCr8aT-X0PqsVL_QOdO5KMvyuQnYom1A1lLdlS20IRmgRzl2v7BYVRIjr_2c4thS8RPJ5yrqGxXQZ_" alt={car.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                {car.tag && <span className="absolute top-3 left-3 bg-primary text-white text-[10px] font-bold px-2 py-1 rounded-lg uppercase">{car.tag}</span>}
-                            </div>
-                            <div className="p-5">
-                                <h3 className="font-bold text-primary font-display mb-1">{car.name}</h3>
-                                <p className="text-xs text-slate-500 uppercase mb-3">{car.type}</p>
-                                <div className="flex items-center justify-between">
-                                    <div><p className="text-[10px] text-slate-400 uppercase font-bold">Starting at</p><p className="text-lg font-black text-primary font-display">{car.price}</p></div>
-                                    <Link to="/inventory" className="text-accent hover:text-accent-hover"><span className="material-symbols-outlined">arrow_outward</span></Link>
+
+                {carsLoading ? (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {[1, 2, 3].map(i => (
+                            <div key={i} className="bg-white rounded-2xl border border-slate-100 animate-pulse">
+                                <div className="aspect-[16/10] bg-slate-100 rounded-t-2xl" />
+                                <div className="p-5 space-y-3">
+                                    <div className="h-4 bg-slate-100 rounded w-3/4" />
+                                    <div className="h-3 bg-slate-100 rounded w-1/2" />
                                 </div>
                             </div>
-                        </div>
-                    ))}
-                </div>
+                        ))}
+                    </div>
+                ) : budgetCars.length === 0 ? (
+                    <div className="text-center py-12 bg-slate-50 rounded-2xl border border-slate-100">
+                        <span className="material-symbols-outlined text-4xl text-slate-300 mb-3 block">directions_car</span>
+                        <p className="text-slate-500 font-medium">No cars in inventory match this budget range.</p>
+                        <Link to="/inventory" className="mt-4 inline-flex items-center gap-2 h-10 px-6 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-light transition-colors">
+                            Browse All Cars
+                        </Link>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {budgetCars.map(car => (
+                            <Link
+                                key={car.id}
+                                to={`/car/${car.id}`}
+                                className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all group block"
+                            >
+                                <div className="relative aspect-[16/10] bg-slate-100 overflow-hidden">
+                                    <img
+                                        src={getPrimaryImage(car.images)}
+                                        alt={`${car.year} ${car.make} ${car.model}`}
+                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                    />
+                                </div>
+                                <div className="p-5">
+                                    <h3 className="font-bold text-primary font-display mb-1">{car.year} {car.make} {car.model}</h3>
+                                    <p className="text-xs text-slate-500 uppercase mb-3">{car.fuel_type} • {car.transmission}</p>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="text-[10px] text-slate-400 uppercase font-bold">Price</p>
+                                            <p className="text-lg font-black text-primary font-display">₹{formatPriceLakh(car.price)} L</p>
+                                        </div>
+                                        <span className="text-accent">
+                                            <span className="material-symbols-outlined">arrow_outward</span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+                )}
             </section>
         </div>
     );

@@ -1,86 +1,200 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useLocation, Link, useNavigate } from 'react-router-dom';
 import { Menu, X, Bell, Search, Plus, ChevronDown, LogOut, Home } from 'lucide-react';
 import clsx from 'clsx';
+import { useAuth } from '../contexts/AuthContext';
+import { DataProvider, useData } from '../contexts/DataContext';
+import { supabase } from '../lib/supabase';
+interface NavItem {
+    name: string;
+    href: string;
+    icon: string;
+    module: string; // maps to user_permissions.module
+}
 
 interface NavGroup {
     label: string;
-    items: { name: string; href: string; icon: string }[];
+    items: NavItem[];
 }
 
 const NAV_GROUPS: NavGroup[] = [
     {
         label: 'Main',
         items: [
-            { name: 'Dashboard', href: '/admin', icon: 'dashboard' },
-            { name: 'Inventory', href: '/admin/inventory', icon: 'directions_car' },
-            { name: 'Leads', href: '/admin/leads', icon: 'people' },
-            { name: 'Sales', href: '/admin/sales', icon: 'point_of_sale' },
-            { name: 'Bookings', href: '/admin/bookings', icon: 'event' },
+            { name: 'Dashboard', href: '/admin', icon: 'dashboard', module: 'dashboard' },
+            { name: 'Inventory', href: '/admin/inventory', icon: 'directions_car', module: 'inventory' },
+            { name: 'Leads', href: '/admin/leads', icon: 'people', module: 'leads' },
+            { name: 'Sales', href: '/admin/sales', icon: 'point_of_sale', module: 'sales' },
+            { name: 'Bookings', href: '/admin/bookings', icon: 'event', module: 'bookings' },
         ],
     },
     {
         label: 'Analytics',
         items: [
-            { name: 'Analytics', href: '/admin/analytics', icon: 'analytics' },
-            { name: 'Reports', href: '/admin/reports', icon: 'description' },
-            { name: 'Performance', href: '/admin/performance', icon: 'leaderboard' },
+            { name: 'Analytics', href: '/admin/analytics', icon: 'analytics', module: 'analytics' },
+            { name: 'Reports', href: '/admin/reports', icon: 'description', module: 'analytics' },
+            { name: 'Performance', href: '/admin/performance', icon: 'leaderboard', module: 'analytics' },
         ],
     },
     {
         label: 'CRM',
         items: [
-            { name: 'Customers', href: '/admin/customers', icon: 'contacts' },
-            { name: 'Follow-Ups', href: '/admin/follow-ups', icon: 'notifications_active' },
-            { name: 'Lead Sources', href: '/admin/lead-sources', icon: 'hub' },
+            { name: 'Customers', href: '/admin/customers', icon: 'contacts', module: 'crm' },
+            { name: 'Follow-Ups', href: '/admin/follow-ups', icon: 'notifications_active', module: 'crm' },
+            { name: 'Lead Sources', href: '/admin/lead-sources', icon: 'hub', module: 'crm' },
         ],
     },
     {
         label: 'Operations',
         items: [
-            { name: 'Inspections', href: '/admin/inspections', icon: 'checklist' },
-            { name: 'Documents', href: '/admin/documents', icon: 'folder' },
-            { name: 'Price History', href: '/admin/price-history', icon: 'trending_up' },
-            { name: 'Expenses', href: '/admin/expenses', icon: 'receipt_long' },
+            { name: 'Inspections', href: '/admin/inspections', icon: 'checklist', module: 'operations' },
+            { name: 'Documents', href: '/admin/documents', icon: 'folder', module: 'operations' },
+            { name: 'Price History', href: '/admin/price-history', icon: 'trending_up', module: 'operations' },
+            { name: 'Expenses', href: '/admin/expenses', icon: 'receipt_long', module: 'operations' },
+            { name: 'Share Logs', href: '/admin/share-logs', icon: 'share', module: 'operations' },
         ],
     },
     {
         label: 'Finance',
         items: [
-            { name: 'Accounts', href: '/admin/accounts', icon: 'account_balance' },
-            { name: 'Commissions', href: '/admin/commissions', icon: 'payments' },
-            { name: 'Tax & GST', href: '/admin/tax', icon: 'receipt' },
+            { name: 'Accounts', href: '/admin/accounts', icon: 'account_balance', module: 'finance' },
+            { name: 'Commissions', href: '/admin/commissions', icon: 'payments', module: 'finance' },
+            { name: 'Tax & GST', href: '/admin/tax', icon: 'receipt', module: 'finance' },
         ],
     },
     {
         label: 'Schedule',
         items: [
-            { name: 'Calendar', href: '/admin/calendar', icon: 'calendar_month' },
-            { name: 'Notifications', href: '/admin/notifications', icon: 'notifications' },
-            { name: 'Templates', href: '/admin/templates', icon: 'chat' },
+            { name: 'Calendar', href: '/admin/calendar', icon: 'calendar_month', module: 'schedule' },
+            { name: 'Notifications', href: '/admin/notifications', icon: 'notifications', module: 'schedule' },
+            { name: 'Templates', href: '/admin/templates', icon: 'chat', module: 'schedule' },
+        ],
+    },
+    {
+        label: 'Partners',
+        items: [
+            { name: 'Dealer Management', href: '/admin/dealers', icon: 'store', module: 'dealers' },
         ],
     },
     {
         label: 'Admin',
         items: [
-            { name: 'Users', href: '/admin/users', icon: 'manage_accounts' },
-            { name: 'Audit Logs', href: '/admin/audit-logs', icon: 'history' },
-            { name: 'Feedback', href: '/admin/feedback', icon: 'reviews' },
-            { name: 'Settings', href: '/admin/settings', icon: 'settings' },
+            { name: 'Users', href: '/admin/users', icon: 'manage_accounts', module: 'users' },
+            { name: 'Audit Logs', href: '/admin/audit-logs', icon: 'history', module: 'audit_logs' },
+            { name: 'Feedback', href: '/admin/feedback', icon: 'reviews', module: 'settings' },
+            { name: 'Settings', href: '/admin/settings', icon: 'settings', module: 'settings' },
         ],
     },
 ];
+
+// ─── Task Notifier Component ────────────────────────────────────────────────
+const TaskNotifier = () => {
+    const { tasks, refreshData } = useData();
+    const [activeNotifications, setActiveNotifications] = useState<any[]>([]);
+    
+    // Use a ref to keep track of tasks we've already notified about in this session
+    // This prevents the same task from popping up constantly
+    const notifiedIds = useRef<Set<string>>(new Set());
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const now = new Date();
+            
+            // Find tasks that are 'todo', have a due date in the past, and haven't been notified yet
+            const dueTasks = tasks.filter(t => {
+                if (t.status !== 'todo') return false;
+                if (notifiedIds.current.has(t.id)) return false;
+                
+                const dueDate = new Date(t.due_date);
+                return dueDate <= now;
+            });
+
+            if (dueTasks.length > 0) {
+                // Add new due tasks to notifications and mark as notified
+                dueTasks.forEach(t => notifiedIds.current.add(t.id));
+                setActiveNotifications(prev => [...prev, ...dueTasks]);
+            }
+        }, 10000); // Check every 10 seconds
+
+        return () => clearInterval(interval);
+    }, [tasks]);
+
+    const handleDismiss = (id: string) => {
+        setActiveNotifications(prev => prev.filter(t => t.id !== id));
+    };
+
+    const handleMarkComplete = async (id: string) => {
+        // Optimistically dismiss
+        handleDismiss(id);
+        
+        // Update database
+        await supabase.from('tasks').update({ status: 'completed' }).eq('id', id);
+        refreshData();
+    };
+
+    if (activeNotifications.length === 0) return null;
+
+    return (
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm pointer-events-none">
+            {activeNotifications.map(task => (
+                <div key={task.id} className="pointer-events-auto bg-white border border-slate-200 rounded-2xl p-4 shadow-2xl animate-fade-in relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 flex flex-col h-full bg-amber-400"></div>
+                    <div className="flex justify-between items-start mb-2 pl-2">
+                        <div className="flex items-center gap-2">
+                            <div className="size-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center">
+                                <span className="material-symbols-outlined text-sm">notifications_active</span>
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Follow-Up Due</p>
+                                <p className="text-sm font-bold text-slate-800">{task.title}</p>
+                            </div>
+                        </div>
+                        <button onClick={() => handleDismiss(task.id)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                            <span className="material-symbols-outlined text-lg">close</span>
+                        </button>
+                    </div>
+                    {task.description && <p className="text-xs text-slate-500 mb-3 pl-2 line-clamp-2">{task.description}</p>}
+                    
+                    {task.lead && (
+                        <div className="mb-3 pl-2 flex items-center gap-2">
+                            <span className="material-symbols-outlined text-sm text-slate-400">person</span>
+                            <Link to={`/admin/leads/${task.lead_id}`} onClick={() => handleDismiss(task.id)} className="text-xs font-semibold text-primary hover:underline">
+                                {task.lead.full_name}
+                            </Link>
+                        </div>
+                    )}
+                    
+                    <div className="flex gap-2 pl-2 mt-3">
+                        <button onClick={() => handleDismiss(task.id)} className="flex-1 py-1.5 text-xs font-bold text-slate-600 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
+                            Remind Later
+                        </button>
+                        <button onClick={() => handleMarkComplete(task.id)} className="flex-1 py-1.5 text-xs font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors flex justify-center items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px]">check</span> Done
+                        </button>
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+};
 
 const AdminLayout: React.FC = () => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
     const location = useLocation();
     const navigate = useNavigate();
+    const { profile, signOut, isAdmin, hasPermission } = useAuth();
 
-    const handleLogout = () => {
-        // Clear any admin session/auth data
-        localStorage.removeItem('adminAuth');
-        sessionStorage.removeItem('adminAuth');
+    // Filter nav groups based on permissions for staff users
+    const visibleNavGroups = NAV_GROUPS.map(group => ({
+        ...group,
+        items: group.items.filter(item =>
+            isAdmin || hasPermission(item.module, 'view')
+        ),
+    })).filter(group => group.items.length > 0);
+
+    const handleLogout = async () => {
+        await signOut();
         navigate('/admin/login');
     };
 
@@ -95,7 +209,8 @@ const AdminLayout: React.FC = () => {
     const activeGroup = NAV_GROUPS.find(g => g.items.some(i => isNavActive(i.href)));
 
     return (
-        <div className="min-h-screen w-full bg-slate-50 flex font-body">
+        <DataProvider>
+            <div className="min-h-screen w-full bg-slate-50 flex font-body">
             {/* Sidebar Overlay */}
             {sidebarOpen && (
                 <div
@@ -119,7 +234,7 @@ const AdminLayout: React.FC = () => {
                             <span className="material-symbols-outlined text-lg">directions_car</span>
                         </div>
                         <div>
-                            <p className="text-sm font-bold text-primary font-display">SSSM Admin</p>
+                            <p className="text-sm font-bold text-primary font-display">Shree Swami Samarth Admin</p>
                             <p className="text-[10px] text-slate-400">Kolhapur Branch</p>
                         </div>
                     </Link>
@@ -131,7 +246,7 @@ const AdminLayout: React.FC = () => {
                 {/* Navigation */}
                 <nav className="flex-1 py-3 px-3 overflow-y-auto flex flex-col min-h-0">
                     <div className="flex-1">
-                        {NAV_GROUPS.map(group => {
+                        {visibleNavGroups.map(group => {
                             const isOpen = !collapsed[group.label] || (activeGroup?.label === group.label);
                             const hasActive = group.items.some(i => isNavActive(i.href));
 
@@ -228,10 +343,12 @@ const AdminLayout: React.FC = () => {
                             <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-danger ring-2 ring-white"></span>
                         </Link>
                         <div className="flex items-center gap-3 pl-3 border-l border-slate-100">
-                            <div className="size-9 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white text-xs font-bold shadow-sm">VS</div>
+                            <div className="size-9 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white text-xs font-bold shadow-sm">
+                                {profile?.full_name ? profile.full_name.charAt(0).toUpperCase() : 'A'}
+                            </div>
                             <div className="hidden md:block">
-                                <p className="text-sm font-semibold text-primary">Vikas Shinde</p>
-                                <p className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">General Manager</p>
+                                <p className="text-sm font-semibold text-primary">{profile?.full_name ?? 'Admin'}</p>
+                                <p className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">Administrator</p>
                             </div>
                         </div>
                         <button
@@ -245,13 +362,16 @@ const AdminLayout: React.FC = () => {
                 </header>
 
                 {/* Page Content */}
-                <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+                <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto relative">
                     <div className="max-w-7xl mx-auto w-full">
                         <Outlet />
                     </div>
+                    {/* Inject Task Notifier */}
+                    <TaskNotifier />
                 </main>
             </div>
-        </div>
+            </div>
+        </DataProvider>
     );
 };
 

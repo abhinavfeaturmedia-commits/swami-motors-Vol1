@@ -1,15 +1,5 @@
-import React, { useState } from 'react';
-
-const EVENTS: Record<string, Array<{ title: string; time: string; type: string }>> = {
-    '2024-11-05': [{ title: 'Test Drive — Rajesh Kumar (Creta)', time: '10:30 AM', type: 'test-drive' }],
-    '2024-11-07': [{ title: 'Delivery — Honda City to Sanjay P.', time: '11:00 AM', type: 'delivery' }, { title: 'Follow-Up — Amit Joshi', time: '02:00 PM', type: 'follow-up' }],
-    '2024-11-10': [{ title: 'Service — Fortuner brake check', time: '09:30 AM', type: 'service' }],
-    '2024-11-12': [{ title: 'Test Drive — Priya D. (Fortuner)', time: '10:00 AM', type: 'test-drive' }, { title: 'Follow-Up — Meera Shah', time: '03:30 PM', type: 'follow-up' }],
-    '2024-11-15': [{ title: 'Monthly Team Meeting', time: '04:00 PM', type: 'meeting' }],
-    '2024-11-18': [{ title: 'Service — Nexon ceramic coating', time: '10:00 AM', type: 'service' }],
-    '2024-11-22': [{ title: 'Delivery — Maruti Swift to Deepak K.', time: '11:30 AM', type: 'delivery' }],
-    '2024-11-25': [{ title: 'Follow-Up — Ravi Shinde (Seltos)', time: '01:00 PM', type: 'follow-up' }],
-};
+import React, { useState, useMemo } from 'react';
+import { useData } from '../../contexts/DataContext';
 
 const typeColors: Record<string, { bg: string; dot: string }> = {
     'test-drive': { bg: 'bg-blue-50 border-blue-200', dot: 'bg-blue-500' },
@@ -23,9 +13,69 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const CalendarView = () => {
-    const [year, setYear] = useState(2024);
-    const [month, setMonth] = useState(10); // November (0-indexed)
-    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const { tasks, bookings } = useData();
+
+    const [year, setYear] = useState(new Date().getFullYear());
+    const [month, setMonth] = useState(new Date().getMonth());
+    const [selectedDate, setSelectedDate] = useState<string | null>(new Date().toISOString().split('T')[0]);
+
+    // Build dynamic events map from active database context
+    const eventsMap = useMemo(() => {
+        const map: Record<string, Array<{ title: string; time: string; type: string }>> = {};
+
+        // 1. Process CRM Tasks
+        tasks.forEach(t => {
+            if (!t.due_date || t.status === 'completed') return;
+            const dateObj = new Date(t.due_date);
+            
+            // Adjust to local date string to prevent timezone offset bugs in the calendar key
+            const offset = dateObj.getTimezoneOffset();
+            const dateStr = new Date(dateObj.getTime() - (offset*60*1000)).toISOString().split('T')[0];
+            
+            const timeStr = dateObj.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+
+            if (!map[dateStr]) map[dateStr] = [];
+            
+            map[dateStr].push({ 
+                title: t.title, 
+                time: timeStr, 
+                type: 'follow-up' 
+            });
+        });
+
+        // 2. Process Bookings (Test Drives & Services)
+        bookings.forEach(b => {
+            if (!b.booking_date) return;
+            const dateObj = new Date(b.booking_date);
+            
+            const offset = dateObj.getTimezoneOffset();
+            const dateStr = new Date(dateObj.getTime() - (offset*60*1000)).toISOString().split('T')[0];
+            const timeStr = dateObj.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+
+            if (!map[dateStr]) map[dateStr] = [];
+            
+            const evtType = b.type === 'service' ? 'service' : 'test-drive';
+            const customerName = b.lead?.full_name || 'Customer';
+            const carName = b.car ? ` (${b.car.make})` : '';
+
+            map[dateStr].push({ 
+                title: `${evtType.replace('-', ' ').toUpperCase()}: ${customerName}${carName}`, 
+                time: timeStr, 
+                type: evtType 
+            });
+        });
+
+        // Sort events chronologically within each day bin
+        Object.keys(map).forEach(key => {
+            map[key].sort((a, b) => {
+                const timeA = new Date(`1970/01/01 ${a.time}`).getTime();
+                const timeB = new Date(`1970/01/01 ${b.time}`).getTime();
+                return timeA - timeB;
+            });
+        });
+
+        return map;
+    }, [tasks, bookings]);
 
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -33,8 +83,14 @@ const CalendarView = () => {
     for (let i = 0; i < firstDay; i++) cells.push(null);
     for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-    const getDateKey = (day: number) => `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const selectedEvents = selectedDate ? (EVENTS[selectedDate] || []) : [];
+    const getDateKey = (day: number) => {
+        const y = year;
+        const m = String(month + 1).padStart(2, '0');
+        const d = String(day).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+    
+    const selectedEvents = selectedDate ? (eventsMap[selectedDate] || []) : [];
 
     const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
     const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
@@ -46,9 +102,9 @@ const CalendarView = () => {
                     <h1 className="text-2xl font-black text-primary font-display">Calendar</h1>
                     <p className="text-slate-500 text-sm">Unified view of test drives, deliveries, services & follow-ups.</p>
                 </div>
-                <button className="h-10 px-5 bg-accent text-primary font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-accent-hover transition-colors">
-                    <span className="material-symbols-outlined text-lg">add</span> Add Event
-                </button>
+                <div className="flex gap-2 text-right">
+                    <span className="h-10 py-2.5 px-4 text-xs font-bold uppercase text-green-600 bg-green-100 rounded-xl">SYNCED</span>
+                </div>
             </div>
 
             {/* Legend */}
@@ -75,14 +131,18 @@ const CalendarView = () => {
                         {cells.map((day, i) => {
                             if (day === null) return <div key={`e${i}`} />;
                             const dateKey = getDateKey(day);
-                            const events = EVENTS[dateKey] || [];
+                            const events = eventsMap[dateKey] || [];
                             const isSelected = selectedDate === dateKey;
+                            
+                            const isToday = new Date().toISOString().split('T')[0] === dateKey;
+
                             return (
-                                <button key={i} onClick={() => setSelectedDate(dateKey)} className={`aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all text-sm ${isSelected ? 'bg-primary text-white' : events.length > 0 ? 'bg-slate-50 hover:bg-primary/5 font-medium' : 'hover:bg-slate-50'}`}>
-                                    <span className={isSelected ? 'font-bold' : ''}>{day}</span>
+                                <button key={i} onClick={() => setSelectedDate(dateKey)} className={`aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all text-sm ${isSelected ? 'bg-primary text-white' : events.length > 0 ? 'bg-slate-50 hover:bg-primary/5 font-medium' : isToday ? 'border border-primary text-primary' : 'hover:bg-slate-50'}`}>
+                                    <span className={isSelected || isToday ? 'font-bold' : ''}>{day}</span>
                                     {events.length > 0 && (
-                                        <div className="flex gap-0.5">
-                                            {events.map((e, j) => <span key={j} className={`size-1.5 rounded-full ${isSelected ? 'bg-accent' : typeColors[e.type]?.dot || 'bg-slate-400'}`} />)}
+                                        <div className="flex gap-0.5 mt-1">
+                                            {events.slice(0, 3).map((e, j) => <span key={j} className={`size-1.5 rounded-full ${isSelected ? 'bg-accent' : typeColors[e.type]?.dot || 'bg-slate-400'}`} />)}
+                                            {events.length > 3 && <span className={`size-1.5 rounded-full ${isSelected ? 'bg-accent/50' : 'bg-slate-300'}`} />}
                                         </div>
                                     )}
                                 </button>
@@ -92,32 +152,33 @@ const CalendarView = () => {
                 </div>
 
                 {/* Event Detail */}
-                <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
-                    <h2 className="font-bold text-primary font-display text-sm mb-4">
-                        {selectedDate ? new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Select a day'}
+                <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)] flex flex-col max-h-[600px] overflow-hidden">
+                    <h2 className="font-bold text-primary font-display text-sm mb-4 shrink-0 border-b border-slate-100 pb-4">
+                        {selectedDate ? new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : 'Select a day'}
                     </h2>
-                    {selectedEvents.length > 0 ? (
-                        <div className="space-y-3">
-                            {selectedEvents.map((e, i) => {
+                    
+                    <div className="overflow-y-auto pr-2 space-y-3">
+                        {selectedEvents.length > 0 ? (
+                            selectedEvents.map((e, i) => {
                                 const tc = typeColors[e.type];
                                 return (
                                     <div key={i} className={`p-3 rounded-xl border ${tc?.bg || 'bg-slate-50 border-slate-200'}`}>
                                         <div className="flex items-center gap-2 mb-1">
                                             <span className={`size-2 rounded-full ${tc?.dot || 'bg-slate-400'}`} />
-                                            <span className="text-[10px] font-bold text-slate-500 uppercase">{e.type.replace('-', ' ')}</span>
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{e.type.replace('-', ' ')}</span>
                                         </div>
                                         <p className="text-sm font-semibold text-primary">{e.title}</p>
-                                        <p className="text-xs text-slate-500 mt-0.5"><span className="material-symbols-outlined text-xs align-middle mr-0.5">schedule</span>{e.time}</p>
+                                        <p className="text-xs text-slate-500 mt-1 font-medium"><span className="material-symbols-outlined text-[13px] align-middle mr-1">schedule</span>{e.time}</p>
                                     </div>
                                 );
-                            })}
-                        </div>
-                    ) : (
-                        <div className="text-center py-12">
-                            <span className="material-symbols-outlined text-3xl text-slate-300 mb-2">event_busy</span>
-                            <p className="text-sm text-slate-400">{selectedDate ? 'No events on this day' : 'Click a date to view events'}</p>
-                        </div>
-                    )}
+                            })
+                        ) : (
+                            <div className="text-center py-12">
+                                <span className="material-symbols-outlined text-3xl text-slate-200 mb-2">event_busy</span>
+                                <p className="text-sm text-slate-400">No appointments scheduled.</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

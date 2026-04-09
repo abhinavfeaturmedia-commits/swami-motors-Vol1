@@ -1,8 +1,34 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, ArrowRight } from 'lucide-react';
+import { Check, ArrowRight, ShieldCheck } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 const Insurance = () => {
+    const [form, setForm] = useState({ full_name: '', phone: '', car_model: '' });
+    const [loading, setLoading] = useState(false);
+    const [submitted, setSubmitted] = useState(false);
+    const [error, setError] = useState('');
+
+    const set = (f: string, v: string) => setForm(prev => ({ ...prev, [f]: v }));
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+        setLoading(true);
+
+        const { error: err } = await supabase.from('leads').insert({
+            type: 'insurance',
+            full_name: form.full_name.trim(),
+            phone: form.phone.trim(),
+            car_model: form.car_model.trim() || null,
+            source: 'website_insurance',
+        });
+
+        if (err) setError('Something went wrong. Please call us directly.');
+        else setSubmitted(true);
+        setLoading(false);
+    };
+
     return (
         <div className="w-full">
             {/* Hero */}
@@ -26,32 +52,57 @@ const Insurance = () => {
 
                         {/* Estimate Form */}
                         <div className="bg-white rounded-2xl p-8 shadow-xl">
-                            <h3 className="text-xl font-bold text-primary font-display mb-2">Get an Estimate</h3>
-                            <p className="text-sm text-slate-500 mb-6">Fill the details to get a quote in minutes.</p>
-                            <form className="space-y-4">
-                                <div>
-                                    <label className="text-sm font-medium text-slate-700 mb-1.5 block">Full Name</label>
-                                    <input type="text" placeholder="Enter your full name" className="w-full h-12 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium text-slate-700 mb-1.5 block">Phone Number</label>
-                                    <div className="flex">
-                                        <span className="h-12 px-4 bg-slate-50 border border-r-0 border-slate-200 rounded-l-xl flex items-center text-sm text-slate-500">📱</span>
-                                        <input type="tel" placeholder="10-digit mobile number" className="flex-1 h-12 border border-slate-200 rounded-r-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                            {submitted ? (
+                                <div className="text-center py-8">
+                                    <div className="size-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                                        <ShieldCheck size={32} className="text-blue-500" />
                                     </div>
+                                    <h3 className="text-xl font-bold text-primary font-display mb-2">Quote Requested!</h3>
+                                    <p className="text-sm text-slate-500 mb-6">Our insurance advisor will contact you on +91 {form.phone} with the best plans for your {form.car_model || 'car'}.</p>
+                                    <button
+                                        onClick={() => { setSubmitted(false); setForm({ full_name: '', phone: '', car_model: '' }); }}
+                                        className="h-10 px-6 bg-primary text-white font-semibold rounded-xl text-sm hover:bg-primary-light transition-colors"
+                                    >
+                                        Check Another Vehicle
+                                    </button>
                                 </div>
-                                <div>
-                                    <label className="text-sm font-medium text-slate-700 mb-1.5 block">Vehicle Model</label>
-                                    <div className="flex">
-                                        <span className="h-12 px-4 bg-slate-50 border border-r-0 border-slate-200 rounded-l-xl flex items-center text-sm text-slate-400">🚗</span>
-                                        <input type="text" placeholder="e.g. Swift Dzire ZDI" className="flex-1 h-12 border border-slate-200 rounded-r-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
-                                    </div>
-                                </div>
-                                <button className="w-full h-12 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-colors text-sm flex items-center justify-center gap-2">
-                                    Get Insurance Quote <ArrowRight size={16} />
-                                </button>
-                                <p className="text-xs text-slate-400 text-center">By clicking, you agree to our Terms & Privacy Policy.</p>
-                            </form>
+                            ) : (
+                                <>
+                                    <h3 className="text-xl font-bold text-primary font-display mb-2">Get an Estimate</h3>
+                                    <p className="text-sm text-slate-500 mb-6">Fill the details to get a quote in minutes.</p>
+
+                                    {error && (
+                                        <div className="bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3 mb-5 flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-lg">error</span>{error}
+                                        </div>
+                                    )}
+
+                                    <form onSubmit={handleSubmit} className="space-y-4">
+                                        <div>
+                                            <label className="text-sm font-medium text-slate-700 mb-1.5 block">Full Name <span className="text-red-400">*</span></label>
+                                            <input type="text" value={form.full_name} onChange={e => set('full_name', e.target.value)} required disabled={loading} placeholder="Enter your full name" className="w-full h-12 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                                        </div>
+                                        <div>
+                                            <label className="text-sm font-medium text-slate-700 mb-1.5 block">Phone Number <span className="text-red-400">*</span></label>
+                                            <div className="flex">
+                                                <span className="h-12 px-4 bg-slate-50 border border-r-0 border-slate-200 rounded-l-xl flex items-center text-sm text-slate-500">+91</span>
+                                                <input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required disabled={loading} placeholder="10-digit mobile number" className="flex-1 h-12 border border-slate-200 rounded-r-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="text-sm font-medium text-slate-700 mb-1.5 block">Vehicle Model</label>
+                                            <div className="flex">
+                                                <span className="h-12 px-4 bg-slate-50 border border-r-0 border-slate-200 rounded-l-xl flex items-center text-sm text-slate-400">🚗</span>
+                                                <input type="text" value={form.car_model} onChange={e => set('car_model', e.target.value)} disabled={loading} placeholder="e.g. Swift Dzire ZDI" className="flex-1 h-12 border border-slate-200 rounded-r-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                                            </div>
+                                        </div>
+                                        <button type="submit" disabled={loading} className="w-full h-12 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-colors text-sm flex items-center justify-center gap-2">
+                                            {loading ? <span className="size-4 animate-spin border-2 border-white/30 border-t-white rounded-full"/> : <>Get Insurance Quote <ArrowRight size={16} /></>}
+                                        </button>
+                                        <p className="text-xs text-slate-400 text-center">By clicking, you agree to our Terms & Privacy Policy.</p>
+                                    </form>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>

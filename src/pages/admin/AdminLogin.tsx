@@ -1,23 +1,74 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 
 const AdminLogin = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
+    const location = useLocation();
+    const { profile } = useAuth();
 
-    const handleSubmit = (e: React.FormEvent) => {
+    // If already logged in as admin or staff, skip login page
+    React.useEffect(() => {
+        if (profile?.role === 'admin' || profile?.role === 'staff') {
+            const from = (location.state as any)?.from?.pathname ?? '/admin';
+            navigate(from, { replace: true });
+        }
+    }, [profile, navigate, location]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        setLoading(true);
 
-        // Simple demo login — replace with Supabase auth later
-        if (email && password) {
-            localStorage.setItem('adminLoggedIn', 'true');
-            navigate('/admin');
-        } else {
-            setError('Please enter both email and password.');
+        try {
+            const { data, error: signInError } = await supabase.auth.signInWithPassword({
+                email: email.trim(),
+                password,
+            });
+
+            if (signInError) {
+                setError('Invalid email or password. Please try again.');
+                return;
+            }
+
+            if (!data.user) {
+                setError('Login failed. Please try again.');
+                return;
+            }
+
+            // Verify the user is an admin or staff
+            const { data: profileData, error: profileError } = await supabase
+                .from('profiles')
+                .select('role, is_active')
+                .eq('id', data.user.id)
+                .single();
+
+            if (profileError || !['admin', 'staff'].includes(profileData?.role)) {
+                await supabase.auth.signOut();
+                setError('Access denied. This portal is for staff and admin users only.');
+                return;
+            }
+
+            if (profileData?.is_active === false) {
+                await supabase.auth.signOut();
+                setError('Your account has been deactivated. Contact the administrator.');
+                return;
+            }
+
+            // Success — redirect to intended page or dashboard
+            const from = (location.state as any)?.from?.pathname ?? '/admin';
+            navigate(from, { replace: true });
+
+        } catch {
+            setError('An unexpected error occurred. Please try again.');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -53,9 +104,9 @@ const AdminLogin = () => {
 
                     <div className="grid grid-cols-3 gap-6">
                         {[
-                            { val: '87', label: 'Active Cars', icon: 'inventory_2' },
-                            { val: '156', label: 'Leads', icon: 'people' },
-                            { val: '₹1.2Cr', label: 'Revenue', icon: 'trending_up' },
+                            { val: 'Live', label: 'Inventory', icon: 'inventory_2' },
+                            { val: 'CRM', label: 'Leads', icon: 'people' },
+                            { val: 'RLS', label: 'Secured', icon: 'shield' },
                         ].map(stat => (
                             <div key={stat.label} className="bg-white/5 backdrop-blur rounded-xl p-4 border border-white/10 text-center">
                                 <span className="material-symbols-outlined text-accent text-xl mb-1 block">{stat.icon}</span>
@@ -93,7 +144,7 @@ const AdminLogin = () => {
 
                     {error && (
                         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-6 flex items-center gap-2">
-                            <span className="material-symbols-outlined text-lg">error</span>
+                            <span className="material-symbols-outlined text-lg shrink-0">error</span>
                             {error}
                         </div>
                     )}
@@ -110,6 +161,7 @@ const AdminLogin = () => {
                                     placeholder="admin@swamimotors.com"
                                     className="w-full h-12 border border-slate-200 rounded-xl pl-11 pr-4 text-sm text-primary placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all"
                                     required
+                                    disabled={loading}
                                 />
                             </div>
                         </div>
@@ -117,7 +169,6 @@ const AdminLogin = () => {
                         <div>
                             <div className="flex items-center justify-between mb-2">
                                 <label className="text-sm font-medium text-slate-700">Password</label>
-                                <a href="#" className="text-xs font-semibold text-accent hover:underline">Forgot Password?</a>
                             </div>
                             <div className="relative">
                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-lg">lock</span>
@@ -128,6 +179,7 @@ const AdminLogin = () => {
                                     placeholder="Enter your password"
                                     className="w-full h-12 border border-slate-200 rounded-xl pl-11 pr-12 text-sm text-primary placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all"
                                     required
+                                    disabled={loading}
                                 />
                                 <button
                                     type="button"
@@ -139,26 +191,28 @@ const AdminLogin = () => {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                            <input type="checkbox" id="remember" className="w-4 h-4 rounded border-slate-300 accent-primary" />
-                            <label htmlFor="remember" className="text-sm text-slate-600">Remember me for 30 days</label>
-                        </div>
-
                         <button
                             type="submit"
-                            className="w-full h-12 bg-gradient-to-r from-primary to-primary-light text-white font-bold rounded-xl hover:opacity-90 transition-all shadow-lg shadow-primary/20 text-sm flex items-center justify-center gap-2"
+                            disabled={loading}
+                            className="w-full h-12 bg-gradient-to-r from-primary to-primary-light text-white font-bold rounded-xl hover:opacity-90 transition-all shadow-lg shadow-primary/20 text-sm flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                            <span className="material-symbols-outlined text-lg">login</span>
-                            Sign In to Dashboard
+                            {loading ? (
+                                <>
+                                    <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    Signing in…
+                                </>
+                            ) : (
+                                <>
+                                    <span className="material-symbols-outlined text-lg">login</span>
+                                    Sign In to Dashboard
+                                </>
+                            )}
                         </button>
                     </form>
 
                     <div className="mt-8 pt-6 border-t border-slate-100 text-center">
                         <p className="text-xs text-slate-400">
                             This portal is restricted to authorized personnel only.
-                        </p>
-                        <p className="text-xs text-slate-400 mt-1">
-                            Need access? Contact <a href="mailto:admin@swamimotors.com" className="text-accent font-semibold hover:underline">admin@swamimotors.com</a>
                         </p>
                         <Link
                             to="/"
@@ -173,7 +227,7 @@ const AdminLogin = () => {
                         <span className="material-symbols-outlined text-accent text-lg shrink-0">security</span>
                         <div>
                             <p className="text-xs font-bold text-primary mb-0.5">Secure Access</p>
-                            <p className="text-[11px] text-slate-500">Your session is encrypted end-to-end. All activities are logged for security compliance.</p>
+                            <p className="text-[11px] text-slate-500">Authenticated via Supabase Auth. All activities are logged for security compliance.</p>
                         </div>
                     </div>
                 </div>

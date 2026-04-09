@@ -1,122 +1,382 @@
 import React, { useState } from 'react';
+import { useData } from '../../contexts/DataContext';
 
-const CUSTOMERS = [
-    { id: '1', name: 'Rajesh Kumar', phone: '+91 98765 43210', email: 'rajesh@email.com', avatar: 'RK', purchases: 2, lastPurchase: 'Hyundai Creta 2022', date: '15 Sep 2024', value: '₹28.5L', type: 'VIP' },
-    { id: '2', name: 'Priya Deshmukh', phone: '+91 87654 32109', email: 'priya@email.com', avatar: 'PD', purchases: 1, lastPurchase: 'Toyota Fortuner 2021', date: '22 Aug 2024', value: '₹32.0L', type: 'Recent' },
-    { id: '3', name: 'Amit Joshi', phone: '+91 76543 21098', email: 'amit@email.com', avatar: 'AJ', purchases: 1, lastPurchase: 'Tata Nexon 2023', date: '10 Oct 2024', value: '₹10.5L', type: 'Recent' },
-    { id: '4', name: 'Sanjay Patil', phone: '+91 65432 10987', email: 'sanjay@email.com', avatar: 'SP', purchases: 3, lastPurchase: 'Honda City 2020', date: '05 Jul 2024', value: '₹42.0L', type: 'VIP' },
-    { id: '5', name: 'Meera Shah', phone: '+91 54321 09876', email: 'meera@email.com', avatar: 'MS', purchases: 1, lastPurchase: 'Maruti Swift 2022', date: '28 Oct 2024', value: '₹6.8L', type: 'Recent' },
-    { id: '6', name: 'Deepak Kulkarni', phone: '+91 43210 98765', email: 'deepak@email.com', avatar: 'DK', purchases: 2, lastPurchase: 'Kia Seltos 2023', date: '01 Jun 2024', value: '₹25.3L', type: 'Repeat' },
-];
+interface Customer {
+    id: string;
+    full_name: string;
+    phone: string;
+    email: string | null;
+    alternate_phone: string | null;
+    address: string | null;
+    city: string | null;
+    occupation: string | null;
+    date_of_birth: string | null;
+    notes: string | null;
+    created_at: string;
+}
 
-const TABS = ['All', 'Recent Buyers', 'Repeat', 'VIP'];
+const emptyForm = {
+    full_name: '',
+    phone: '',
+    alternate_phone: '',
+    email: '',
+    address: '',
+    city: 'Kolhapur',
+    occupation: '',
+    date_of_birth: '',
+    notes: '',
+};
 
 const Customers = () => {
-    const [tab, setTab] = useState('All');
+    const { customers, sales, loading, refreshData } = useData();
     const [search, setSearch] = useState('');
-    const [detail, setDetail] = useState<string | null>(null);
+    const [detail, setDetail] = useState<Customer | null>(null);
+    const [isAdding, setIsAdding] = useState(false);
+    const [addForm, setAddForm] = useState(emptyForm);
+    const [saving, setSaving] = useState(false);
 
-    const filtered = CUSTOMERS
-        .filter(c => tab === 'All' || c.type === tab.replace(' Buyers', ''))
-        .filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+    const filtered = customers.filter(c =>
+        c.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+        c.phone?.includes(search) ||
+        (c.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
+        (c.city ?? '').toLowerCase().includes(search.toLowerCase())
+    );
 
-    const selectedCustomer = CUSTOMERS.find(c => c.id === detail);
+    const formatDate = (dateStr: string | null) => {
+        if (!dateStr) return '—';
+        return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    };
+
+    const formatCurrency = (val: number) => {
+        if (val >= 10000000) return `₹${(val / 10000000).toFixed(2)} Cr`;
+        if (val >= 100000) return `₹${(val / 100000).toFixed(1)} L`;
+        return `₹${val.toLocaleString('en-IN')}`;
+    };
+
+    const getCustomerSales = (id: string) => sales.filter(s => s.customer_id === id);
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!addForm.full_name || !addForm.phone) return;
+        setSaving(true);
+        const { supabase } = await import('../../lib/supabase');
+        const { error } = await supabase.from('customers').insert({
+            full_name: addForm.full_name,
+            phone: addForm.phone,
+            alternate_phone: addForm.alternate_phone || null,
+            email: addForm.email || null,
+            address: addForm.address || null,
+            city: addForm.city || 'Kolhapur',
+            occupation: addForm.occupation || null,
+            date_of_birth: addForm.date_of_birth || null,
+            notes: addForm.notes || null,
+        });
+        setSaving(false);
+        if (!error) {
+            setIsAdding(false);
+            setAddForm(emptyForm);
+            refreshData();
+        } else {
+            console.error(error);
+            alert('Failed to add customer');
+        }
+    };
 
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-black text-primary font-display">Customer Database</h1>
-                    <p className="text-slate-500 text-sm">{CUSTOMERS.length} customers · {CUSTOMERS.filter(c => c.type === 'VIP').length} VIP</p>
+                    <h1 className="text-2xl font-black text-primary font-display">Customer Directory</h1>
+                    <p className="text-slate-500 text-sm">{loading ? '...' : customers.length} verified customers in your database.</p>
                 </div>
-                <button className="h-10 px-5 bg-primary text-white font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-primary-light transition-colors">
-                    <span className="material-symbols-outlined text-lg">person_add</span> Add Customer
-                </button>
-            </div>
-
-            {/* Search + Tabs */}
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                <div className="flex gap-1 border-b border-slate-200">
-                    {TABS.map(t => (
-                        <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-all ${tab === t ? 'text-primary border-primary font-bold' : 'text-slate-500 border-transparent hover:text-primary'}`}>{t}</button>
-                    ))}
-                </div>
-                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 h-10 w-64">
-                    <span className="material-symbols-outlined text-slate-400 text-lg">search</span>
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customers..." className="bg-transparent text-sm text-primary outline-none w-full" />
+                <div className="flex gap-2">
+                    <button onClick={() => setIsAdding(true)} className="h-10 px-5 bg-primary text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-primary-light transition-colors shadow-sm">
+                        <span className="material-symbols-outlined text-lg">person_add</span> Add Customer
+                    </button>
+                    <button onClick={refreshData} className="h-10 w-10 flex items-center justify-center border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-50 transition-colors" title="Refresh">
+                        <span className="material-symbols-outlined text-lg">refresh</span>
+                    </button>
                 </div>
             </div>
 
-            <div className="flex gap-6">
-                {/* Table */}
-                <div className={`bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden flex-1 ${detail ? 'hidden lg:block' : ''}`}>
-                    <table className="w-full">
-                        <thead>
-                            <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
-                                <th className="text-left px-5 py-3">Customer</th>
-                                <th className="text-left px-5 py-3">Contact</th>
-                                <th className="text-left px-5 py-3">Purchases</th>
-                                <th className="text-left px-5 py-3">Last Purchase</th>
-                                <th className="text-left px-5 py-3">Total Value</th>
-                                <th className="text-left px-5 py-3">Actions</th>
+            {/* Search */}
+            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 h-10 w-full max-w-md">
+                <span className="material-symbols-outlined text-slate-400 text-lg">search</span>
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, phone, email or city…" className="bg-transparent text-sm text-primary outline-none w-full" />
+                {search && <button onClick={() => setSearch('')} className="material-symbols-outlined text-slate-300 text-base hover:text-slate-500">close</button>}
+            </div>
+
+            {/* Table */}
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden">
+                <table className="w-full min-w-[600px]">
+                    <thead>
+                        <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                            <th className="text-left px-5 py-3">Customer</th>
+                            <th className="text-left px-5 py-3">Contact</th>
+                            <th className="text-left px-5 py-3">City</th>
+                            <th className="text-left px-5 py-3">Sales</th>
+                            <th className="text-left px-5 py-3">Added On</th>
+                            <th className="text-left px-5 py-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {loading ? (
+                            <tr><td colSpan={6} className="py-10 text-center text-slate-400">Loading customers...</td></tr>
+                        ) : filtered.length === 0 ? (
+                            <tr>
+                                <td colSpan={6} className="py-16 text-center">
+                                    <span className="material-symbols-outlined text-4xl text-slate-200 mb-3 block">people_alt</span>
+                                    <p className="text-slate-400 font-medium">No customers found</p>
+                                    <p className="text-xs text-slate-300 mt-1">Convert leads or add a customer manually.</p>
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.map(c => (
-                                <tr key={c.id} onClick={() => setDetail(c.id)} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/50 cursor-pointer transition-colors ${detail === c.id ? 'bg-primary/5' : ''}`}>
-                                    <td className="px-5 py-3.5">
-                                        <div className="flex items-center gap-2">
-                                            <div className="size-8 rounded-full bg-gradient-to-br from-primary to-primary-light text-white flex items-center justify-center text-[10px] font-bold">{c.avatar}</div>
-                                            <div>
-                                                <p className="text-sm font-semibold text-primary">{c.name}</p>
-                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${c.type === 'VIP' ? 'bg-amber-100 text-amber-700' : c.type === 'Repeat' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{c.type}</span>
+                        ) : (
+                            filtered.map((c: Customer) => {
+                                const custSales = getCustomerSales(c.id);
+                                return (
+                                    <tr key={c.id} onClick={() => setDetail(c)} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 cursor-pointer transition-colors">
+                                        <td className="px-5 py-3.5">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="size-9 rounded-full bg-gradient-to-br from-primary to-primary-light text-white flex items-center justify-center text-sm font-bold shrink-0">
+                                                    {c.full_name?.charAt(0).toUpperCase() || 'U'}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-semibold text-primary">{c.full_name}</p>
+                                                    {c.occupation && <p className="text-[10px] text-slate-400">{c.occupation}</p>}
+                                                </div>
                                             </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-5 py-3.5"><p className="text-sm text-slate-600">{c.phone}</p><p className="text-[10px] text-slate-400">{c.email}</p></td>
-                                    <td className="px-5 py-3.5 text-sm font-bold text-primary">{c.purchases}</td>
-                                    <td className="px-5 py-3.5"><p className="text-sm text-slate-600">{c.lastPurchase}</p><p className="text-[10px] text-slate-400">{c.date}</p></td>
-                                    <td className="px-5 py-3.5 text-sm font-bold text-primary">{c.value}</td>
-                                    <td className="px-5 py-3.5">
-                                        <div className="flex gap-1">
-                                            <button className="p-1.5 hover:bg-green-50 rounded-lg" title="Call"><span className="material-symbols-outlined text-green-500 text-base">call</span></button>
-                                            <button className="p-1.5 hover:bg-green-50 rounded-lg" title="WhatsApp"><span className="material-symbols-outlined text-green-600 text-base">chat</span></button>
-                                            <button className="p-1.5 hover:bg-blue-50 rounded-lg" title="Email"><span className="material-symbols-outlined text-blue-500 text-base">mail</span></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                        </td>
+                                        <td className="px-5 py-3.5">
+                                            <p className="text-sm font-medium text-slate-700">{c.phone}</p>
+                                            {c.email && <p className="text-[10px] text-slate-400 truncate max-w-[160px]">{c.email}</p>}
+                                        </td>
+                                        <td className="px-5 py-3.5 text-sm text-slate-600">{c.city || '—'}</td>
+                                        <td className="px-5 py-3.5">
+                                            {custSales.length > 0 ? (
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-green-50 text-green-700 uppercase tracking-wide">
+                                                    {custSales.length} Purchase{custSales.length > 1 ? 's' : ''}
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] text-slate-300">—</span>
+                                            )}
+                                        </td>
+                                        <td className="px-5 py-3.5 text-xs text-slate-500 whitespace-nowrap">{formatDate(c.created_at)}</td>
+                                        <td className="px-5 py-3.5">
+                                            <div className="flex gap-1">
+                                                <a href={`tel:${c.phone}`} className="p-1.5 hover:bg-green-50 rounded-lg" title="Call" onClick={e => e.stopPropagation()}>
+                                                    <span className="material-symbols-outlined text-green-500 text-base">call</span>
+                                                </a>
+                                                <a href={`https://wa.me/91${c.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-slate-100 rounded-lg" title="WhatsApp" onClick={e => e.stopPropagation()}>
+                                                    <span className="material-symbols-outlined text-slate-400 text-base">chat</span>
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </table>
+            </div>
 
-                {/* Detail Panel */}
-                {detail && selectedCustomer && (
-                    <div className="w-full lg:w-80 bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)] shrink-0">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="size-12 rounded-full bg-gradient-to-br from-primary to-primary-light text-white flex items-center justify-center font-bold">{selectedCustomer.avatar}</div>
-                            <button onClick={() => setDetail(null)} className="text-slate-400 hover:text-primary"><span className="material-symbols-outlined">close</span></button>
-                        </div>
-                        <h3 className="font-bold text-primary font-display text-lg">{selectedCustomer.name}</h3>
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${selectedCustomer.type === 'VIP' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{selectedCustomer.type}</span>
-                        <div className="mt-4 space-y-3 text-sm">
-                            <div className="flex items-center gap-2 text-slate-600"><span className="material-symbols-outlined text-base text-slate-400">call</span>{selectedCustomer.phone}</div>
-                            <div className="flex items-center gap-2 text-slate-600"><span className="material-symbols-outlined text-base text-slate-400">mail</span>{selectedCustomer.email}</div>
-                        </div>
-                        <div className="mt-5 pt-4 border-t border-slate-100">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-3">Purchase History</p>
-                            <div className="bg-slate-50 rounded-xl p-3">
-                                <p className="text-sm font-semibold text-primary">{selectedCustomer.lastPurchase}</p>
-                                <p className="text-xs text-slate-500 mt-0.5">{selectedCustomer.date} · {selectedCustomer.value}</p>
+            {/* ── Customer Detail Modal ── */}
+            {detail && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setDetail(null)}>
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+
+                        {/* Header */}
+                        <div className="bg-gradient-to-r from-primary to-primary-light px-6 pt-6 pb-8 rounded-t-3xl relative">
+                            <button onClick={() => setDetail(null)} className="absolute top-4 right-4 size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
+                                <span className="material-symbols-outlined text-white text-lg">close</span>
+                            </button>
+                            <div className="flex items-center gap-4">
+                                <div className="size-16 rounded-2xl bg-white/20 border-2 border-white/30 flex items-center justify-center text-white text-2xl font-black">
+                                    {detail.full_name?.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-black text-white">{detail.full_name}</h2>
+                                    {detail.occupation && <p className="text-white/70 text-sm mt-0.5">{detail.occupation}</p>}
+                                    <p className="text-white/50 text-xs mt-1">Customer since {formatDate(detail.created_at)}</p>
+                                </div>
                             </div>
                         </div>
-                        <div className="mt-4 grid grid-cols-2 gap-2">
-                            <button className="h-9 bg-green-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1"><span className="material-symbols-outlined text-sm">call</span>Call</button>
-                            <button className="h-9 bg-primary text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1"><span className="material-symbols-outlined text-sm">chat</span>WhatsApp</button>
+
+                        <div className="px-6 py-5 space-y-5">
+
+                            {/* Contact Info */}
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Contact Information</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {[
+                                        { icon: 'call', label: 'Phone', value: detail.phone },
+                                        { icon: 'phone_in_talk', label: 'Alt. Phone', value: detail.alternate_phone },
+                                        { icon: 'mail', label: 'Email', value: detail.email },
+                                        { icon: 'location_on', label: 'City', value: detail.city },
+                                    ].map((item, i) => item.value && (
+                                        <div key={i} className="bg-slate-50 rounded-xl px-3.5 py-3">
+                                            <div className="flex items-center gap-2 mb-0.5">
+                                                <span className="material-symbols-outlined text-slate-400 text-sm">{item.icon}</span>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{item.label}</p>
+                                            </div>
+                                            <p className="text-sm font-semibold text-primary pl-6">{item.value}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Personal Info */}
+                            {(detail.address || detail.date_of_birth) && (
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Personal Details</p>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {detail.date_of_birth && (
+                                            <div className="bg-slate-50 rounded-xl px-3.5 py-3">
+                                                <div className="flex items-center gap-2 mb-0.5">
+                                                    <span className="material-symbols-outlined text-slate-400 text-sm">cake</span>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Date of Birth</p>
+                                                </div>
+                                                <p className="text-sm font-semibold text-primary pl-6">{formatDate(detail.date_of_birth)}</p>
+                                            </div>
+                                        )}
+                                        {detail.address && (
+                                            <div className="bg-slate-50 rounded-xl px-3.5 py-3 col-span-2">
+                                                <div className="flex items-center gap-2 mb-0.5">
+                                                    <span className="material-symbols-outlined text-slate-400 text-sm">home</span>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Address</p>
+                                                </div>
+                                                <p className="text-sm font-semibold text-primary pl-6">{detail.address}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Notes */}
+                            {detail.notes && (
+                                <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="material-symbols-outlined text-amber-500 text-sm">sticky_note_2</span>
+                                        <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">Notes</p>
+                                    </div>
+                                    <p className="text-sm text-amber-900 leading-relaxed">{detail.notes}</p>
+                                </div>
+                            )}
+
+                            {/* Purchase History */}
+                            {getCustomerSales(detail.id).length > 0 && (
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Purchase History</p>
+                                    <div className="space-y-2">
+                                        {getCustomerSales(detail.id).map(sale => (
+                                            <div key={sale.id} className="bg-green-50 border border-green-100 rounded-xl p-3">
+                                                <div className="flex justify-between items-start mb-1">
+                                                    <p className="text-sm font-bold text-primary">{sale.car?.year} {sale.car?.make} {sale.car?.model}</p>
+                                                    <span className="text-xs font-black text-green-700">{formatCurrency(sale.final_price)}</span>
+                                                </div>
+                                                <p className="text-xs text-slate-500">Sold on {formatDate(sale.sale_date)}</p>
+                                                {sale.notes && <p className="text-xs text-slate-600 mt-1.5 bg-white/60 px-2 py-1 rounded-lg">{sale.notes}</p>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                                <a href={`tel:${detail.phone}`} className="h-11 bg-green-50 text-green-700 hover:bg-green-100 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors">
+                                    <span className="material-symbols-outlined text-base">call</span> Call
+                                </a>
+                                <a href={`https://wa.me/91${detail.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="h-11 bg-primary text-white hover:bg-primary-light rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors">
+                                    <span className="material-symbols-outlined text-base">forum</span> WhatsApp
+                                </a>
+                            </div>
                         </div>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
+
+            {/* ── Add Customer Modal ── */}
+            {isAdding && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl">
+                        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-xl font-bold text-primary font-display">Add Customer</h2>
+                                <p className="text-xs text-slate-500">Manually add a new customer to the directory.</p>
+                            </div>
+                            <button onClick={() => setIsAdding(false)} className="size-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-200 transition-colors">
+                                <span className="material-symbols-outlined text-lg">close</span>
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSave} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+
+                            {/* Name */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 mb-1.5">Full Name <span className="text-red-400">*</span></label>
+                                <input required type="text" value={addForm.full_name} onChange={e => setAddForm({ ...addForm, full_name: e.target.value })} placeholder="e.g., Rahul Patil" className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                            </div>
+
+                            {/* Phone + Alt Phone */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5">Phone <span className="text-red-400">*</span></label>
+                                    <input required type="tel" value={addForm.phone} onChange={e => setAddForm({ ...addForm, phone: e.target.value })} placeholder="9876543210" className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5">Alternate Phone <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                    <input type="tel" value={addForm.alternate_phone} onChange={e => setAddForm({ ...addForm, alternate_phone: e.target.value })} placeholder="9876543210" className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                                </div>
+                            </div>
+
+                            {/* Email + Occupation */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5">Email <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                    <input type="email" value={addForm.email} onChange={e => setAddForm({ ...addForm, email: e.target.value })} placeholder="rahul@example.com" className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5">Occupation <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                    <input type="text" value={addForm.occupation} onChange={e => setAddForm({ ...addForm, occupation: e.target.value })} placeholder="e.g., Teacher, Engineer" className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                                </div>
+                            </div>
+
+                            {/* City + DOB */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5">City</label>
+                                    <input type="text" value={addForm.city} onChange={e => setAddForm({ ...addForm, city: e.target.value })} placeholder="Kolhapur" className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5">Date of Birth <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                    <input type="date" value={addForm.date_of_birth} onChange={e => setAddForm({ ...addForm, date_of_birth: e.target.value })} className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                                </div>
+                            </div>
+
+                            {/* Address */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 mb-1.5">Address <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                <input type="text" value={addForm.address} onChange={e => setAddForm({ ...addForm, address: e.target.value })} placeholder="Street, Area, Landmark" className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                            </div>
+
+                            {/* Notes */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 mb-1.5">Internal Notes <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                <textarea rows={3} value={addForm.notes} onChange={e => setAddForm({ ...addForm, notes: e.target.value })} placeholder="Any notes about this customer…" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/10 resize-none" />
+                            </div>
+
+                            <div className="pt-1">
+                                <button type="submit" disabled={saving} className="w-full h-12 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-70">
+                                    {saving
+                                        ? <><span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving…</>
+                                        : <><span className="material-symbols-outlined text-lg">person_add</span> Save Customer</>
+                                    }
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
