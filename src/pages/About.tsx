@@ -3,17 +3,14 @@ import { Link } from 'react-router-dom';
 import { MapPin, Phone, Mail, Award, Users, Car, Clock } from 'lucide-react';
 
 const STATS = [
-    { value: '500+', label: 'Cars Sold', icon: 'sell' },
+    { value: '3203+', label: 'Cars Sold', icon: 'sell' },
     { value: '13+', label: 'Years in Business', icon: 'calendar_month' },
-    { value: '1200+', label: 'Happy Customers', icon: 'sentiment_very_satisfied' },
+    { value: '4125+', label: 'Happy Customers', icon: 'sentiment_very_satisfied' },
     { value: '120pt', label: 'Quality Checklist', icon: 'checklist' },
 ];
 
 const TEAM = [
-    { name: 'Swami Samarth', role: 'Founder & Director', initials: 'SS', color: 'from-primary to-primary-light' },
-    { name: 'Rahul Patil', role: 'Sales Manager', initials: 'RP', color: 'from-accent to-amber-400' },
-    { name: 'Priya Kulkarni', role: 'Customer Relations', initials: 'PK', color: 'from-purple-500 to-purple-700' },
-    { name: 'Ajay More', role: 'Service Head', initials: 'AM', color: 'from-green-500 to-green-700' },
+    { name: 'Amarsinh Malave', role: 'CEO & Founder', initials: 'AM', color: 'from-primary to-primary-light' },
 ];
 
 const VALUES = [
@@ -149,19 +146,29 @@ const About = () => {
                         <span className="text-xs font-bold text-accent uppercase tracking-widest flex items-center justify-center gap-2 mb-3">
                             <span className="material-symbols-outlined text-sm">group</span> The People Behind the Brand
                         </span>
-                        <h2 className="text-3xl font-black text-primary font-display">Meet Our Team</h2>
-                        <p className="text-slate-500 mt-3">A passionate group of car enthusiasts and customer service experts dedicated to your satisfaction.</p>
+                        <h2 className="text-3xl font-black text-primary font-display">Meet Our Founder</h2>
+                        <p className="text-slate-500 mt-3">The visionary leader who built Kolhapur's most trusted used car dealership from the ground up.</p>
                     </div>
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {TEAM.map(member => (
-                            <div key={member.name} className="bg-white rounded-2xl border border-slate-100 p-6 shadow-[var(--shadow-card)] text-center hover:shadow-[var(--shadow-card-hover)] transition-shadow">
-                                <div className={`size-16 rounded-2xl bg-gradient-to-br ${member.color} text-white flex items-center justify-center text-xl font-black font-display mx-auto mb-4`}>
-                                    {member.initials}
-                                </div>
-                                <h3 className="font-bold text-primary font-display">{member.name}</h3>
-                                <p className="text-sm text-slate-500 mt-1">{member.role}</p>
+
+                    {/* Single founder card — centered, premium */}
+                    <div className="flex justify-center">
+                        <div className="bg-white rounded-3xl border border-slate-100 shadow-[var(--shadow-card-hover)] p-10 flex flex-col items-center text-center max-w-sm w-full">
+                            {/* Avatar */}
+                            <div className="size-24 rounded-2xl bg-gradient-to-br from-primary to-primary-light text-white flex items-center justify-center text-3xl font-black font-display mb-5 shadow-lg">
+                                AM
                             </div>
-                        ))}
+                            {/* Badge */}
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-accent uppercase tracking-widest bg-accent/10 px-3 py-1 rounded-full mb-3">
+                                <span className="material-symbols-outlined text-sm">stars</span> Founder
+                            </span>
+                            <h3 className="text-xl font-black text-primary font-display">Amarsinh Malave</h3>
+                            <p className="text-slate-500 text-sm mt-1 font-medium">CEO &amp; Founder</p>
+                            <div className="mt-5 pt-5 border-t border-slate-100 w-full">
+                                <p className="text-sm text-slate-500 leading-relaxed italic">
+                                    "Our promise is simple — every customer drives home with confidence and a car they can trust."
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>

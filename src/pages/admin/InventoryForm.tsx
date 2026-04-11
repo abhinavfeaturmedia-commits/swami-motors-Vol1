@@ -263,16 +263,18 @@ const InventoryForm = () => {
         if (selectedFiles.length === 0) return [];
         setUploading(true);
         const urls: string[] = [];
+        const failed: string[] = [];
 
         for (const file of selectedFiles) {
-            const ext = file.name.split('.').pop();
-            const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+            const ext = file.name.split('.').pop() || 'jpg';
+            const path = `cars/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
             const { error: uploadError } = await supabase.storage
                 .from('car-images')
                 .upload(path, file, { cacheControl: '3600', upsert: false });
 
             if (uploadError) {
-                console.error('Upload error:', uploadError.message);
+                console.error('Upload error for', file.name, uploadError.message);
+                failed.push(file.name);
                 continue;
             }
 
@@ -281,6 +283,12 @@ const InventoryForm = () => {
         }
 
         setUploading(false);
+
+        // Surface any failures so the user knows what happened
+        if (failed.length > 0) {
+            throw new Error(`These photos failed to upload: ${failed.join(', ')}. Please try again.`);
+        }
+
         return urls;
     };
 
