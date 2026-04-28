@@ -22,6 +22,7 @@ interface Car {
     status: string;
     source: string | null;
     dealer_id: string | null;
+    consignment_owner_name: string | null;
     thumbnail: string | null;
     images: string[] | null;
     registration_no: string | null;
@@ -137,8 +138,10 @@ const AdminInventory = () => {
         const matchSearch = !q || `${c.make} ${c.model} ${c.variant ?? ''} ${c.registration_no ?? ''}`.toLowerCase().includes(q);
         const matchDealer = dealerFilter === 'all'
             ? true
-            : dealerFilter === 'own'
-                ? (!c.source || c.source === 'own')
+            : dealerFilter === 'purchased'
+                ? (!c.source || c.source === 'purchased' || c.source === 'own')
+            : dealerFilter === 'consignment'
+                ? c.source === 'consignment'
                 : c.dealer_id === dealerFilter;
         return matchTab && matchSearch && matchDealer;
     });
@@ -192,8 +195,11 @@ const AdminInventory = () => {
                         className="h-10 border border-slate-200 rounded-xl px-3 text-sm text-slate-600 bg-white outline-none"
                     >
                         <option value="all">All Sources</option>
-                        <option value="own">Own Stock</option>
-                        {dealers.map(d => <option key={d.id} value={d.id}>{d.dealer_code} — {d.name}</option>)}
+                        <option value="purchased">Purchased</option>
+                        <option value="consignment">Consignment</option>
+                        <optgroup label="Dealer Cars">
+                            {dealers.map(d => <option key={d.id} value={d.id}>{d.dealer_code} — {d.name}</option>)}
+                        </optgroup>
                     </select>
                     <div className="relative max-w-xs w-full">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-base">search</span>
@@ -256,14 +262,19 @@ const AdminInventory = () => {
                                                 {car.registration_no && <p className="text-[10px] text-slate-400 font-mono">{car.registration_no}</p>}
                                                 {/* Source badge */}
                                                 {car.source === 'dealer' ? (
-                                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase tracking-wide mt-0.5">
+                                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase tracking-wide mt-0.5" title="Dealer Car">
                                                         <span className="material-symbols-outlined text-[10px]">store</span>
                                                         {dealers.find(d => d.id === car.dealer_id)?.dealer_code || 'Dealer'}
                                                     </span>
+                                                ) : car.source === 'consignment' ? (
+                                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 uppercase tracking-wide mt-0.5" title={`Consignment: ${car.consignment_owner_name || 'Owner'}`}>
+                                                        <span className="material-symbols-outlined text-[10px]">handshake</span>
+                                                        {car.consignment_owner_name || 'Consignment'}
+                                                    </span>
                                                 ) : (
-                                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary uppercase tracking-wide mt-0.5">
+                                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary uppercase tracking-wide mt-0.5" title="Purchased by us">
                                                         <span className="material-symbols-outlined text-[10px]">home</span>
-                                                        Own
+                                                        Purchased
                                                     </span>
                                                 )}
                                             </div>

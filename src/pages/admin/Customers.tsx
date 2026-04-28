@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useData } from '../../contexts/DataContext';
+import { supabase } from '../../lib/supabase';
+import { toWhatsAppUrl } from '../../lib/utils';
 
 interface Customer {
     id: string;
@@ -7,7 +10,9 @@ interface Customer {
     phone: string;
     email: string | null;
     alternate_phone: string | null;
+    whatsapp_number: string | null;
     address: string | null;
+    office_address: string | null;
     city: string | null;
     occupation: string | null;
     date_of_birth: string | null;
@@ -19,8 +24,10 @@ const emptyForm = {
     full_name: '',
     phone: '',
     alternate_phone: '',
+    whatsapp_number: '',
     email: '',
     address: '',
+    office_address: '',
     city: 'Kolhapur',
     occupation: '',
     date_of_birth: '',
@@ -32,8 +39,29 @@ const Customers = () => {
     const [search, setSearch] = useState('');
     const [detail, setDetail] = useState<Customer | null>(null);
     const [isAdding, setIsAdding] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editForm, setEditForm] = useState(emptyForm);
     const [addForm, setAddForm] = useState(emptyForm);
     const [saving, setSaving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+
+    // ─── Customer Car Interests ─────────────────────────────────────────
+    const [customerInterests, setCustomerInterests] = useState<any[]>([]);
+    const [interestsLoading, setInterestsLoading] = useState(false);
+
+    useEffect(() => {
+        if (!detail) { setCustomerInterests([]); return; }
+        setInterestsLoading(true);
+        supabase
+            .from('lead_car_interests')
+            .select('*, car:inventory(id, make, model, year, price, thumbnail)')
+            .eq('customer_id', detail.id)
+            .order('created_at', { ascending: false })
+            .then(({ data }) => {
+                setCustomerInterests(data || []);
+                setInterestsLoading(false);
+            });
+    }, [detail]);
 
     const filtered = customers.filter(c =>
         c.full_name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -55,6 +83,59 @@ const Customers = () => {
 
     const getCustomerSales = (id: string) => sales.filter(s => s.customer_id === id);
 
+    const openDetail = (c: Customer) => {
+        setDetail(c);
+        setIsEditing(false);
+        setEditForm({
+            full_name: c.full_name || '',
+            phone: c.phone || '',
+            alternate_phone: c.alternate_phone || '',
+            whatsapp_number: c.whatsapp_number || '',
+            email: c.email || '',
+            address: c.address || '',
+            office_address: c.office_address || '',
+            city: c.city || 'Kolhapur',
+            occupation: c.occupation || '',
+            date_of_birth: c.date_of_birth || '',
+            notes: c.notes || '',
+        });
+    };
+
+    const handleEditSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!detail || !editForm.full_name || !editForm.phone) return;
+        setSaving(true);
+        const { error } = await supabase.from('customers').update({
+            full_name: editForm.full_name,
+            phone: editForm.phone,
+            alternate_phone: editForm.alternate_phone || null,
+            whatsapp_number: editForm.whatsapp_number || null,
+            email: editForm.email || null,
+            address: editForm.address || null,
+            office_address: editForm.office_address || null,
+            city: editForm.city || 'Kolhapur',
+            occupation: editForm.occupation || null,
+            date_of_birth: editForm.date_of_birth || null,
+            notes: editForm.notes || null,
+        }).eq('id', detail.id);
+        setSaving(false);
+        if (!error) {
+            setIsEditing(false);
+            refreshData();
+            setDetail(prev => prev ? { ...prev, ...editForm } as Customer : null);
+        } else { alert('Failed to update customer'); }
+    };
+
+    const handleDelete = async () => {
+        if (!detail) return;
+        if (!window.confirm(`Delete ${detail.full_name}? This cannot be undone.`)) return;
+        setDeleting(true);
+        const { error } = await supabase.from('customers').delete().eq('id', detail.id);
+        setDeleting(false);
+        if (!error) { setDetail(null); refreshData(); }
+        else alert('Failed to delete customer');
+    };
+
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!addForm.full_name || !addForm.phone) return;
@@ -64,8 +145,10 @@ const Customers = () => {
             full_name: addForm.full_name,
             phone: addForm.phone,
             alternate_phone: addForm.alternate_phone || null,
+            whatsapp_number: addForm.whatsapp_number || null,
             email: addForm.email || null,
             address: addForm.address || null,
+            office_address: addForm.office_address || null,
             city: addForm.city || 'Kolhapur',
             occupation: addForm.occupation || null,
             date_of_birth: addForm.date_of_birth || null,
@@ -135,7 +218,7 @@ const Customers = () => {
                             filtered.map((c: Customer) => {
                                 const custSales = getCustomerSales(c.id);
                                 return (
-                                    <tr key={c.id} onClick={() => setDetail(c)} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 cursor-pointer transition-colors">
+                                    <tr key={c.id} onClick={() => openDetail(c)} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 cursor-pointer transition-colors">
                                         <td className="px-5 py-3.5">
                                             <div className="flex items-center gap-2.5">
                                                 <div className="size-9 rounded-full bg-gradient-to-br from-primary to-primary-light text-white flex items-center justify-center text-sm font-bold shrink-0">
@@ -167,7 +250,7 @@ const Customers = () => {
                                                 <a href={`tel:${c.phone}`} className="p-1.5 hover:bg-green-50 rounded-lg" title="Call" onClick={e => e.stopPropagation()}>
                                                     <span className="material-symbols-outlined text-green-500 text-base">call</span>
                                                 </a>
-                                                <a href={`https://wa.me/91${c.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-slate-100 rounded-lg" title="WhatsApp" onClick={e => e.stopPropagation()}>
+                                        <a href={`https://wa.me/91${(c.whatsapp_number || c.phone).replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-slate-100 rounded-lg" title="WhatsApp" onClick={e => e.stopPropagation()}>
                                                     <span className="material-symbols-outlined text-slate-400 text-base">chat</span>
                                                 </a>
                                             </div>
@@ -188,9 +271,14 @@ const Customers = () => {
 
                         {/* Header */}
                         <div className="bg-gradient-to-r from-primary to-primary-light px-6 pt-6 pb-8 rounded-t-3xl relative">
-                            <button onClick={() => setDetail(null)} className="absolute top-4 right-4 size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
-                                <span className="material-symbols-outlined text-white text-lg">close</span>
-                            </button>
+                            <div className="absolute top-4 right-4 flex gap-2">
+                                <button onClick={() => setIsEditing(v => !v)} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors" title="Edit">
+                                    <span className="material-symbols-outlined text-white text-lg">{isEditing ? 'close' : 'edit'}</span>
+                                </button>
+                                <button onClick={() => setDetail(null)} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
+                                    <span className="material-symbols-outlined text-white text-lg">close</span>
+                                </button>
+                            </div>
                             <div className="flex items-center gap-4">
                                 <div className="size-16 rounded-2xl bg-white/20 border-2 border-white/30 flex items-center justify-center text-white text-2xl font-black">
                                     {detail.full_name?.charAt(0).toUpperCase()}
@@ -204,6 +292,25 @@ const Customers = () => {
                         </div>
 
                         <div className="px-6 py-5 space-y-5">
+                            {/* Edit Form */}
+                            {isEditing && (
+                                <form onSubmit={handleEditSave} className="space-y-3">
+                                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Edit Details</p>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Full Name *</label><input required value={editForm.full_name} onChange={e => setEditForm({...editForm, full_name: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
+                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Phone *</label><input required value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
+                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Email</label><input type="email" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
+                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">City</label><input value={editForm.city} onChange={e => setEditForm({...editForm, city: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
+                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">WhatsApp</label><input value={editForm.whatsapp_number} onChange={e => setEditForm({...editForm, whatsapp_number: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
+                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Occupation</label><input value={editForm.occupation} onChange={e => setEditForm({...editForm, occupation: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
+                                    </div>
+                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Notes</label><textarea rows={2} value={editForm.notes} onChange={e => setEditForm({...editForm, notes: e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/10 resize-none" /></div>
+                                    <div className="flex gap-2">
+                                        <button type="button" onClick={handleDelete} disabled={deleting} className="flex-1 h-10 bg-red-50 text-red-600 font-bold rounded-xl text-sm hover:bg-red-100 transition disabled:opacity-60">{deleting ? 'Deleting…' : 'Delete Customer'}</button>
+                                        <button type="submit" disabled={saving} className="flex-1 h-10 bg-primary text-white font-bold rounded-xl text-sm hover:bg-primary-light transition disabled:opacity-60">{saving ? 'Saving…' : 'Save Changes'}</button>
+                                    </div>
+                                </form>
+                            )}
 
                             {/* Contact Info */}
                             <div>
@@ -212,6 +319,7 @@ const Customers = () => {
                                     {[
                                         { icon: 'call', label: 'Phone', value: detail.phone },
                                         { icon: 'phone_in_talk', label: 'Alt. Phone', value: detail.alternate_phone },
+                                        { icon: 'forum', label: 'WhatsApp', value: detail.whatsapp_number },
                                         { icon: 'mail', label: 'Email', value: detail.email },
                                         { icon: 'location_on', label: 'City', value: detail.city },
                                     ].map((item, i) => item.value && (
@@ -227,7 +335,7 @@ const Customers = () => {
                             </div>
 
                             {/* Personal Info */}
-                            {(detail.address || detail.date_of_birth) && (
+                            {(detail.address || detail.office_address || detail.date_of_birth) && (
                                 <div>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Personal Details</p>
                                     <div className="grid grid-cols-2 gap-3">
@@ -244,9 +352,18 @@ const Customers = () => {
                                             <div className="bg-slate-50 rounded-xl px-3.5 py-3 col-span-2">
                                                 <div className="flex items-center gap-2 mb-0.5">
                                                     <span className="material-symbols-outlined text-slate-400 text-sm">home</span>
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Address</p>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Personal Address</p>
                                                 </div>
                                                 <p className="text-sm font-semibold text-primary pl-6">{detail.address}</p>
+                                            </div>
+                                        )}
+                                        {detail.office_address && (
+                                            <div className="bg-slate-50 rounded-xl px-3.5 py-3 col-span-2">
+                                                <div className="flex items-center gap-2 mb-0.5">
+                                                    <span className="material-symbols-outlined text-slate-400 text-sm">business</span>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Office Address</p>
+                                                </div>
+                                                <p className="text-sm font-semibold text-primary pl-6">{detail.office_address}</p>
                                             </div>
                                         )}
                                     </div>
@@ -283,12 +400,57 @@ const Customers = () => {
                                 </div>
                             )}
 
+                            {/* Car Interests */}
+                            {(interestsLoading || customerInterests.length > 0) && (
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Car Interests</p>
+                                    {interestsLoading ? (
+                                        <p className="text-xs text-slate-400">Loading...</p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {customerInterests.map((interest: any) => (
+                                                <div key={interest.id} className="flex items-center gap-3 bg-slate-50 rounded-xl px-3.5 py-2.5">
+                                                    <div className="size-10 rounded-lg bg-slate-200 overflow-hidden shrink-0">
+                                                        {interest.car?.thumbnail ? (
+                                                            <img src={interest.car.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center">
+                                                                <span className="material-symbols-outlined text-slate-400 text-base">directions_car</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-semibold text-primary truncate">
+                                                            {interest.car?.year} {interest.car?.make} {interest.car?.model}
+                                                        </p>
+                                                        <p className="text-xs text-slate-500">₹{interest.car?.price?.toLocaleString('en-IN')}</p>
+                                                    </div>
+                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                                                        interest.interest_level === 'hot' ? 'bg-red-100 text-red-600' :
+                                                        interest.interest_level === 'warm' ? 'bg-amber-100 text-amber-700' :
+                                                        'bg-slate-100 text-slate-500'
+                                                    }`}>
+                                                        {interest.interest_level === 'hot' ? '🔥' : interest.interest_level === 'warm' ? '⭐' : '❄️'} {interest.interest_level}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Lead Origin Link */}
+                            {(detail as any).lead_id && (
+                                <Link to={`/admin/leads/${(detail as any).lead_id}`} onClick={() => setDetail(null)} className="flex items-center gap-2 text-sm font-semibold text-accent hover:underline">
+                                    <span className="material-symbols-outlined text-base">person_search</span> View Original Lead →
+                                </Link>
+                            )}
                             {/* Action Buttons */}
                             <div className="grid grid-cols-2 gap-2 pt-1">
                                 <a href={`tel:${detail.phone}`} className="h-11 bg-green-50 text-green-700 hover:bg-green-100 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors">
                                     <span className="material-symbols-outlined text-base">call</span> Call
                                 </a>
-                                <a href={`https://wa.me/91${detail.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="h-11 bg-primary text-white hover:bg-primary-light rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors">
+                                <a href={toWhatsAppUrl(detail.whatsapp_number || detail.phone)} target="_blank" rel="noreferrer" className="h-11 bg-primary text-white hover:bg-primary-light rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors">
                                     <span className="material-symbols-outlined text-base">forum</span> WhatsApp
                                 </a>
                             </div>
@@ -331,6 +493,12 @@ const Customers = () => {
                                 </div>
                             </div>
 
+                            {/* WhatsApp Number */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 mb-1.5">WhatsApp Number <span className="text-xs text-slate-400 font-normal">(if different from primary)</span></label>
+                                <input type="tel" value={addForm.whatsapp_number} onChange={e => setAddForm({ ...addForm, whatsapp_number: e.target.value })} placeholder="WhatsApp number" className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                            </div>
+
                             {/* Email + Occupation */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
@@ -355,10 +523,16 @@ const Customers = () => {
                                 </div>
                             </div>
 
-                            {/* Address */}
+                            {/* Personal Address */}
                             <div>
-                                <label className="block text-xs font-bold text-slate-600 mb-1.5">Address <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                <label className="block text-xs font-bold text-slate-600 mb-1.5">Personal Address <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
                                 <input type="text" value={addForm.address} onChange={e => setAddForm({ ...addForm, address: e.target.value })} placeholder="Street, Area, Landmark" className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                            </div>
+
+                            {/* Office Address */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 mb-1.5">Office Address <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                <input type="text" value={addForm.office_address} onChange={e => setAddForm({ ...addForm, office_address: e.target.value })} placeholder="Workplace / Office address" className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
                             </div>
 
                             {/* Notes */}

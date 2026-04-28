@@ -30,8 +30,20 @@ const InventoryForm = () => {
         description: '',
     });
 
-    // ─── Dealer state ─────────────────────────────────────────────────────────
-    const [source, setSource] = useState<'own' | 'dealer'>('own');
+    // ─── Source state ─────────────────────────────────────────────────────────
+    const [source, setSource] = useState<'purchased' | 'consignment' | 'dealer'>('purchased');
+    const [purchaseCost, setPurchaseCost] = useState('');
+    
+    // Consignment state
+    const [consignmentOwnerName, setConsignmentOwnerName] = useState('');
+    const [consignmentOwnerPhone, setConsignmentOwnerPhone] = useState('');
+    const [consignmentAgreedPrice, setConsignmentAgreedPrice] = useState('');
+    const [consignmentFeeType, setConsignmentFeeType] = useState<'fixed' | 'percentage'>('fixed');
+    const [consignmentFeeValue, setConsignmentFeeValue] = useState('');
+    const [consignmentStartDate, setConsignmentStartDate] = useState('');
+    const [consignmentEndDate, setConsignmentEndDate] = useState('');
+
+    // Dealer state
     const [dealerId, setDealerId] = useState('');
     const [dealerAskingPrice, setDealerAskingPrice] = useState('');
     const [ourMargin, setOurMargin] = useState('');
@@ -85,8 +97,18 @@ const InventoryForm = () => {
                 status: data.status || 'available',
                 description: data.description || '',
             });
-            // Populate dealer fields
-            setSource(data.source || 'own');
+            // Populate source fields
+            setSource(data.source || 'purchased');
+            setPurchaseCost(data.purchase_cost ? String(data.purchase_cost) : '');
+            
+            setConsignmentOwnerName(data.consignment_owner_name || '');
+            setConsignmentOwnerPhone(data.consignment_owner_phone || '');
+            setConsignmentAgreedPrice(data.consignment_agreed_price ? String(data.consignment_agreed_price) : '');
+            setConsignmentFeeType(data.consignment_fee_type || 'fixed');
+            setConsignmentFeeValue(data.consignment_fee_value ? String(data.consignment_fee_value) : '');
+            setConsignmentStartDate(data.consignment_start_date || '');
+            setConsignmentEndDate(data.consignment_end_date || '');
+
             setDealerId(data.dealer_id || '');
             setDealerAskingPrice(data.dealer_asking_price ? String(data.dealer_asking_price) : '');
             setOurMargin(data.our_margin ? String(data.our_margin) : '');
@@ -327,8 +349,16 @@ const InventoryForm = () => {
                 description: form.description || null,
                 images: allImages.length > 0 ? allImages : null,
                 thumbnail,
-                // Dealer fields
+                // Source fields
                 source,
+                purchase_cost: source === 'purchased' && purchaseCost ? Number(purchaseCost) : null,
+                consignment_owner_name: source === 'consignment' ? (consignmentOwnerName || null) : null,
+                consignment_owner_phone: source === 'consignment' ? (consignmentOwnerPhone || null) : null,
+                consignment_agreed_price: source === 'consignment' && consignmentAgreedPrice ? Number(consignmentAgreedPrice) : null,
+                consignment_fee_type: source === 'consignment' ? consignmentFeeType : null,
+                consignment_fee_value: source === 'consignment' && consignmentFeeValue ? Number(consignmentFeeValue) : null,
+                consignment_start_date: source === 'consignment' ? (consignmentStartDate || null) : null,
+                consignment_end_date: source === 'consignment' ? (consignmentEndDate || null) : null,
                 dealer_id: source === 'dealer' ? (dealerId || null) : null,
                 dealer_asking_price: source === 'dealer' && dealerAskingPrice ? Number(dealerAskingPrice) : null,
                 our_margin: source === 'dealer' && ourMargin ? Number(ourMargin) : null,
@@ -402,20 +432,31 @@ const InventoryForm = () => {
                         <span className="material-symbols-outlined text-accent">directions_car</span> Vehicle Identity & Pricing
                     </h2>
 
-                    {/* Source Toggle (Own / Dealer) */}
+                    {/* Source Toggle (Purchased / Consignment / Dealer) */}
                     <div className="mb-5">
                         <label className="text-sm font-medium text-slate-700 mb-2 block">Car Source <span className="text-xs text-slate-400">(internal — not shown to customers)</span></label>
                         <div className="flex gap-2">
                             <button
                                 type="button"
-                                onClick={() => setSource('own')}
+                                onClick={() => setSource('purchased')}
                                 className={`flex-1 h-10 rounded-xl text-sm font-bold border flex items-center justify-center gap-2 transition-all ${
-                                    source === 'own'
+                                    source === 'purchased'
                                         ? 'bg-primary text-white border-primary shadow-sm'
                                         : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
                                 }`}
                             >
-                                <span className="material-symbols-outlined text-base">home</span> Own Stock
+                                <span className="material-symbols-outlined text-base">home</span> Purchased
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSource('consignment')}
+                                className={`flex-1 h-10 rounded-xl text-sm font-bold border flex items-center justify-center gap-2 transition-all ${
+                                    source === 'consignment'
+                                        ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-base">handshake</span> Consignment
                             </button>
                             <button
                                 type="button"
@@ -431,7 +472,119 @@ const InventoryForm = () => {
                         </div>
                     </div>
 
-                    {/* Dealer fields — only shown when source = dealer */}
+                    {/* Source-specific sections */}
+                    {source === 'purchased' && (
+                        <div className="bg-slate-50/60 border border-slate-200 rounded-2xl p-4 mb-5">
+                            <div className="flex items-center gap-2 mb-3">
+                                <span className="material-symbols-outlined text-primary text-lg">payments</span>
+                                <p className="text-sm font-bold text-primary">Purchase Details</p>
+                            </div>
+                            <div className="w-1/2 pr-2">
+                                <label className="text-sm font-medium text-slate-700 mb-1.5 block">Purchase Cost (₹)</label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>
+                                    <input
+                                        type="number"
+                                        value={purchaseCost}
+                                        onChange={e => setPurchaseCost(e.target.value)}
+                                        placeholder="What we paid"
+                                        className="w-full h-11 bg-white border border-slate-200 rounded-xl pl-7 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {source === 'consignment' && (
+                        <div className="bg-purple-50/60 border border-purple-100 rounded-2xl p-4 mb-5 space-y-4">
+                            <div className="flex items-center gap-2 mb-1">
+                                <span className="material-symbols-outlined text-purple-600 text-lg">handshake</span>
+                                <p className="text-sm font-bold text-purple-800">Consignment Details <span className="text-xs font-normal text-purple-600">(selling on behalf of owner)</span></p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-sm font-medium text-slate-700 mb-1.5 block">Owner Name <span className="text-red-400">*</span></label>
+                                    <input
+                                        type="text"
+                                        value={consignmentOwnerName}
+                                        onChange={e => setConsignmentOwnerName(e.target.value)}
+                                        placeholder="e.g. Rahul Sharma"
+                                        className="w-full h-11 bg-white border border-purple-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-purple-300"
+                                        required={source === 'consignment'}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-slate-700 mb-1.5 block">Owner Phone</label>
+                                    <input
+                                        type="text"
+                                        value={consignmentOwnerPhone}
+                                        onChange={e => setConsignmentOwnerPhone(e.target.value)}
+                                        placeholder="e.g. +91 9876543210"
+                                        className="w-full h-11 bg-white border border-purple-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-purple-300"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-slate-700 mb-1.5 block">Agreed Minimum Price (₹)</label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>
+                                        <input
+                                            type="number"
+                                            value={consignmentAgreedPrice}
+                                            onChange={e => setConsignmentAgreedPrice(e.target.value)}
+                                            placeholder="e.g., 400000"
+                                            className="w-full h-11 bg-white border border-purple-200 rounded-xl pl-7 pr-3 text-sm outline-none focus:ring-2 focus:ring-purple-300"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="text-sm font-medium text-slate-700 mb-1.5 block">Fee Type</label>
+                                        <select
+                                            value={consignmentFeeType}
+                                            onChange={e => setConsignmentFeeType(e.target.value as 'fixed' | 'percentage')}
+                                            className="w-full h-11 bg-white border border-purple-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-purple-300"
+                                        >
+                                            <option value="fixed">Fixed (₹)</option>
+                                            <option value="percentage">Percentage (%)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-medium text-slate-700 mb-1.5 block">Our Fee</label>
+                                        <div className="relative">
+                                            {consignmentFeeType === 'fixed' && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>}
+                                            {consignmentFeeType === 'percentage' && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>}
+                                            <input
+                                                type="number"
+                                                value={consignmentFeeValue}
+                                                onChange={e => setConsignmentFeeValue(e.target.value)}
+                                                placeholder={consignmentFeeType === 'fixed' ? "e.g. 10000" : "e.g. 2.5"}
+                                                className={`w-full h-11 bg-white border border-purple-200 rounded-xl ${consignmentFeeType === 'fixed' ? 'pl-7 pr-3' : 'pl-3 pr-7'} text-sm outline-none focus:ring-2 focus:ring-purple-300`}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-slate-700 mb-1.5 block">Listing Start Date</label>
+                                    <input
+                                        type="date"
+                                        value={consignmentStartDate}
+                                        onChange={e => setConsignmentStartDate(e.target.value)}
+                                        className="w-full h-11 bg-white border border-purple-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-purple-300"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-slate-700 mb-1.5 block">Listing End Date (Expiry)</label>
+                                    <input
+                                        type="date"
+                                        value={consignmentEndDate}
+                                        onChange={e => setConsignmentEndDate(e.target.value)}
+                                        className="w-full h-11 bg-white border border-purple-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-purple-300"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {source === 'dealer' && (
                         <div className="bg-amber-50/60 border border-amber-100 rounded-2xl p-4 mb-5 space-y-3">
                             <div className="flex items-center gap-2 mb-2">

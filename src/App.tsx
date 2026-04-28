@@ -47,6 +47,7 @@ import Documents from './pages/admin/Documents';
 import PriceHistory from './pages/admin/PriceHistory';
 import VehicleExpenses from './pages/admin/VehicleExpenses';
 import ShareLogs from './pages/admin/ShareLogs';
+import ConsignmentTracker from './pages/admin/ConsignmentTracker';
 
 // Admin — Finance
 import Accounts from './pages/admin/Accounts';
@@ -66,6 +67,10 @@ import FeedbackReviews from './pages/admin/FeedbackReviews';
 
 // Admin — Partners
 import DealerManagement from './pages/admin/DealerManagement';
+
+// Admin — Incentives
+import Incentives from './pages/admin/Incentives';
+import StaffIncentivesView from './pages/admin/StaffIncentivesView';
 
 const App: React.FC = () => {
     return (
@@ -127,6 +132,7 @@ const App: React.FC = () => {
                         <Route path="price-history" element={<PriceHistory />} />
                         <Route path="expenses" element={<VehicleExpenses />} />
                         <Route path="share-logs" element={<ShareLogs />} />
+                        <Route path="consignments" element={<ConsignmentTracker />} />
 
                         {/* Finance */}
                         <Route path="accounts" element={<Accounts />} />
@@ -146,6 +152,10 @@ const App: React.FC = () => {
                         <Route path="audit-logs" element={<AuditLogs />} />
                         <Route path="feedback" element={<FeedbackReviews />} />
                         <Route path="settings" element={<AdminSettings />} />
+
+                        {/* Incentives */}
+                        <Route path="incentives" element={<Incentives />} />
+                        <Route path="my-incentives" element={<StaffIncentivesView />} />
                     </Route>
                 </Routes>
             </BrowserRouter>

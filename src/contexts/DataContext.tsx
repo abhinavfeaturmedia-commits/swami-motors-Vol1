@@ -9,6 +9,7 @@ export interface DataContextType {
     bookings: any[];
     activities: any[];
     tasks: any[];
+    followUps: any[];
     expenses: any[];
     inspections: any[];
     documents: any[];
@@ -29,6 +30,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     // New V2 Modules
     const [tasks, setTasks] = useState<any[]>([]);
+    const [followUps, setFollowUps] = useState<any[]>([]);
     const [expenses, setExpenses] = useState<any[]>([]);
     const [inspections, setInspections] = useState<any[]>([]);
     const [documents, setDocuments] = useState<any[]>([]);
@@ -56,6 +58,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 { data: bookingsData },
                 { data: activitiesData },
                 { data: tasksData },
+                { data: followUpsData },
                 { data: expensesData },
                 { data: inspectionsData },
                 { data: documentsData },
@@ -70,6 +73,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 
                 // Keep these failsafe in case the user hasn't run the migration yet, it won't crash the app globally
                 safeFetch(supabase.from('tasks').select('*, lead:leads(*)').order('due_date', { ascending: true })),
+                safeFetch(supabase.from('follow_ups').select('*, lead:leads(*)').order('next_followup_date', { ascending: true })),
                 safeFetch(supabase.from('vehicle_expenses').select('*, car:inventory(*)').order('expense_date', { ascending: false })),
                 safeFetch(supabase.from('inspections').select('*, car:inventory(*)').order('inspection_date', { ascending: false })),
                 safeFetch(supabase.from('documents').select('*').order('uploaded_at', { ascending: false })),
@@ -84,6 +88,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setActivities(activitiesData || []);
             
             setTasks(tasksData || []);
+            setFollowUps(followUpsData || []);
             setExpenses(expensesData || []);
             setInspections(inspectionsData || []);
             setDocuments(documentsData || []);
@@ -107,7 +112,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, []);
 
     return (
-        <DataContext.Provider value={{ leads, customers, inventory, sales, bookings, activities, tasks, expenses, inspections, documents, settings, loading, refreshData }}>
+        <DataContext.Provider value={{ leads, customers, inventory, sales, bookings, activities, tasks, followUps, expenses, inspections, documents, settings, loading, refreshData }}>
             {children}
         </DataContext.Provider>
     );

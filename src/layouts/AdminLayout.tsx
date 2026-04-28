@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useLocation, Link, useNavigate } from 'react-router-dom';
-import { Menu, X, Bell, Search, Plus, ChevronDown, LogOut, Home } from 'lucide-react';
+import { Menu, X, Bell, Plus, ChevronDown, LogOut, Home } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../contexts/AuthContext';
 import { DataProvider, useData } from '../contexts/DataContext';
 import { supabase } from '../lib/supabase';
+import GlobalSearch from '../components/admin/GlobalSearch';
+
 interface NavItem {
     name: string;
     href: string;
@@ -23,9 +25,11 @@ const NAV_GROUPS: NavGroup[] = [
         items: [
             { name: 'Dashboard', href: '/admin', icon: 'dashboard', module: 'dashboard' },
             { name: 'Inventory', href: '/admin/inventory', icon: 'directions_car', module: 'inventory' },
+            { name: 'Consignments', href: '/admin/consignments', icon: 'handshake', module: 'inventory' },
             { name: 'Leads', href: '/admin/leads', icon: 'people', module: 'leads' },
             { name: 'Sales', href: '/admin/sales', icon: 'point_of_sale', module: 'sales' },
             { name: 'Bookings', href: '/admin/bookings', icon: 'event', module: 'bookings' },
+            { name: 'Incentives', href: '/admin/incentives', icon: 'workspace_premium', module: 'incentives' },
         ],
     },
     {
@@ -178,6 +182,78 @@ const TaskNotifier = () => {
     );
 };
 
+// ─── Announcement Banner Component ─────────────────────────────────────────
+const AnnouncementBanner = () => {
+    const [announcements, setAnnouncements] = React.useState<any[]>([]);
+    const [open, setOpen] = React.useState(false);
+
+    React.useEffect(() => {
+        supabase
+            .from('staff_announcements')
+            .select('*')
+            .order('is_pinned', { ascending: false })
+            .order('created_at', { ascending: false })
+            .then(({ data }) => {
+                if (data) {
+                    const today = new Date().toDateString();
+                    const visible = data.filter(a =>
+                        a.is_pinned || new Date(a.created_at).toDateString() === today
+                    );
+                    setAnnouncements(visible);
+                }
+            });
+    }, []);
+
+    if (announcements.length === 0) return null;
+
+    const urgentCount = announcements.filter(a => a.priority === 'urgent').length;
+    const bgClass = urgentCount > 0 ? 'bg-red-500' : 'bg-amber-500';
+
+    return (
+        <>
+            <button
+                onClick={() => setOpen(true)}
+                className={`hidden sm:flex items-center gap-2 h-9 px-3 ${bgClass} text-white rounded-xl text-xs font-bold hover:opacity-90 transition-opacity shrink-0`}
+            >
+                <span className="material-symbols-outlined text-sm">campaign</span>
+                <span>{announcements.length} Announcement{announcements.length !== 1 ? 's' : ''}</span>
+                {urgentCount > 0 && <span className="bg-white text-red-600 text-[10px] font-black px-1.5 py-0.5 rounded-full">{urgentCount}</span>}
+            </button>
+            {open && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
+                        <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-4 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-white">campaign</span>
+                                <h2 className="font-black text-white">Announcements</h2>
+                            </div>
+                            <button onClick={() => setOpen(false)} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
+                                <span className="material-symbols-outlined text-white text-lg">close</span>
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto p-4 space-y-3">
+                            {announcements.map(a => {
+                                const colors = a.priority === 'urgent' ? 'bg-red-50 border-red-200' : a.priority === 'celebration' ? 'bg-yellow-50 border-yellow-200' : 'bg-slate-50 border-slate-200';
+                                return (
+                                    <div key={a.id} className={`${colors} border rounded-xl p-4`}>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            {a.is_pinned && <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">📌 Pinned</span>}
+                                            <span className="text-[10px] font-bold uppercase text-slate-500">{a.priority}</span>
+                                        </div>
+                                        <p className="font-bold text-slate-800">{a.title}</p>
+                                        <p className="text-sm text-slate-600 mt-1 whitespace-pre-line">{a.body}</p>
+                                        <p className="text-[10px] text-slate-400 mt-2">{new Date(a.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
+    );
+};
+
 const AdminLayout: React.FC = () => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -324,12 +400,12 @@ const AdminLayout: React.FC = () => {
                             <Menu size={22} />
                         </button>
                         <h2 className="hidden lg:block text-lg font-bold text-primary font-display">Admin Command Center</h2>
-                        <div className="hidden sm:flex items-center gap-2 bg-slate-50 rounded-xl px-4 h-10 border border-slate-100 focus-within:ring-2 focus-within:ring-primary/10 transition-all flex-1 max-w-md ml-4">
-                            <Search size={16} className="text-slate-400 shrink-0" />
-                            <input className="bg-transparent border-none text-sm text-primary placeholder:text-slate-400 w-full outline-none" placeholder="Search inquiries, VIN, or customers..." />
+                        <div className="hidden sm:flex items-center gap-2 flex-1 max-w-2xl ml-4">
+                            <GlobalSearch />
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
+                        <AnnouncementBanner />
                         <Link
                             to="/"
                             title="Go to Website"

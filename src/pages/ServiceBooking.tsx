@@ -18,6 +18,9 @@ const ServiceBooking = () => {
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
     const [email, setEmail] = useState('');
+    const [secondaryPhone, setSecondaryPhone] = useState('');
+    const [whatsappNumber, setWhatsappNumber] = useState('');
+    const [personalAddress, setPersonalAddress] = useState('');
     const [vehicleDesc, setVehicleDesc] = useState('');
 
     // UI state
@@ -58,6 +61,9 @@ const ServiceBooking = () => {
             full_name: name.trim(),
             phone: phone.trim(),
             email: email.trim() || null,
+            secondary_phone: secondaryPhone.trim() || null,
+            whatsapp_number: whatsappNumber.trim() || null,
+            personal_address: personalAddress.trim() || null,
             type: 'service',
             source: 'website',
             status: 'new',
@@ -209,6 +215,46 @@ const ServiceBooking = () => {
                                     className={`w-full h-11 bg-slate-50 border rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10 ${errors.email ? 'border-red-300 bg-red-50' : 'border-slate-200'}`}
                                 />
                                 {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+                            </div>
+
+                            <div>
+                                <label className="text-sm font-medium text-slate-700 mb-1.5 block">
+                                    Secondary Phone <span className="text-xs text-slate-400">(optional)</span>
+                                </label>
+                                <input
+                                    type="tel"
+                                    value={secondaryPhone}
+                                    onChange={e => setSecondaryPhone(e.target.value)}
+                                    placeholder="Alternate contact number"
+                                    className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-sm font-medium text-slate-700 mb-1.5 block">
+                                    WhatsApp Number <span className="text-xs text-slate-400">(if different)</span>
+                                </label>
+                                <input
+                                    type="tel"
+                                    value={whatsappNumber}
+                                    onChange={e => setWhatsappNumber(e.target.value)}
+                                    onFocus={() => { if (!whatsappNumber && phone) setWhatsappNumber(phone); }}
+                                    placeholder="Auto-fills from phone number"
+                                    className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-sm font-medium text-slate-700 mb-1.5 block">
+                                    Your Address <span className="text-xs text-slate-400">(optional)</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={personalAddress}
+                                    onChange={e => setPersonalAddress(e.target.value)}
+                                    placeholder="Street, Area, City"
+                                    className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10"
+                                />
                             </div>
 
                             <div>

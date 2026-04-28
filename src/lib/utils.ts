@@ -52,6 +52,21 @@ export const formatDateTime = (dateStr: string): string => {
     });
 };
 
+// ─── WhatsApp URL ─────────────────────────────────────────────────────────────
+
+/**
+ * Builds a wa.me URL for an Indian phone number.
+ * Always strips non-digits and prepends +91 if not already present.
+ * @param phone  Raw phone string (any format)
+ * @param message Optional pre-filled message (URL-encoded automatically)
+ */
+export const toWhatsAppUrl = (phone: string, message?: string): string => {
+    const digits = (phone || '').replace(/\D/g, '');
+    const with91 = digits.startsWith('91') && digits.length === 12 ? digits : `91${digits}`;
+    const base = `https://wa.me/${with91}`;
+    return message ? `${base}?text=${encodeURIComponent(message)}` : base;
+};
+
 // ─── Lead Status ──────────────────────────────────────────────────────────────
 
 /** Canonical status values used across admin pages */

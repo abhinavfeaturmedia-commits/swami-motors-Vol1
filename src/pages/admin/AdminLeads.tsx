@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -11,6 +12,10 @@ interface Lead {
     full_name: string;
     phone: string;
     email: string | null;
+    secondary_phone: string | null;
+    whatsapp_number: string | null;
+    personal_address: string | null;
+    office_address: string | null;
     car_make: string | null;
     car_model: string | null;
     car_year: number | null;
@@ -55,8 +60,11 @@ const statusTabs = ['All Statuses', 'new', 'contacted', 'negotiation', 'closed_w
 
 const AdminLeads = () => {
     const { user, isAdmin } = useAuth();
+    const { inventory } = useData();
+    const availableInventory = inventory.filter((c: any) => c.status === 'available');
 
     const [leads, setLeads] = useState<Lead[]>([]);
+    const [interestCounts, setInterestCounts] = useState<Record<string, number>>({});
     const [staffMembers, setStaffMembers] = useState<StaffProfile[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState('All Leads');
@@ -93,6 +101,10 @@ const AdminLeads = () => {
     const [manualForm, setManualForm] = useState<Partial<Lead>>({
         full_name: '',
         phone: '',
+        secondary_phone: '',
+        whatsapp_number: '',
+        personal_address: '',
+        office_address: '',
         type: 'contact',
         status: 'new',
         source: 'Walk-in',
@@ -100,6 +112,13 @@ const AdminLeads = () => {
         message: '',
         assigned_to: null,
     });
+
+    // ─── Pending Car Interests (manual lead form) ────────────────────────────
+    const [pendingCarInterests, setPendingCarInterests] = useState<Array<{
+        inventory_id: string; interest_level: string; notes: string; carLabel: string;
+    }>>([]);
+    const [showCarSelector, setShowCarSelector] = useState(false);
+    const [carSelectorForm, setCarSelectorForm] = useState({ inventory_id: '', interest_level: 'warm', notes: '' });
 
     // Import logic
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -160,9 +179,19 @@ const AdminLeads = () => {
         }
     };
 
+    const fetchInterestCounts = useCallback(async () => {
+        const { data } = await supabase.from('lead_car_interests').select('lead_id');
+        if (data) {
+            const counts: Record<string, number> = {};
+            data.forEach((r: any) => { counts[r.lead_id] = (counts[r.lead_id] || 0) + 1; });
+            setInterestCounts(counts);
+        }
+    }, []);
+
     useEffect(() => {
         fetchStaff();
         fetchLeads();
+        fetchInterestCounts();
     }, []);
 
     // ─── CSV Import ────────────────────────────────────────────────────────────
@@ -227,20 +256,31 @@ const AdminLeads = () => {
     const handleManualSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Always attach created_by to track who entered this lead.
-        // Staff: assigned_to is forced to themselves (set when form opens).
         const payload = {
             ...manualForm,
             created_by: user?.id ?? null,
-            // If non-admin and assigned_to wasn't explicitly set, default to self
             assigned_to: manualForm.assigned_to ?? (isAdmin ? null : (user?.id ?? null)),
         };
 
-        const { error } = await supabase.from('leads').insert(payload);
-        if (!error) {
+        const { data: newLead, error } = await supabase.from('leads').insert(payload).select('id').single();
+        if (!error && newLead) {
+            // Insert pending car interests
+            if (pendingCarInterests.length > 0) {
+                await supabase.from('lead_car_interests').insert(
+                    pendingCarInterests.map(i => ({
+                        lead_id: newLead.id,
+                        inventory_id: i.inventory_id,
+                        interest_level: i.interest_level,
+                        notes: i.notes || null,
+                        added_by: user?.id ?? null,
+                    }))
+                );
+            }
             setIsAddingManual(false);
-            setManualForm({ full_name: '', phone: '', type: 'contact', status: 'new', source: 'Walk-in', email: '', message: '', assigned_to: null });
+            setPendingCarInterests([]);
+            setManualForm({ full_name: '', phone: '', secondary_phone: '', whatsapp_number: '', personal_address: '', office_address: '', type: 'contact', status: 'new', source: 'Walk-in', email: '', message: '', assigned_to: null });
             fetchLeads();
+            fetchInterestCounts();
         } else {
             alert('Error adding lead. Try again.');
         }
@@ -249,7 +289,9 @@ const AdminLeads = () => {
     // Open manual form with sensible defaults per role
     const openManualForm = () => {
         setManualForm({
-            full_name: '', phone: '', type: 'contact', status: 'new',
+            full_name: '', phone: '', secondary_phone: '', whatsapp_number: '',
+            personal_address: '', office_address: '',
+            type: 'contact', status: 'new',
             source: 'Walk-in', email: '', message: '',
             // Staff automatically assigned to themselves
             assigned_to: isAdmin ? null : (user?.id ?? null),
@@ -258,6 +300,10 @@ const AdminLeads = () => {
         setPhoneCheckState('idle');
         setDuplicateLeads([]);
         setDuplicateAcknowledged(false);
+        // Reset pending car interests
+        setPendingCarInterests([]);
+        setShowCarSelector(false);
+        setCarSelectorForm({ inventory_id: '', interest_level: 'warm', notes: '' });
         setIsAddingManual(true);
     };
 
@@ -687,6 +733,12 @@ const AdminLeads = () => {
                                                 {lead.type === 'insurance' && 'Insurance Inquiry'}
                                             </p>
                                             <p className="text-xs text-slate-400 truncate max-w-[180px]">From: {lead.source}</p>
+                                            {(interestCounts[lead.id] ?? 0) > 0 && (
+                                                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 mt-1">
+                                                    <span className="material-symbols-outlined text-[10px]">directions_car</span>
+                                                    {interestCounts[lead.id]} interested
+                                                </span>
+                                            )}
                                         </td>
 
                                         {/* Assigned To — admin can reassign inline */}
@@ -931,6 +983,43 @@ const AdminLeads = () => {
                                         placeholder="ramesh@example.com" />
                                 </div>
 
+                                {/* Secondary Phone */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Secondary Phone <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                    <input type="tel" value={manualForm.secondary_phone || ''}
+                                        onChange={e => setManualForm(prev => ({ ...prev, secondary_phone: e.target.value }))}
+                                        className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10"
+                                        placeholder="Alternate number" />
+                                </div>
+
+                                {/* WhatsApp Number */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">WhatsApp Number <span className="text-xs text-slate-400 font-normal">(if different)</span></label>
+                                    <input type="tel" value={manualForm.whatsapp_number || ''}
+                                        onChange={e => setManualForm(prev => ({ ...prev, whatsapp_number: e.target.value }))}
+                                        onFocus={e => { if (!e.target.value && manualForm.phone) setManualForm(prev => ({ ...prev, whatsapp_number: prev.phone || '' })); }}
+                                        className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10"
+                                        placeholder="WhatsApp number (auto-fills from phone)" />
+                                </div>
+
+                                {/* Personal Address */}
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Personal Address <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                    <input type="text" value={manualForm.personal_address || ''}
+                                        onChange={e => setManualForm(prev => ({ ...prev, personal_address: e.target.value }))}
+                                        className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10"
+                                        placeholder="Home / Residential address" />
+                                </div>
+
+                                {/* Office Address */}
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Office Address <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                    <input type="text" value={manualForm.office_address || ''}
+                                        onChange={e => setManualForm(prev => ({ ...prev, office_address: e.target.value }))}
+                                        className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10"
+                                        placeholder="Workplace / Office address" />
+                                </div>
+
                                 {/* Enquiry Type */}
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Enquiry Type</label>
@@ -996,6 +1085,112 @@ const AdminLeads = () => {
                                             ))}
                                         </select>
                                     </div>
+                                )}
+                            </div>
+
+                            {/* ── Car Interests ── */}
+                            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/40">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-blue-500 text-base">directions_car</span>
+                                        <span className="text-sm font-semibold text-slate-700">Interested Cars</span>
+                                        <span className="text-xs text-slate-400 font-normal">(optional)</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCarSelector(v => !v)}
+                                        className="flex items-center gap-1 h-7 px-2.5 rounded-lg text-xs font-bold bg-blue-500 text-white hover:bg-blue-600 transition"
+                                    >
+                                        <span className="material-symbols-outlined text-sm">{showCarSelector ? 'close' : 'add'}</span>
+                                        {showCarSelector ? 'Cancel' : 'Add Car'}
+                                    </button>
+                                </div>
+
+                                {showCarSelector && (
+                                    <div className="bg-white border border-slate-200 rounded-xl p-3 mb-3 space-y-2">
+                                        <select
+                                            value={carSelectorForm.inventory_id}
+                                            onChange={e => setCarSelectorForm(f => ({ ...f, inventory_id: e.target.value }))}
+                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200"
+                                        >
+                                            <option value="">-- Select Available Car --</option>
+                                            {availableInventory.map((car: any) => (
+                                                <option key={car.id} value={car.id}>
+                                                    {car.year} {car.make} {car.model} — ₹{car.price?.toLocaleString('en-IN')}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <div className="flex gap-1.5">
+                                            {(['hot', 'warm', 'cold'] as const).map(level => (
+                                                <button
+                                                    key={level}
+                                                    type="button"
+                                                    onClick={() => setCarSelectorForm(f => ({ ...f, interest_level: level }))}
+                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all capitalize ${
+                                                        carSelectorForm.interest_level === level
+                                                            ? level === 'hot' ? 'bg-red-500 text-white border-red-500'
+                                                            : level === 'warm' ? 'bg-amber-500 text-white border-amber-500'
+                                                            : 'bg-slate-500 text-white border-slate-500'
+                                                            : 'bg-white text-slate-500 border-slate-200'
+                                                    }`}
+                                                >
+                                                    {level === 'hot' ? '🔥' : level === 'warm' ? '⭐' : '❄️'} {level}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <input
+                                            type="text"
+                                            value={carSelectorForm.notes}
+                                            onChange={e => setCarSelectorForm(f => ({ ...f, notes: e.target.value }))}
+                                            placeholder="Notes (optional)"
+                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (!carSelectorForm.inventory_id) return;
+                                                if (pendingCarInterests.some(p => p.inventory_id === carSelectorForm.inventory_id)) {
+                                                    alert('This car is already added.'); return;
+                                                }
+                                                const car = availableInventory.find((c: any) => c.id === carSelectorForm.inventory_id);
+                                                setPendingCarInterests(prev => [...prev, {
+                                                    inventory_id: carSelectorForm.inventory_id,
+                                                    interest_level: carSelectorForm.interest_level,
+                                                    notes: carSelectorForm.notes,
+                                                    carLabel: car ? `${car.year} ${car.make} ${car.model}` : 'Unknown Car',
+                                                }]);
+                                                setCarSelectorForm({ inventory_id: '', interest_level: 'warm', notes: '' });
+                                                setShowCarSelector(false);
+                                            }}
+                                            className="w-full h-9 bg-blue-500 text-white text-sm font-bold rounded-lg hover:bg-blue-600 transition"
+                                        >
+                                            Add to List
+                                        </button>
+                                    </div>
+                                )}
+
+                                {pendingCarInterests.length > 0 ? (
+                                    <div className="flex flex-wrap gap-2">
+                                        {pendingCarInterests.map((interest, idx) => (
+                                            <div key={idx} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold border ${
+                                                interest.interest_level === 'hot' ? 'bg-red-50 text-red-600 border-red-200' :
+                                                interest.interest_level === 'warm' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                'bg-slate-100 text-slate-600 border-slate-200'
+                                            }`}>
+                                                <span>{interest.interest_level === 'hot' ? '🔥' : interest.interest_level === 'warm' ? '⭐' : '❄️'}</span>
+                                                <span>{interest.carLabel}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPendingCarInterests(prev => prev.filter((_, i) => i !== idx))}
+                                                    className="ml-0.5 hover:text-red-500 transition-colors"
+                                                >
+                                                    <span className="material-symbols-outlined text-[12px]">close</span>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : !showCarSelector && (
+                                    <p className="text-xs text-slate-400 text-center py-1">No cars added yet. Click "Add Car" to record interest.</p>
                                 )}
                             </div>
 

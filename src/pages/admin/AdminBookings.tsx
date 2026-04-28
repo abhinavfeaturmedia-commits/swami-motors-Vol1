@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useData } from '../../contexts/DataContext';
+import { toWhatsAppUrl } from '../../lib/utils';
 
 const statusColors: Record<string, string> = {
     scheduled: 'bg-blue-100 text-blue-700',
@@ -9,63 +11,107 @@ const statusColors: Record<string, string> = {
     no_show: 'bg-slate-200 text-slate-500',
 };
 
-const tabs = ['All Bookings', 'test_drive', 'service'];
+const typeFilters = ['All', 'test_drive', 'service'] as const;
+const dateTabs = ['Today', 'This Week', 'All'] as const;
 
 const AdminBookings = () => {
-    const { bookings, loading, refreshData } = useData();
-    const [activeTab, setActiveTab] = useState('All Bookings');
+    const { bookings, leads, loading, refreshData } = useData();
+    const [typeTab, setTypeTab]   = useState<string>('All');
+    const [dateTab, setDateTab]   = useState<string>('All');
+    const [search, setSearch]     = useState('');
+    const [updatingId, setUpdatingId] = useState<string | null>(null);
+    const [pendingUpdate, setPendingUpdate] = useState<{ id: string; old: string; newStatus: string } | null>(null);
 
-    const updateStatus = async (id: string, currentStatus: string, newStatus: string) => {
-        if (currentStatus === newStatus) return;
-        
-        try {
-            const { error } = await supabase
-                .from('bookings')
-                .update({ status: newStatus })
-                .eq('id', id);
-                
-            if (error) {
-                console.error('Failed to update status:', error);
-                alert('Failed to update booking status');
-            } else {
+    // ─── Date helpers ─────────────────────────────────────────────────────────
+    const todayStr  = new Date().toISOString().split('T')[0];
+    const weekStart = (() => {
+        const d = new Date(); d.setDate(d.getDate() - d.getDay()); return d.toISOString().split('T')[0];
+    })();
+    const weekEnd = (() => {
+        const d = new Date(); d.setDate(d.getDate() + (6 - d.getDay())); return d.toISOString().split('T')[0];
+    })();
+
+    const isWithin24h = (dateStr: string) => {
+        if (!dateStr) return false;
+        const diff = new Date(dateStr).getTime() - Date.now();
+        return diff > 0 && diff < 24 * 60 * 60 * 1000;
+    };
+
+    // ─── Filtered list ────────────────────────────────────────────────────────
+    const filtered = useMemo(() => {
+        return bookings
+            .filter(b => {
+                if (typeTab !== 'All' && b.booking_type !== typeTab) return false;
+                if (dateTab === 'Today'     && b.booking_date !== todayStr)                   return false;
+                if (dateTab === 'This Week' && (b.booking_date < weekStart || b.booking_date > weekEnd)) return false;
+                if (search) {
+                    const q = search.toLowerCase();
+                    const name = (b.lead?.full_name || '').toLowerCase();
+                    const phone = (b.lead?.phone || '');
+                    if (!name.includes(q) && !phone.includes(q)) return false;
+                }
+                return true;
+            })
+            .sort((a, b) => new Date(a.booking_date + 'T' + (a.booking_time || '00:00')).getTime() -
+                             new Date(b.booking_date + 'T' + (b.booking_time || '00:00')).getTime());
+    }, [bookings, typeTab, dateTab, search, todayStr, weekStart, weekEnd]);
+
+    // ─── Stats ────────────────────────────────────────────────────────────────
+    const todayCount   = bookings.filter(b => b.booking_date === todayStr && b.status === 'scheduled').length;
+    const weekCount    = bookings.filter(b => b.booking_date >= weekStart && b.booking_date <= weekEnd && b.status === 'scheduled').length;
+    const pendingCount = bookings.filter(b => b.status === 'scheduled').length;
+
+    // ─── Update Status ────────────────────────────────────────────────────────
+    const updateStatus = async (id: string, oldStatus: string, newStatus: string) => {
+        if (oldStatus === newStatus) return;
+        // If completing a test_drive, capture for prompt
+        const booking = bookings.find(b => b.id === id);
+        if (newStatus === 'completed' && booking?.booking_type === 'test_drive' && booking?.lead?.id) {
+            setPendingUpdate({ id, old: oldStatus, newStatus });
+            return;
+        }
+        await commitStatusUpdate(id, newStatus);
+    };
+
+    const commitStatusUpdate = async (id: string, newStatus: string) => {
+        setUpdatingId(id);
+        const { error } = await supabase.from('bookings').update({ status: newStatus }).eq('id', id);
+        if (!error) refreshData();
+        else alert('Failed to update booking status');
+        setUpdatingId(null);
+        setPendingUpdate(null);
+    };
+
+    const handleUpdateWithLeadPromotion = async (promoteToNegotiation: boolean) => {
+        if (!pendingUpdate) return;
+        await commitStatusUpdate(pendingUpdate.id, pendingUpdate.newStatus);
+        if (promoteToNegotiation) {
+            const booking = bookings.find(b => b.id === pendingUpdate.id);
+            if (booking?.lead?.id) {
+                await supabase.from('leads').update({ status: 'negotiation' }).eq('id', booking.lead.id);
+                await supabase.from('lead_activities').insert({
+                    lead_id: booking.lead.id,
+                    activity_type: 'meeting',
+                    notes: `Test drive completed on ${booking.booking_date}. Lead moved to Negotiation.`,
+                    created_by: 'system',
+                });
                 refreshData();
             }
-        } catch (err) {
-            console.error(err);
         }
     };
 
-    const filtered = activeTab === 'All Bookings'
-        ? bookings
-        : bookings.filter(b => b.booking_type === activeTab);
-
-    const tabLabel = (tab: string) => {
-        if (tab === 'All Bookings') return 'All Bookings';
-        if (tab === 'test_drive') return 'Test Drive';
-        if (tab === 'service') return 'Service';
-        return tab;
+    const formatDate = (d: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+    const formatTime = (t: string) => {
+        if (!t) return 'TBA';
+        if (t.includes('T')) return new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        return t.substring(0, 5);
     };
-
-    const tabCount = (tab: string) =>
-        tab === 'All Bookings' ? bookings.length : bookings.filter(b => b.booking_type === tab).length;
-
-    const formatDate = (dateStr: string) => {
-        if (!dateStr) return '—';
-        const d = new Date(dateStr);
-        return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-    };
-
-    const formatTime = (timeStr: string) => {
-        if (!timeStr) return 'TBA';
-        // handle basic time formats or full ISO
-        if (timeStr.includes('T')) {
-            return new Date(timeStr).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-        }
-        return timeStr.substring(0, 5); // Return HH:mm if it's purely a time string
-    };
+    const tabLabel = (t: string) => ({ test_drive: 'Test Drives', service: 'Service', All: 'All' }[t] || t);
+    const typeCount = (t: string) => t === 'All' ? bookings.length : bookings.filter(b => b.booking_type === t).length;
 
     return (
         <div className="space-y-6">
+            {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-black text-primary font-display">Booking Schedule</h1>
@@ -76,12 +122,12 @@ const AdminBookings = () => {
                 </button>
             </div>
 
-            {/* Quick Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-4">
                 {[
-                    { label: 'Total Calendar Bookings', val: bookings.length, icon: 'today', color: 'bg-blue-500/10 text-blue-600' },
-                    { label: 'Test Drives', val: bookings.filter(b => b.booking_type === 'test_drive').length, icon: 'directions_car', color: 'bg-purple-500/10 text-purple-600' },
-                    { label: 'Service Appts', val: bookings.filter(b => b.booking_type === 'service').length, icon: 'build', color: 'bg-amber-500/10 text-amber-600' },
+                    { label: "Today's Scheduled", val: todayCount,   icon: 'today',         color: 'bg-blue-500/10 text-blue-600' },
+                    { label: 'This Week',          val: weekCount,    icon: 'calendar_month', color: 'bg-purple-500/10 text-purple-600' },
+                    { label: 'Pending Total',      val: pendingCount, icon: 'pending_actions', color: 'bg-amber-500/10 text-amber-600' },
                 ].map(s => (
                     <div key={s.label} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
                         <div className={`size-10 rounded-xl flex items-center justify-center ${s.color} mb-3`}>
@@ -93,93 +139,160 @@ const AdminBookings = () => {
                 ))}
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-1 border-b border-slate-200">
-                {tabs.map(tab => (
-                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${activeTab === tab ? 'text-primary border-primary font-bold' : 'text-slate-500 border-transparent hover:text-primary'}`}>
-                        {tabLabel(tab)} <span className="text-xs text-slate-400 ml-1">({tabCount(tab)})</span>
-                    </button>
-                ))}
+            {/* Filters Row */}
+            <div className="flex flex-wrap gap-3 items-center">
+                {/* Date tabs */}
+                <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+                    {dateTabs.map(tab => (
+                        <button key={tab} onClick={() => setDateTab(tab)}
+                            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${dateTab === tab ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-primary'}`}>
+                            {tab}
+                        </button>
+                    ))}
+                </div>
+                {/* Type filter */}
+                <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+                    {typeFilters.map(t => (
+                        <button key={t} onClick={() => setTypeTab(t)}
+                            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${typeTab === t ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-primary'}`}>
+                            {tabLabel(t)} <span className="text-xs text-slate-400 ml-0.5">({typeCount(t)})</span>
+                        </button>
+                    ))}
+                </div>
+                {/* Search */}
+                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 h-10 flex-1 min-w-[200px]">
+                    <span className="material-symbols-outlined text-slate-400 text-lg">search</span>
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or phone…" className="bg-transparent text-sm text-primary outline-none w-full" />
+                    {search && <button onClick={() => setSearch('')} className="material-symbols-outlined text-slate-300 text-base hover:text-slate-500">close</button>}
+                </div>
             </div>
 
             {/* Table */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-x-auto min-h-[300px]">
-                <table className="w-full min-w-[800px]">
-                    <thead>
-                        <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
-                            <th className="text-left px-5 py-3">Type</th>
-                            <th className="text-left px-5 py-3">Lead / Client</th>
-                            <th className="text-left px-5 py-3">Vehicle Locked In</th>
-                            <th className="text-left px-5 py-3">Slot Date & Time</th>
-                            <th className="text-left px-5 py-3">Status</th>
-                            <th className="text-left px-5 py-3">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading ? (
-                            <tr><td colSpan={6} className="text-center py-10 text-slate-400">Loading bookings...</td></tr>
-                        ) : filtered.length === 0 ? (
-                            <tr>
-                                <td colSpan={6} className="py-16 text-center">
-                                    <span className="material-symbols-outlined text-4xl text-slate-200 mb-3 block">event_note</span>
-                                    <p className="text-slate-400 font-medium">No bookings yet</p>
-                                    <p className="text-xs text-slate-300 mt-1">Bookings from the website will appear here.</p>
-                                </td>
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[800px]">
+                        <thead>
+                            <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                                <th className="text-left px-5 py-3">Type</th>
+                                <th className="text-left px-5 py-3">Lead / Client</th>
+                                <th className="text-left px-5 py-3">Vehicle</th>
+                                <th className="text-left px-5 py-3">Date &amp; Time</th>
+                                <th className="text-left px-5 py-3">Status</th>
+                                <th className="text-left px-5 py-3">Actions</th>
                             </tr>
-                        ) : (
-                            filtered.map(b => (
-                                <tr key={b.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
-                                    <td className="px-5 py-3.5">
-                                        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${b.booking_type === 'test_drive' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                                            {b.booking_type === 'test_drive' ? 'Test Drive' : 'Service'}
-                                        </span>
-                                    </td>
-                                    <td className="px-5 py-3.5">
-                                        <div className="flex items-center gap-2">
-                                            <div className="size-7 rounded-full bg-gradient-to-br from-primary to-primary-light text-white flex items-center justify-center text-[10px] font-bold shrink-0">
-                                                {b.lead?.full_name?.charAt(0).toUpperCase() || 'U'}
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-medium text-primary line-clamp-1">{b.lead?.full_name || 'Deleted Lead'}</p>
-                                                <p className="text-[10px] text-slate-400">{b.lead?.phone}</p>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-5 py-3.5 text-sm text-slate-700">
-                                        {b.car ? `${b.car.year} ${b.car.make} ${b.car.model}`.trim() : <span className="text-slate-300 italic">No specific car</span>}
-                                    </td>
-                                    <td className="px-5 py-3.5">
-                                        <p className="text-sm text-primary font-bold">{formatDate(b.booking_date)}</p>
-                                        <p className="text-[10px] uppercase font-bold text-slate-400">{formatTime(b.booking_time)}</p>
-                                    </td>
-                                    <td className="px-5 py-3.5">
-                                        <select 
-                                            value={b.status || 'scheduled'} 
-                                            onChange={(e) => updateStatus(b.id, b.status, e.target.value)}
-                                            className={`text-[10px] font-bold px-2 py-1 rounded border-none cursor-pointer outline-none ${statusColors[b.status || 'scheduled'] || 'bg-slate-100 text-slate-500'}`}
-                                        >
-                                            <option value="scheduled">SCHEDULED</option>
-                                            <option value="completed">COMPLETED</option>
-                                            <option value="cancelled">CANCELLED</option>
-                                            <option value="no_show">NO SHOW</option>
-                                        </select>
-                                    </td>
-                                    <td className="px-5 py-3.5">
-                                        <div className="flex gap-1">
-                                            <a href={`tel:${b.lead?.phone}`} className="p-1.5 hover:bg-green-50 rounded-lg" title="Call">
-                                                <span className="material-symbols-outlined text-green-500 text-lg">call</span>
-                                            </a>
-                                            <a href={`https://wa.me/91${b.lead?.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-slate-100 rounded-lg" title="WhatsApp">
-                                                <span className="material-symbols-outlined text-slate-400 text-lg">forum</span>
-                                            </a>
-                                        </div>
+                        </thead>
+                        <tbody>
+                            {loading ? (
+                                <tr><td colSpan={6} className="text-center py-10 text-slate-400">Loading bookings…</td></tr>
+                            ) : filtered.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="py-16 text-center">
+                                        <span className="material-symbols-outlined text-4xl text-slate-200 mb-3 block">event_note</span>
+                                        <p className="text-slate-400 font-medium">No bookings match filters</p>
                                     </td>
                                 </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
+                            ) : (
+                                filtered.map(b => {
+                                    const urgent = isWithin24h(b.booking_date);
+                                    return (
+                                        <tr key={b.id} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors ${urgent && b.status === 'scheduled' ? 'bg-amber-50/40 border-l-2 border-l-amber-400' : ''}`}>
+                                            <td className="px-5 py-3.5">
+                                                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${b.booking_type === 'test_drive' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                    {b.booking_type === 'test_drive' ? '🚗 Test Drive' : '🔧 Service'}
+                                                </span>
+                                                {urgent && b.status === 'scheduled' && (
+                                                    <span className="block mt-1 text-[9px] font-bold text-amber-600 uppercase">⏰ Within 24h</span>
+                                                )}
+                                            </td>
+                                            <td className="px-5 py-3.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="size-7 rounded-full bg-gradient-to-br from-primary to-primary-light text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                                                        {b.lead?.full_name?.charAt(0)?.toUpperCase() || 'U'}
+                                                    </div>
+                                                    <div>
+                                                        {b.lead?.id ? (
+                                                            <Link to={`/admin/leads/${b.lead.id}`} onClick={e => e.stopPropagation()} className="text-sm font-medium text-primary hover:text-accent hover:underline line-clamp-1">
+                                                                {b.lead.full_name || 'Unknown'}
+                                                            </Link>
+                                                        ) : (
+                                                            <p className="text-sm font-medium text-primary line-clamp-1">{b.lead?.full_name || 'Deleted Lead'}</p>
+                                                        )}
+                                                        <p className="text-[10px] text-slate-400">{b.lead?.phone}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-3.5 text-sm text-slate-700">
+                                                {b.car ? `${b.car.year} ${b.car.make} ${b.car.model}`.trim() : <span className="text-slate-300 italic">No specific car</span>}
+                                            </td>
+                                            <td className="px-5 py-3.5">
+                                                <p className="text-sm text-primary font-bold">{formatDate(b.booking_date)}</p>
+                                                <p className="text-[10px] uppercase font-bold text-slate-400">{formatTime(b.booking_time)}</p>
+                                            </td>
+                                            <td className="px-5 py-3.5">
+                                                <select
+                                                    value={b.status || 'scheduled'}
+                                                    onChange={e => updateStatus(b.id, b.status, e.target.value)}
+                                                    disabled={updatingId === b.id}
+                                                    className={`text-[10px] font-bold px-2 py-1 rounded border-none cursor-pointer outline-none ${statusColors[b.status || 'scheduled'] || 'bg-slate-100 text-slate-500'}`}
+                                                >
+                                                    <option value="scheduled">SCHEDULED</option>
+                                                    <option value="completed">COMPLETED</option>
+                                                    <option value="cancelled">CANCELLED</option>
+                                                    <option value="no_show">NO SHOW</option>
+                                                </select>
+                                            </td>
+                                            <td className="px-5 py-3.5">
+                                                <div className="flex gap-1">
+                                                    <a href={`tel:${b.lead?.phone}`} className="p-1.5 hover:bg-green-50 rounded-lg" title="Call" onClick={e => e.stopPropagation()}>
+                                                        <span className="material-symbols-outlined text-green-500 text-lg">call</span>
+                                                    </a>
+                                                    <a href={toWhatsAppUrl(b.lead?.phone || '')} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-slate-100 rounded-lg" title="WhatsApp" onClick={e => e.stopPropagation()}>
+                                                        <span className="material-symbols-outlined text-slate-400 text-lg">forum</span>
+                                                    </a>
+                                                    {b.lead?.id && (
+                                                        <Link to={`/admin/leads/${b.lead.id}`} className="p-1.5 hover:bg-blue-50 rounded-lg" title="View Lead" onClick={e => e.stopPropagation()}>
+                                                            <span className="material-symbols-outlined text-blue-400 text-lg">person</span>
+                                                        </Link>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
+
+            {/* Test Drive Completion Prompt */}
+            {pendingUpdate && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+                        <div className="flex items-center gap-3">
+                            <div className="size-10 rounded-xl bg-green-50 flex items-center justify-center">
+                                <span className="material-symbols-outlined text-green-600 text-xl">directions_car</span>
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-primary">Test Drive Completed</h3>
+                                <p className="text-xs text-slate-500">Would you like to advance this lead?</p>
+                            </div>
+                        </div>
+                        <p className="text-sm text-slate-600 bg-slate-50 rounded-xl p-4">
+                            The test drive is done. Move the lead to <strong>Negotiating</strong> status and log an activity automatically?
+                        </p>
+                        <div className="flex gap-3">
+                            <button onClick={() => handleUpdateWithLeadPromotion(false)} className="flex-1 h-10 bg-slate-100 text-slate-600 font-bold rounded-xl text-sm hover:bg-slate-200 transition">
+                                Just Complete
+                            </button>
+                            <button onClick={() => handleUpdateWithLeadPromotion(true)} className="flex-1 h-10 bg-primary text-white font-bold rounded-xl text-sm hover:bg-primary-light transition">
+                                Move to Negotiation
+                            </button>
+                        </div>
+                        <button onClick={() => setPendingUpdate(null)} className="w-full text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
