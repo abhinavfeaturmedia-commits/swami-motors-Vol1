@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 import ShareCarModal from '../../components/ShareCarModal';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -54,6 +55,9 @@ const SkeletonRow = () => (
 
 // ─── Component ───────────────────────────────────────────────────────────────
 const AdminInventory = () => {
+    const { hasPermission } = useAuth();
+    const canManage = hasPermission('inventory', 'manage');
+    
     const [cars, setCars] = useState<Car[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('All');
@@ -170,9 +174,11 @@ const AdminInventory = () => {
                     <button onClick={fetchCars} className="h-10 w-10 flex items-center justify-center border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-50 transition-colors" title="Refresh">
                         <span className="material-symbols-outlined text-lg">refresh</span>
                     </button>
-                    <Link to="/admin/inventory/new" className="h-10 px-5 bg-accent text-primary font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-accent-hover transition-colors shadow-sm">
-                        <span className="material-symbols-outlined text-lg">add</span> Add New Car
-                    </Link>
+                    {canManage && (
+                        <Link to="/admin/inventory/new" className="h-10 px-5 bg-accent text-primary font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-accent-hover transition-colors shadow-sm">
+                            <span className="material-symbols-outlined text-lg">add</span> Add New Car
+                        </Link>
+                    )}
                 </div>
             </div>
 
@@ -293,7 +299,8 @@ const AdminInventory = () => {
                                         <select
                                             value={car.status}
                                             onChange={e => handleStatusChange(car.id, e.target.value)}
-                                            className={`text-[10px] font-bold px-2.5 py-1.5 rounded-full uppercase border-0 cursor-pointer outline-none ${statusColors[car.status] ?? 'bg-slate-100 text-slate-500'}`}
+                                            disabled={!canManage}
+                                            className={`text-[10px] font-bold px-2.5 py-1.5 rounded-full uppercase border-0 outline-none ${canManage ? 'cursor-pointer' : 'cursor-default opacity-80'} ${statusColors[car.status] ?? 'bg-slate-100 text-slate-500'}`}
                                         >
                                             {['available', 'reserved', 'sold', 'pending', 'archived'].map(s => (
                                                 <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
@@ -317,23 +324,27 @@ const AdminInventory = () => {
                                                     </span>
                                                 )}
                                             </button>
-                                            <Link to={`/admin/inventory/${car.id}/edit`} className="p-1.5 hover:bg-slate-100 rounded-lg" title="Edit">
-                                                <span className="material-symbols-outlined text-slate-400 text-lg">edit</span>
-                                            </Link>
+                                            {canManage && (
+                                                <Link to={`/admin/inventory/${car.id}/edit`} className="p-1.5 hover:bg-slate-100 rounded-lg" title="Edit">
+                                                    <span className="material-symbols-outlined text-slate-400 text-lg">edit</span>
+                                                </Link>
+                                            )}
                                             <Link to={`/car/${car.id}`} target="_blank" className="p-1.5 hover:bg-slate-100 rounded-lg" title="View on website">
                                                 <span className="material-symbols-outlined text-slate-400 text-lg">open_in_new</span>
                                             </Link>
-                                            <button
-                                                onClick={() => handleDelete(car.id, car.make, car.model)}
-                                                disabled={deletingId === car.id}
-                                                className={`p-1.5 rounded-lg transition-colors hover:bg-red-50 text-red-500`}
-                                                title="Delete Vehicle"
-                                            >
-                                                {deletingId === car.id
-                                                    ? <span className="size-4 border-2 border-red-300 border-t-red-500 rounded-full animate-spin block" />
-                                                    : <span className="material-symbols-outlined text-lg">delete</span>
-                                                }
-                                            </button>
+                                            {canManage && (
+                                                <button
+                                                    onClick={() => handleDelete(car.id, car.make, car.model)}
+                                                    disabled={deletingId === car.id}
+                                                    className={`p-1.5 rounded-lg transition-colors hover:bg-red-50 text-red-500`}
+                                                    title="Delete Vehicle"
+                                                >
+                                                    {deletingId === car.id
+                                                        ? <span className="size-4 border-2 border-red-300 border-t-red-500 rounded-full animate-spin block" />
+                                                        : <span className="material-symbols-outlined text-lg">delete</span>
+                                                    }
+                                                </button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

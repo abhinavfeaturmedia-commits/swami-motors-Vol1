@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotifications } from '../../contexts/NotificationContext';
 
 const TYPES = [
   { value: 'bonus', label: 'Bonus', color: 'bg-green-100 text-green-700' },
@@ -48,6 +49,7 @@ const emptyAnn = { title: '', body: '', priority: 'normal', is_pinned: false, ex
 
 export default function Incentives() {
   const { user, isAdmin } = useAuth();
+  const { addNotification } = useNotifications();
   const [tab, setTab] = useState<'records'|'leaderboard'|'announcements'>('records');
   const [incentives, setIncentives] = useState<Incentive[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -60,6 +62,14 @@ export default function Incentives() {
   const [annForm, setAnnForm] = useState(emptyAnn);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string|null>(null);
+  const [notifSent, setNotifSent] = useState<string | null>(null);
+  const notifTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flashNotif = (msg: string) => {
+    setNotifSent(msg);
+    if (notifTimer.current) clearTimeout(notifTimer.current);
+    notifTimer.current = setTimeout(() => setNotifSent(null), 4000);
+  };
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -102,11 +112,52 @@ export default function Incentives() {
     e.preventDefault();
     if (!incForm.staff_id || !incForm.amount || !incForm.reason) return;
     setSaving(true);
-    await supabase.from('staff_incentives').insert({
-      staff_id: incForm.staff_id, amount: Number(incForm.amount),
-      reason: incForm.reason, incentive_type: incForm.incentive_type,
-      month: incForm.month, notes: incForm.notes || null, awarded_by: user?.id,
-    });
+
+    const { data: inserted, error } = await supabase
+      .from('staff_incentives')
+      .insert({
+        staff_id: incForm.staff_id, amount: Number(incForm.amount),
+        reason: incForm.reason, incentive_type: incForm.incentive_type,
+        month: incForm.month, notes: incForm.notes || null, awarded_by: user?.id,
+      })
+      .select()
+      .single();
+
+    if (!error && inserted) {
+      const amountFmt = `₹${Number(inserted.amount).toLocaleString('en-IN')}`;
+      const typeLabel = (inserted.incentive_type || 'incentive')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (c: string) => c.toUpperCase());
+      const dedupKey = `incentive_awarded_${inserted.id}`;
+
+      // Fallback: insert notification directly (covers cases where realtime hasn't fired yet)
+      await addNotification({
+        type: 'incentive_awarded',
+        category: 'staff',
+        priority: 1,
+        icon: 'workspace_premium',
+        color: 'green',
+        title: `🏆 You've Earned a ${typeLabel}!`,
+        message: `${amountFmt} has been awarded to you. Reason: ${inserted.reason || 'See incentives page.'}`,
+        action_url: '/admin/my-incentives',
+        action_label: 'View My Incentives',
+        related_entity_type: 'incentive',
+        related_entity_id: inserted.id,
+        assigned_to_user_id: inserted.staff_id,
+        dedup_key: dedupKey,
+        metadata: {
+          amount: inserted.amount,
+          incentive_type: inserted.incentive_type,
+          reason: inserted.reason,
+          month: inserted.month,
+        },
+        is_read: false,
+        is_dismissed: false,
+      });
+
+      flashNotif('📨 Incentive saved — staff member has been notified ✓');
+    }
+
     setShowIncForm(false); setIncForm(emptyInc); setSaving(false); fetchAll();
   };
 
@@ -122,11 +173,55 @@ export default function Incentives() {
     e.preventDefault();
     if (!annForm.title || !annForm.body) return;
     setSaving(true);
-    await supabase.from('staff_announcements').insert({
-      title: annForm.title, body: annForm.body, priority: annForm.priority,
-      is_pinned: annForm.is_pinned, created_by: user?.id,
-      expires_at: annForm.expires_at || null,
-    });
+
+    const { data: inserted, error } = await supabase
+      .from('staff_announcements')
+      .insert({
+        title: annForm.title, body: annForm.body, priority: annForm.priority,
+        is_pinned: annForm.is_pinned, created_by: user?.id,
+        expires_at: annForm.expires_at || null,
+      })
+      .select()
+      .single();
+
+    if (!error && inserted) {
+      const dedupKey = `announcement_posted_${inserted.id}`;
+      let priority: 1 | 2 | 3 | 4 = 3;
+      let color: 'red' | 'amber' | 'green' | 'blue' | 'purple' | 'orange' = 'amber';
+      let titlePrefix = '📢';
+
+      if (inserted.priority === 'urgent')      { priority = 1; color = 'red';    titlePrefix = '🚨'; }
+      else if (inserted.priority === 'celebration') { priority = 2; color = 'purple'; titlePrefix = '🎉'; }
+
+      // Fallback: insert broadcast notification directly
+      await addNotification({
+        type: `announcement_${inserted.priority ?? 'normal'}`,
+        category: 'staff',
+        priority,
+        icon: 'campaign',
+        color,
+        title: `${titlePrefix} ${inserted.title}`,
+        message: inserted.body
+          ? inserted.body.slice(0, 120) + (inserted.body.length > 120 ? '…' : '')
+          : 'A new announcement has been posted.',
+        action_url: '/admin/my-incentives',
+        action_label: 'View Announcements',
+        related_entity_type: 'announcement',
+        related_entity_id: inserted.id,
+        assigned_to_user_id: null, // broadcast
+        dedup_key: dedupKey,
+        metadata: {
+          announcement_id: inserted.id,
+          priority: inserted.priority,
+          is_pinned: inserted.is_pinned,
+        },
+        is_read: false,
+        is_dismissed: false,
+      });
+
+      flashNotif(`📢 Announcement posted — all staff have been notified ✓`);
+    }
+
     setShowAnnForm(false); setAnnForm(emptyAnn); setSaving(false); fetchAll();
   };
 
@@ -142,6 +237,18 @@ export default function Incentives() {
 
   return (
     <div className="space-y-6">
+
+      {/* ── Notification sent success banner ── */}
+      {notifSent && (
+        <div className="flex items-center gap-3 bg-green-50 border border-green-200 text-green-800 px-5 py-3.5 rounded-2xl shadow-sm animate-[fadeIn_0.3s_ease-out]">
+          <span className="material-symbols-outlined text-green-600 text-xl shrink-0">mark_email_read</span>
+          <p className="text-sm font-semibold flex-1">{notifSent}</p>
+          <button onClick={() => setNotifSent(null)} className="p-1 hover:bg-green-100 rounded-lg transition-colors">
+            <span className="material-symbols-outlined text-green-500 text-sm">close</span>
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -67,7 +67,65 @@ export default function StaffIncentivesView() {
     setLoading(false);
   }, []);
 
+  // ── New announcement flash badge state ─────────────────────────────────────────────
+  const [newAnnFlash, setNewAnnFlash] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerFlash = () => {
+    setNewAnnFlash(true);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setNewAnnFlash(false), 8000);
+  };
+
+  // Initial load
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // ── Realtime: auto-refresh when incentives change ───────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+
+    const incChannel = supabase
+      .channel('staff_incentives_view_realtime')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'staff_incentives',
+      }, () => { fetchAll(); })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'staff_incentives',
+      }, () => { fetchAll(); })
+      .subscribe();
+
+    return () => { supabase.removeChannel(incChannel); };
+  }, [user, fetchAll]);
+
+  // ── Realtime: auto-refresh when announcements change (+ flash badge) ───────────
+  useEffect(() => {
+    if (!user) return;
+
+    const annChannel = supabase
+      .channel('staff_announcements_view_realtime')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'staff_announcements',
+      }, () => { fetchAll(); triggerFlash(); })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'staff_announcements',
+      }, () => { fetchAll(); })
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'staff_announcements',
+      }, () => { fetchAll(); })
+      .subscribe();
+
+    return () => { supabase.removeChannel(annChannel); };
+  }, [user, fetchAll]);
 
   // ── Period filter ────────────────────────────────────────────────────────
   const filtered = (() => {
@@ -111,8 +169,23 @@ export default function StaffIncentivesView() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-black text-primary font-display">My Incentives</h1>
-        <p className="text-slate-500 text-sm mt-0.5">Your earnings, team leaderboard, and today's announcements.</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-black text-primary font-display">My Incentives</h1>
+            <p className="text-slate-500 text-sm mt-0.5">Your earnings, team leaderboard, and today's announcements.</p>
+          </div>
+          {/* Live new-announcement flash badge */}
+          {newAnnFlash && (
+            <button
+              onClick={() => { setNewAnnFlash(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+              className="flex items-center gap-2 bg-amber-500 text-white text-xs font-bold px-4 py-2.5 rounded-2xl shadow-lg animate-pulse hover:animate-none hover:bg-amber-600 transition-all"
+            >
+              <span className="material-symbols-outlined text-sm">campaign</span>
+              🔔 New Announcement!
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Today's Announcements Banner */}

@@ -94,9 +94,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setDocuments(documentsData || []);
             
             // Format settings from array of K/V to standard object
+            // Supports both column naming conventions (setting_key/setting_value from v2, key/value from v1)
             if (settingsData && settingsData.length > 0) {
                 const map: Record<string, any> = {};
-                settingsData.forEach((s: any) => { map[s.setting_key] = s.setting_value });
+                settingsData.forEach((s: any) => {
+                    const k = s.setting_key ?? s.key;
+                    const v = s.setting_value ?? s.value;
+                    if (k !== undefined) map[k] = v;
+                });
                 setSettings(map);
             }
             

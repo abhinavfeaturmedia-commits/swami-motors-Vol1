@@ -71,6 +71,9 @@ const AdminLeads = () => {
     const [activeStatusFilter, setActiveStatusFilter] = useState('All Statuses');
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
+
+    // leadCarMap: leadId → [{make, model, registration_no}] built from lead_car_interests + inventory
+    const [leadCarMap, setLeadCarMap] = useState<Record<string, Array<{ make: string; model: string; registration_no: string }>>>({});
     const leadsPerPage = 15;
 
     // Bulk Actions state
@@ -180,11 +183,27 @@ const AdminLeads = () => {
     };
 
     const fetchInterestCounts = useCallback(async () => {
-        const { data } = await supabase.from('lead_car_interests').select('lead_id');
+        // Fetch car details from inventory so we can search leads by car name/reg
+        const { data } = await supabase
+            .from('lead_car_interests')
+            .select('lead_id, car:inventory(make, model, registration_no)');
         if (data) {
             const counts: Record<string, number> = {};
-            data.forEach((r: any) => { counts[r.lead_id] = (counts[r.lead_id] || 0) + 1; });
+            const carMap: Record<string, Array<{ make: string; model: string; registration_no: string }>> = {};
+            data.forEach((r: any) => {
+                if (!r.lead_id) return;
+                counts[r.lead_id] = (counts[r.lead_id] || 0) + 1;
+                if (r.car) {
+                    if (!carMap[r.lead_id]) carMap[r.lead_id] = [];
+                    carMap[r.lead_id].push({
+                        make:            (r.car.make            || '').toLowerCase(),
+                        model:           (r.car.model           || '').toLowerCase(),
+                        registration_no: (r.car.registration_no || '').toLowerCase(),
+                    });
+                }
+            });
             setInterestCounts(counts);
+            setLeadCarMap(carMap);
         }
     }, []);
 
@@ -500,9 +519,29 @@ const AdminLeads = () => {
     const filteredAndSearchedLeads = leads.filter(l => {
         const matchesTab = activeFilter === 'All Leads' || l.type === activeFilter;
         const matchesStatus = activeStatusFilter === 'All Statuses' || l.status === activeStatusFilter;
-        const matchesSearch = l.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            l.phone.includes(searchQuery);
-        return matchesTab && matchesStatus && matchesSearch;
+        const q = searchQuery.toLowerCase().trim();
+        if (!q) return matchesTab && matchesStatus;
+
+        // 1. Standard personal fields
+        if ((l.full_name || '').toLowerCase().includes(q)) return matchesTab && matchesStatus;
+        if ((l.phone || '').includes(q))                   return matchesTab && matchesStatus;
+        if ((l.secondary_phone || '').includes(q))         return matchesTab && matchesStatus;
+
+        // 2. sell_car lead — car the customer wants to sell (stored directly on lead row)
+        if ((l.car_make  || '').toLowerCase().includes(q)) return matchesTab && matchesStatus;
+        if ((l.car_model || '').toLowerCase().includes(q)) return matchesTab && matchesStatus;
+        if (`${(l.car_make || '')} ${(l.car_model || '')}`.toLowerCase().includes(q)) return matchesTab && matchesStatus;
+
+        // 3. Inventory car interests (test_drive / contact / insurance leads)
+        //    leadCarMap is keyed by lead_id and holds cars from lead_car_interests + inventory join
+        const interestedCars = leadCarMap[l.id] || [];
+        const matchesCar = interestedCars.some(car =>
+            car.make.includes(q) ||
+            car.model.includes(q) ||
+            car.registration_no.includes(q) ||
+            `${car.make} ${car.model}`.includes(q)
+        );
+        return matchesTab && matchesStatus && matchesCar;
     });
 
     const totalPages = Math.ceil(filteredAndSearchedLeads.length / leadsPerPage);
@@ -552,7 +591,7 @@ const AdminLeads = () => {
                         <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</span>
                         <input
                             type="text"
-                            placeholder="Search names or phone..."
+                            placeholder="Search name, phone, car brand or model…"
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                             className="h-10 pl-10 pr-4 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-primary/20 w-full md:w-64 transition-all"

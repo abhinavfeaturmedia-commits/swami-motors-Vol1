@@ -17,7 +17,8 @@ const InventoryForm = () => {
     const { id } = useParams<{ id: string }>();
     const isEditMode = Boolean(id);
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const canManage = hasPermission('inventory', 'manage');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // ─── Form state ──────────────────────────────────────────────────────────
@@ -186,94 +187,245 @@ const InventoryForm = () => {
         return `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/car-images/${img}`;
     };
 
-    // ─── Magic Auto Fill ─────────────────────────────────────────────────────
+    // ─── Smart Auto Fill ──────────────────────────────────────────────────────
     const handleAutoFill = () => {
         if (!autoFillText.trim()) return;
 
         const data = { ...form };
-        // Remove emojis and special characters: keep alphanumeric, spaces, and basic punctuation
-        const text = autoFillText.replace(/[^\w\s.,₹:\-/()]/g, '');
-        const lowerText = text.toLowerCase();
 
-        // 1. Detect Make
-        const makes = ['Maruti Suzuki', 'Hyundai', 'Tata', 'Honda', 'Toyota', 'Kia', 'MG', 'Mahindra', 'Volkswagen', 'Skoda', 'Renault', 'Nissan', 'Ford', 'Jeep', 'Mercedes-Benz', 'BMW', 'Audi'];
-        for (const make of makes) {
-            if (lowerText.includes(make.toLowerCase()) || (make === 'Maruti Suzuki' && lowerText.includes('maruti'))) {
-                data.make = make;
+        // ── Helpers ──────────────────────────────────────────────────────────
+        // Strip emojis/symbols but keep ₹ and useful punctuation
+        const cleanText = autoFillText
+            .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
+            .replace(/[\u2600-\u27BF]/gu, '')
+            .replace(/[*•·|]/g, ' ');
+
+        const lines = cleanText.split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
+        const fullText = cleanText;
+        const lower = fullText.toLowerCase();
+
+        const parseIndianNumber = (s: string) =>
+            s.replace(/,/g, '').replace(/\/-$/, '').trim();
+
+        // ── 1. Registration Number ────────────────────────────────────────────
+        // Handles: MH09AB1234 / MH09 EK 2958 / MH48 AW 2578 / MH46 W 0261
+        const regMatch = fullText.match(/\b([A-Z]{2}[\s\-]?\d{1,2}[\s\-]?[A-Z]{1,3}[\s\-]?\d{1,4})\b/i);
+        if (regMatch) {
+            const raw = regMatch[1].replace(/[\s\-]/g, '').toUpperCase();
+            if (/\d/.test(raw) && raw.length >= 4) data.registration_no = raw;
+        }
+
+        // ── 2. Make ───────────────────────────────────────────────────────────
+        const makeAliases: Record<string, string> = {
+            'maruti suzuki': 'Maruti Suzuki',
+            'maruti': 'Maruti Suzuki',
+            'suzuki': 'Maruti Suzuki',
+            'hyundai': 'Hyundai',
+            'tata': 'Tata',
+            'honda': 'Honda',
+            'toyota': 'Toyota',
+            'kia': 'Kia',
+            'mahindra': 'Mahindra',
+            'volkswagen': 'Volkswagen',
+            'vw': 'Volkswagen',
+            'skoda': 'Skoda',
+            'renault': 'Renault',
+            'nissan': 'Nissan',
+            'ford': 'Ford',
+            'jeep': 'Jeep',
+            'mercedes-benz': 'Mercedes-Benz',
+            'mercedes': 'Mercedes-Benz',
+            'bmw': 'BMW',
+            'audi': 'Audi',
+        };
+        const sortedAliases = Object.keys(makeAliases).sort((a, b) => b.length - a.length);
+        for (const alias of sortedAliases) {
+            if (lower.includes(alias)) {
+                data.make = makeAliases[alias];
                 break;
             }
         }
 
-        // 2. Detect Model using a known models lookup per make
+        // ── 3. Model + Variant ────────────────────────────────────────────────
         const modelsByMake: Record<string, string[]> = {
-            'Maruti Suzuki': ['Swift', 'Dzire', 'Alto', 'Baleno', 'Ertiga', 'Vitara Brezza', 'Brezza', 'WagonR', 'Wagon R', 'Celerio', 'Ignis', 'S-Cross', 'Ciaz', 'Eeco', 'Omni', 'Grand Vitara', 'Jimny', 'Fronx', 'Invicto'],
-            'Hyundai': ['Creta', 'Venue', 'i20', 'i10', 'Grand i10', 'Verna', 'Tucson', 'Alcazar', 'Aura', 'Santro', 'Exter', 'Ioniq'],
-            'Tata': ['Nexon', 'Harrier', 'Safari', 'Tiago', 'Tigor', 'Punch', 'Altroz', 'Hexa', 'Indica', 'Indigo', 'Nano', 'Zest', 'Bolt'],
-            'Honda': ['City', 'Amaze', 'Jazz', 'WR-V', 'BR-V', 'CR-V', 'HR-V', 'Accord', 'Civic', 'Brio', 'Mobilio', 'Elevate'],
-            'Toyota': ['Fortuner', 'Innova', 'Innova Crysta', 'Glanza', 'Urban Cruiser', 'Camry', 'Etios', 'Liva', 'Corolla', 'Hyryder', 'Rumion'],
+            'Maruti Suzuki': ['Swift Dzire', 'Dzire', 'Alto K10', 'Alto 800', 'Alto', 'Baleno', 'Vitara Brezza', 'Brezza', 'Grand Vitara', 'Ertiga', 'WagonR', 'Wagon R', 'Celerio', 'Ignis', 'S-Cross', 'Ciaz', 'Eeco', 'Omni', 'Jimny', 'Fronx', 'Invicto', 'Swift'],
+            'Hyundai': ['Grand i10 Nios', 'Grand i10', 'Creta', 'Venue', 'i20 Active', 'i20', 'i10', 'Verna', 'Tucson', 'Alcazar', 'Aura', 'Santro', 'Exter', 'Ioniq'],
+            'Tata': ['Nexon EV', 'Nexon', 'Harrier', 'Safari', 'Tiago EV', 'Tiago', 'Tigor', 'Punch', 'Altroz', 'Hexa', 'Indica', 'Indigo', 'Nano', 'Zest', 'Bolt'],
+            'Honda': ['City Hybrid', 'City', 'Amaze', 'Jazz', 'WR-V', 'BR-V', 'CR-V', 'HR-V', 'Accord', 'Civic', 'Brio', 'Mobilio', 'Elevate'],
+            'Toyota': ['Innova Crysta', 'Innova HyCross', 'Innova', 'Fortuner Legender', 'Fortuner', 'Glanza', 'Urban Cruiser', 'Hyryder', 'Camry', 'Etios Liva', 'Etios Cross', 'Etios', 'Liva', 'Corolla', 'Rumion'],
             'Kia': ['Seltos', 'Sonet', 'Carnival', 'Carens', 'EV6'],
-            'MG': ['Hector', 'Astor', 'Gloster', 'ZS EV', 'Comet'],
-            'Mahindra': ['XUV700', 'XUV400', 'XUV300', 'Thar', 'Scorpio', 'Scorpio N', 'Bolero', 'KUV100', 'Marazzo', 'BE6'],
-            'Volkswagen': ['Polo', 'Vento', 'Taigun', 'Tiguan', 'Virtus'],
+            'MG': ['Hector Plus', 'Hector', 'Astor', 'Gloster', 'ZS EV', 'Comet'],
+            'Mahindra': ['XUV 3XO', 'XUV700', 'XUV400', 'XUV300', 'Scorpio N', 'Scorpio Classic', 'Scorpio', 'Thar', 'Bolero Neo', 'Bolero', 'KUV100', 'Marazzo', 'BE6'],
+            'Volkswagen': ['Polo Cross', 'Polo', 'Vento', 'Taigun', 'Tiguan Allspace', 'Tiguan', 'Virtus'],
             'Skoda': ['Rapid', 'Kushaq', 'Octavia', 'Superb', 'Kodiaq', 'Slavia'],
             'Renault': ['Duster', 'Kwid', 'Triber', 'Kiger'],
             'Nissan': ['Magnite', 'Kicks', 'Terrano', 'Micra'],
-            'Ford': ['EcoSport', 'Figo', 'Endeavour', 'Freestyle', 'Aspire'],
-            'Jeep': ['Compass', 'Meridian', 'Wrangler', 'Grand Cherokee'],
+            'Ford': ['EcoSport', 'Figo Aspire', 'Figo', 'Endeavour', 'Freestyle', 'Aspire'],
+            'Jeep': ['Grand Cherokee', 'Compass', 'Meridian', 'Wrangler'],
+            'Mercedes-Benz': ['GLE', 'GLS', 'GLC', 'C-Class', 'E-Class', 'S-Class', 'A-Class'],
+            'BMW': ['X1', 'X3', 'X5', '3 Series', '5 Series', '7 Series'],
+            'Audi': ['A4', 'A6', 'Q3', 'Q5', 'Q7'],
         };
 
+        const noiseWords = new Set([
+            'petrol', 'diesel', 'cng', 'electric', 'ev', 'hybrid', 'owner', 'ownership',
+            'price', 'km', 'kms', 'rs', 'inr', 'lakh', 'negotiable', 'nigotiable',
+            'insurance', 'inssurance', 'driven', 'running', 'genuine', 'condition',
+            'single', 'double', 'key', 'keys', 'contact', 'registration', 'model',
+            'make', 'fuel', 'color', 'colour', 'white', 'black', 'silver', 'grey',
+            'gray', 'red', 'blue', 'green', 'yellow', 'orange', 'brown', 'maroon',
+            'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+            'january', 'february', 'march', 'april', 'june', 'july', 'august', 'september',
+            'october', 'november', 'december', 'saptember', 'valid', 'expire', 'expired',
+            'company', 'maintained', 'showroom', 'pure', 'and',
+        ]);
+
         const knownModels = data.make ? (modelsByMake[data.make] || []) : Object.values(modelsByMake).flat();
-        // Sort by length descending so "Innova Crysta" matches before "Innova"
         const sortedModels = [...knownModels].sort((a, b) => b.length - a.length);
 
+        let detectedModel = '';
         for (const model of sortedModels) {
-            if (lowerText.includes(model.toLowerCase())) {
+            if (lower.includes(model.toLowerCase())) {
+                detectedModel = model;
                 data.model = model;
-                // Extract variant: text after make+model, strip common noise words
-                const makeStr = data.make === 'Maruti Suzuki' ? '(?:maruti suzuki|maruti)' : data.make.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const modelStr = model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const afterModel = text.replace(new RegExp(`${makeStr}\\s*`, 'gi'), '')
-                    .replace(new RegExp(`${modelStr}\\s*`, 'gi'), '');
-                // Pick out variant — first word(s) that aren't petrol/diesel/year/km/owner/price
-                const variantMatch = afterModel.match(/\b([A-Z][a-zA-Z0-9+\-]{1,}(?:\s+[A-Z][a-zA-Z0-9+\-]{1,})?)\b/);
-                if (variantMatch) {
-                    const candidate = variantMatch[1];
-                    if (!/^(petrol|diesel|cng|electric|ev|hybrid|owner|price|km|kms|rs|inr|\d{4})$/i.test(candidate)) {
-                        data.variant = candidate;
-                    }
-                }
                 break;
             }
         }
 
-        // 3. Year
-        const yearMatch = text.match(/\b(19\d{2}|20\d{2})\b/);
-        if (yearMatch) data.year = Number(yearMatch[1]);
+        // Extract variant from the line containing the model
+        if (detectedModel) {
+            const modelLower = detectedModel.toLowerCase();
+            const makeLower = (data.make || '').toLowerCase();
+            for (const line of lines) {
+                const lineLower = line.toLowerCase();
+                if (lineLower.includes(modelLower)) {
+                    let remainder = line
+                        .replace(new RegExp(makeLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '')
+                        .replace(/maruti/gi, '')
+                        .replace(/suzuki/gi, '')
+                        .replace(new RegExp(modelLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '')
+                        .trim();
 
-        // 4. Price
-        const priceMatch = text.match(/price\s*[:\-]?\s*(?:rs|inr|₹)?\s*([\d,]+)/i);
-        if (priceMatch) data.price = priceMatch[1].replace(/,/g, '');
+                    const tokens = remainder.split(/[\s,\/\u2013\-]+/).filter((t: string) => {
+                        const tl = t.toLowerCase();
+                        return (
+                            t.length > 1 &&
+                            !noiseWords.has(tl) &&
+                            !/^\d{4}$/.test(t) &&
+                            !/^\d{2,6}(km|kms)?$/i.test(t)
+                        );
+                    });
 
-        // 5. Registration number
-        const regMatch = text.match(/([A-Z]{2}\s?\d{1,2}\s?[a-zA-Z]{1,3}\s?\d{1,4})/i);
-        if (regMatch) data.registration_no = regMatch[1].replace(/\s+/g, '').toUpperCase();
+                    if (tokens.length > 0) data.variant = tokens.join(' ');
+                    break;
+                }
+            }
+        }
 
-        // 6. Mileage
-        const milMatch = text.match(/([\d,]+)\s*(km|kms)\b/i);
-        if (milMatch) data.mileage = milMatch[1].replace(/,/g, '');
+        // ── 4. Year ───────────────────────────────────────────────────────────
+        // Handles: "2017", "2017/june", "2017/saptember", "Model 2017/june"
+        const yearPatterns = [
+            /(20\d{2}|19\d{2})[\s\/\-](?:jan|feb|mar|apr|may|jun|jul|aug|sep|sap|oct|nov|dec)/i,
+            /model\s*[:\-]?\s*(20\d{2}|19\d{2})/i,
+            /\b(20\d{2}|19\d{2})\b/,
+        ];
+        for (const pat of yearPatterns) {
+            const m = fullText.match(pat);
+            if (m) {
+                // The year is in capture group 1 for patterns 2&3, and group 0 start for pattern 1
+                const yearStr = m[1] || m[0].match(/\d{4}/)?.[0];
+                if (yearStr) { data.year = Number(yearStr); break; }
+            }
+        }
 
-        // 7. Fuel type
-        if (lowerText.includes('petrol')) data.fuel_type = 'Petrol';
-        else if (lowerText.includes('diesel')) data.fuel_type = 'Diesel';
-        else if (lowerText.includes('cng')) data.fuel_type = 'CNG';
-        else if (lowerText.includes('electric') || lowerText.includes(' ev')) data.fuel_type = 'Electric';
+        // ── 5. Price ──────────────────────────────────────────────────────────
+        // Handles: "Price ₹11,50,000/-", "Price 7,75,000", "₹3,60,000"
+        const pricePatterns = [
+            /price\s*[:\-]?\s*(?:rs\.?|inr|₹)?\s*([\d,]+)\s*\/-?/i,
+            /price\s*[:\-]?\s*(?:rs\.?|inr|₹)?\s*([\d,]+)/i,
+            /(?:rs\.?|inr|₹)\s*([\d,]+)\s*\/-?/i,
+            /(?:rs\.?|inr|₹)\s*([\d,]+)/i,
+        ];
+        for (const pat of pricePatterns) {
+            const m = fullText.match(pat);
+            if (m) {
+                const num = parseIndianNumber(m[1]);
+                if (num.length >= 4) { data.price = num; break; }
+            }
+        }
 
-        // 8. Ownership
-        const ownerMatch = lowerText.match(/(\d)(?:st|nd|rd|th)?\s*owner/i);
-        if (ownerMatch) data.ownership = ownerMatch[1];
-        else if (lowerText.match(/\b1st\b|\bfirst\b/i)) data.ownership = '1';
-        else if (lowerText.match(/\b2nd\b|\bsecond\b/i)) data.ownership = '2';
-        else if (lowerText.match(/\b3rd\b|\bthird\b/i)) data.ownership = '3';
+        // ── 6. Mileage ────────────────────────────────────────────────────────
+        // Handles: "80,000 km", "118000 km", "72000 kk" (typo)
+        const milMatch = fullText.match(/([\d,]+)\s*(?:km|kms|kk)\b/i);
+        if (milMatch) {
+            const val = parseIndianNumber(milMatch[1]);
+            if (val.length >= 4 && !/^(20|19)\d{2}$/.test(val)) data.mileage = val;
+        }
+
+        // ── 7. Fuel Type ──────────────────────────────────────────────────────
+        // "Petrol + company CNG" → CNG | "Pure petrol" → Petrol
+        const hasCNG = /\bcng\b/i.test(fullText);
+        const hasPetrol = /\bpetrol\b/i.test(fullText);
+        const hasDiesel = /\bdiesel\b/i.test(fullText);
+        const hasElectric = /\belectric\b|\bev\b/i.test(fullText);
+        const hasHybrid = /\bhybrid\b/i.test(fullText);
+        if (hasCNG) data.fuel_type = 'CNG';
+        else if (hasDiesel) data.fuel_type = 'Diesel';
+        else if (hasElectric) data.fuel_type = 'Electric';
+        else if (hasHybrid) data.fuel_type = 'Hybrid';
+        else if (hasPetrol) data.fuel_type = 'Petrol';
+
+        // ── 8. Ownership ──────────────────────────────────────────────────────
+        // Handles: "1st Owner", "Owner 1", "single owner", "Owner 2"
+        const ownerWordMap: Record<string, string> = {
+            first: '1', single: '1', '1st': '1', '1': '1',
+            second: '2', '2nd': '2', '2': '2',
+            third: '3', '3rd': '3', '3': '3',
+            fourth: '4', '4th': '4', '4': '4',
+        };
+        const ownerPatterns = [
+            /(?:owner|ownership)\s*[:\-]?\s*(\d)/i,
+            /(\d)\s*(?:st|nd|rd|th)?\s*owner/i,
+            /\b(first|1st|single)\s*owner/i,
+            /\b(second|2nd)\s*owner/i,
+            /\b(third|3rd)\s*owner/i,
+            /\b(fourth|4th)\s*owner/i,
+        ];
+        for (const pat of ownerPatterns) {
+            const m = lower.match(pat);
+            if (m) {
+                const raw = m[1].toLowerCase();
+                data.ownership = ownerWordMap[raw] || raw;
+                break;
+            }
+        }
+
+        // ── 9. Color ──────────────────────────────────────────────────────────
+        const colorMap: Record<string, string> = {
+            'pearl white': 'Pearl White', 'arctic white': 'Arctic White',
+            'polar white': 'Polar White', white: 'White', black: 'Black',
+            silver: 'Silver', grey: 'Grey', gray: 'Grey', red: 'Red',
+            blue: 'Blue', green: 'Green', yellow: 'Yellow', orange: 'Orange',
+            brown: 'Brown', maroon: 'Maroon', beige: 'Beige', golden: 'Golden',
+            gold: 'Golden', bronze: 'Bronze', purple: 'Purple', pink: 'Pink',
+        };
+        const colorLabelMatch = fullText.match(/colou?r\s*[:\-]\s*([\w\s]+)/i);
+        if (colorLabelMatch) {
+            const candidate = colorLabelMatch[1].trim().toLowerCase();
+            const matched = Object.keys(colorMap).sort((a, b) => b.length - a.length).find(k => candidate.startsWith(k));
+            if (matched) data.color = colorMap[matched];
+        }
+        if (!data.color) {
+            const colorKeys = Object.keys(colorMap).sort((a, b) => b.length - a.length);
+            for (const key of colorKeys) {
+                if (lower.includes(key)) { data.color = colorMap[key]; break; }
+            }
+        }
+
+        // ── 10. Transmission ─────────────────────────────────────────────────
+        if (/\bautomatic\b|\bauto\b/i.test(fullText)) data.transmission = 'Automatic';
+        else if (/\bcvt\b/i.test(fullText)) data.transmission = 'CVT';
+        else if (/\bmanual\b/i.test(fullText)) data.transmission = 'Manual';
 
         setForm(data);
         setAutoFillText('');
@@ -318,6 +470,11 @@ const InventoryForm = () => {
     const handleSubmit = async (e: React.FormEvent, isDraft = false) => {
         e.preventDefault();
         setError('');
+
+        if (!canManage) {
+            setError('You do not have permission to manage inventory.');
+            return;
+        }
 
         if (!form.make || !form.model || !form.price) {
             setError('Make, Model, and Price are required fields.');
@@ -409,15 +566,30 @@ const InventoryForm = () => {
             {/* Smart Auto Fill */}
             {!isEditMode && (
                 <div className="bg-accent/10 border border-accent/20 rounded-2xl p-5 mb-6">
-                    <div className="flex items-start gap-3 mb-3">
-                        <span className="material-symbols-outlined text-accent text-xl shrink-0">auto_awesome</span>
+                    <div className="flex items-start gap-3">
+                        <span className="material-symbols-outlined text-accent text-xl shrink-0 mt-0.5">auto_awesome</span>
                         <div className="flex-1">
                             <h3 className="text-sm font-bold text-primary mb-1">Smart Auto-Fill</h3>
-                            <p className="text-xs text-slate-600 mb-3">Paste unstructured text from WhatsApp or notes (e.g. "Maruti Swift Vxi Petrol 2012 360000"). We'll extract the details and fill the form below.</p>
-                            
+                            <p className="text-xs text-slate-500 mb-3">
+                                Paste any WhatsApp/text listing — emojis, mixed case, typos — and we'll extract the details automatically.
+                                Detects: make, model, variant, year, price, mileage, registration, fuel type, ownership, color &amp; transmission.
+                            </p>
+
                             <div className="flex flex-col sm:flex-row gap-3">
-                                <textarea value={autoFillText} onChange={e => setAutoFillText(e.target.value)} rows={3} placeholder="Paste car details here..." className="flex-1 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/10 resize-y bg-white" />
-                                <button type="button" onClick={handleAutoFill} disabled={!autoFillText.trim()} className="h-11 px-6 bg-primary text-white font-bold rounded-xl text-sm shrink-0 self-start hover:bg-primary-light transition-all disabled:opacity-50">
+                                <textarea
+                                    value={autoFillText}
+                                    onChange={e => setAutoFillText(e.target.value)}
+                                    rows={5}
+                                    placeholder={`Paste car listing here. Examples:\n🚗 Mahindra Scorpio S10 M-Hawk – 2017\nMH48 AW 2578 | Maruti Ertiga VXI Green CNG | 2017/June | Owner 1 | 1,18,000 km | Price 7,75,000\nMH09 EK 2958, Swift VXI, Petrol, 2017/june, Owner 2, 72000 km, Price 5,60,000`}
+                                    className="flex-1 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/10 resize-y bg-white font-mono text-xs leading-relaxed"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleAutoFill}
+                                    disabled={!autoFillText.trim()}
+                                    className="h-11 px-6 bg-primary text-white font-bold rounded-xl text-sm shrink-0 self-start hover:bg-primary-light transition-all disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    <span className="material-symbols-outlined text-base">bolt</span>
                                     Extract Data
                                 </button>
                             </div>
@@ -854,14 +1026,14 @@ const InventoryForm = () => {
                     <button
                         type="button"
                         onClick={e => handleSubmit(e as any, true)}
-                        disabled={saving}
+                        disabled={saving || !canManage}
                         className="h-11 px-6 border border-slate-200 text-slate-600 font-semibold rounded-xl text-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
                     >
                         Save as Draft
                     </button>
                     <button
                         type="submit"
-                        disabled={saving || uploading}
+                        disabled={saving || uploading || !canManage}
                         className="h-11 px-6 bg-accent text-primary font-bold rounded-xl text-sm hover:bg-accent-hover transition-all shadow-sm flex items-center gap-2 disabled:opacity-50 min-w-[160px] justify-center"
                     >
                         {saving || uploading ? (

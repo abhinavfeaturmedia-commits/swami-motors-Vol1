@@ -51,6 +51,20 @@ export const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }
     return <>{children}</>;
 };
 
+// ─── Module Route Guard ───────────────────────────────────────────────────────
+// Protects individual routes based on module access permissions.
+
+export const ModuleRoute: React.FC<{ module: string, children: React.ReactNode }> = ({ module, children }) => {
+    const { hasPermission, isAdmin } = useAuth();
+    
+    // Admins always have access, staff must have explicitly granted 'view' permission for the module.
+    if (!isAdmin && !hasPermission(module, 'view')) {
+        return <Navigate to="/admin" replace />;
+    }
+    
+    return <>{children}</>;
+};
+
 // ─── User Route Guard ─────────────────────────────────────────────────────────
 // Redirects to /auth if the user is not logged in.
 

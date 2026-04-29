@@ -45,10 +45,23 @@ const AdminBookings = () => {
                 if (dateTab === 'Today'     && b.booking_date !== todayStr)                   return false;
                 if (dateTab === 'This Week' && (b.booking_date < weekStart || b.booking_date > weekEnd)) return false;
                 if (search) {
-                    const q = search.toLowerCase();
+                    const q = search.toLowerCase().trim();
                     const name = (b.lead?.full_name || '').toLowerCase();
                     const phone = (b.lead?.phone || '');
-                    if (!name.includes(q) && !phone.includes(q)) return false;
+                    const carMake  = (b.car?.make  || '').toLowerCase();
+                    const carModel = (b.car?.model || '').toLowerCase();
+                    const carYear  = String(b.car?.year || '');
+                    const regNo    = (b.car?.registration_no || '').toLowerCase();
+                    const carFull  = `${carMake} ${carModel}`.trim();
+                    if (
+                        !name.includes(q) &&
+                        !phone.includes(q) &&
+                        !carMake.includes(q) &&
+                        !carModel.includes(q) &&
+                        !carYear.includes(q) &&
+                        !regNo.includes(q) &&
+                        !carFull.includes(q)
+                    ) return false;
                 }
                 return true;
             })
@@ -162,7 +175,7 @@ const AdminBookings = () => {
                 {/* Search */}
                 <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 h-10 flex-1 min-w-[200px]">
                     <span className="material-symbols-outlined text-slate-400 text-lg">search</span>
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or phone…" className="bg-transparent text-sm text-primary outline-none w-full" />
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, phone, car or reg. no…" className="bg-transparent text-sm text-primary outline-none w-full" />
                     {search && <button onClick={() => setSearch('')} className="material-symbols-outlined text-slate-300 text-base hover:text-slate-500">close</button>}
                 </div>
             </div>

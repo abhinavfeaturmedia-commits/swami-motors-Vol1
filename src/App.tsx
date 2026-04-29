@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import { AdminRoute, UserRoute } from './components/ProtectedRoute';
+import { AdminRoute, UserRoute, ModuleRoute } from './components/ProtectedRoute';
 import PublicLayout from './layouts/PublicLayout';
 import AdminLayout from './layouts/AdminLayout';
 import Home from './pages/Home';
@@ -107,55 +107,55 @@ const App: React.FC = () => {
                     }>
                         {/* Main */}
                         <Route index element={<AdminDashboard />} />
-                        <Route path="inventory" element={<AdminInventory />} />
-                        <Route path="inventory/new" element={<InventoryForm />} />
-                        <Route path="inventory/:id/edit" element={<InventoryForm />} />
-                        <Route path="leads" element={<AdminLeads />} />
-                        <Route path="leads/:id" element={<LeadDetail />} />
-                        <Route path="sales" element={<AdminSales />} />
-                        <Route path="bookings" element={<AdminBookings />} />
-                        <Route path="planner" element={<DailyPlanner />} />
+                        <Route path="inventory" element={<ModuleRoute module="inventory"><AdminInventory /></ModuleRoute>} />
+                        <Route path="inventory/new" element={<ModuleRoute module="inventory"><InventoryForm /></ModuleRoute>} />
+                        <Route path="inventory/:id/edit" element={<ModuleRoute module="inventory"><InventoryForm /></ModuleRoute>} />
+                        <Route path="leads" element={<ModuleRoute module="leads"><AdminLeads /></ModuleRoute>} />
+                        <Route path="leads/:id" element={<ModuleRoute module="leads"><LeadDetail /></ModuleRoute>} />
+                        <Route path="sales" element={<ModuleRoute module="sales"><AdminSales /></ModuleRoute>} />
+                        <Route path="bookings" element={<ModuleRoute module="bookings"><AdminBookings /></ModuleRoute>} />
+                        <Route path="planner" element={<ModuleRoute module="bookings"><DailyPlanner /></ModuleRoute>} />
 
                         {/* Analytics */}
-                        <Route path="analytics" element={<Analytics />} />
-                        <Route path="reports" element={<Reports />} />
-                        <Route path="performance" element={<PerformanceScorecard />} />
+                        <Route path="analytics" element={<ModuleRoute module="analytics"><Analytics /></ModuleRoute>} />
+                        <Route path="reports" element={<ModuleRoute module="analytics"><Reports /></ModuleRoute>} />
+                        <Route path="performance" element={<ModuleRoute module="analytics"><PerformanceScorecard /></ModuleRoute>} />
 
                         {/* CRM */}
-                        <Route path="customers" element={<Customers />} />
-                        <Route path="follow-ups" element={<FollowUps />} />
-                        <Route path="lead-sources" element={<LeadSources />} />
+                        <Route path="customers" element={<ModuleRoute module="crm"><Customers /></ModuleRoute>} />
+                        <Route path="follow-ups" element={<ModuleRoute module="crm"><FollowUps /></ModuleRoute>} />
+                        <Route path="lead-sources" element={<ModuleRoute module="crm"><LeadSources /></ModuleRoute>} />
 
                         {/* Operations */}
-                        <Route path="inspections" element={<VehicleInspection />} />
-                        <Route path="documents" element={<Documents />} />
-                        <Route path="price-history" element={<PriceHistory />} />
-                        <Route path="expenses" element={<VehicleExpenses />} />
-                        <Route path="share-logs" element={<ShareLogs />} />
-                        <Route path="consignments" element={<ConsignmentTracker />} />
+                        <Route path="inspections" element={<ModuleRoute module="operations"><VehicleInspection /></ModuleRoute>} />
+                        <Route path="documents" element={<ModuleRoute module="operations"><Documents /></ModuleRoute>} />
+                        <Route path="price-history" element={<ModuleRoute module="operations"><PriceHistory /></ModuleRoute>} />
+                        <Route path="expenses" element={<ModuleRoute module="operations"><VehicleExpenses /></ModuleRoute>} />
+                        <Route path="share-logs" element={<ModuleRoute module="operations"><ShareLogs /></ModuleRoute>} />
+                        <Route path="consignments" element={<ModuleRoute module="inventory"><ConsignmentTracker /></ModuleRoute>} />
 
                         {/* Finance */}
-                        <Route path="accounts" element={<Accounts />} />
-                        <Route path="commissions" element={<Commissions />} />
-                        <Route path="tax" element={<TaxCompliance />} />
+                        <Route path="accounts" element={<ModuleRoute module="finance"><Accounts /></ModuleRoute>} />
+                        <Route path="commissions" element={<ModuleRoute module="finance"><Commissions /></ModuleRoute>} />
+                        <Route path="tax" element={<ModuleRoute module="finance"><TaxCompliance /></ModuleRoute>} />
 
                         {/* Schedule */}
-                        <Route path="calendar" element={<CalendarView />} />
-                        <Route path="notifications" element={<NotificationsCenter />} />
-                        <Route path="templates" element={<MessageTemplates />} />
+                        <Route path="calendar" element={<ModuleRoute module="schedule"><CalendarView /></ModuleRoute>} />
+                        <Route path="notifications" element={<ModuleRoute module="schedule"><NotificationsCenter /></ModuleRoute>} />
+                        <Route path="templates" element={<ModuleRoute module="schedule"><MessageTemplates /></ModuleRoute>} />
 
                         {/* Partners */}
-                        <Route path="dealers" element={<DealerManagement />} />
+                        <Route path="dealers" element={<ModuleRoute module="dealers"><DealerManagement /></ModuleRoute>} />
 
                         {/* Admin */}
-                        <Route path="users" element={<UserManagement />} />
-                        <Route path="audit-logs" element={<AuditLogs />} />
-                        <Route path="feedback" element={<FeedbackReviews />} />
-                        <Route path="settings" element={<AdminSettings />} />
+                        <Route path="users" element={<ModuleRoute module="users"><UserManagement /></ModuleRoute>} />
+                        <Route path="audit-logs" element={<ModuleRoute module="audit_logs"><AuditLogs /></ModuleRoute>} />
+                        <Route path="feedback" element={<ModuleRoute module="settings"><FeedbackReviews /></ModuleRoute>} />
+                        <Route path="settings" element={<ModuleRoute module="settings"><AdminSettings /></ModuleRoute>} />
 
                         {/* Incentives */}
-                        <Route path="incentives" element={<Incentives />} />
-                        <Route path="my-incentives" element={<StaffIncentivesView />} />
+                        <Route path="incentives" element={<ModuleRoute module="incentives"><Incentives /></ModuleRoute>} />
+                        <Route path="my-incentives" element={<ModuleRoute module="incentives"><StaffIncentivesView /></ModuleRoute>} />
                     </Route>
                 </Routes>
             </BrowserRouter>

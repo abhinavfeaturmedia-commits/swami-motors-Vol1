@@ -4,14 +4,18 @@ import { Menu, X, Bell, Plus, ChevronDown, LogOut, Home } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../contexts/AuthContext';
 import { DataProvider, useData } from '../contexts/DataContext';
+import { NotificationProvider, useNotifications } from '../contexts/NotificationContext';
 import { supabase } from '../lib/supabase';
 import GlobalSearch from '../components/admin/GlobalSearch';
+import SmartToastEngine from '../components/admin/SmartToastEngine';
 
 interface NavItem {
     name: string;
     href: string;
     icon: string;
     module: string; // maps to user_permissions.module
+    adminOnly?: boolean;  // only visible to admins
+    staffOnly?: boolean;  // only visible to staff
 }
 
 interface NavGroup {
@@ -29,7 +33,8 @@ const NAV_GROUPS: NavGroup[] = [
             { name: 'Leads', href: '/admin/leads', icon: 'people', module: 'leads' },
             { name: 'Sales', href: '/admin/sales', icon: 'point_of_sale', module: 'sales' },
             { name: 'Bookings', href: '/admin/bookings', icon: 'event', module: 'bookings' },
-            { name: 'Incentives', href: '/admin/incentives', icon: 'workspace_premium', module: 'incentives' },
+            { name: 'Incentives', href: '/admin/incentives', icon: 'workspace_premium', module: 'incentives', adminOnly: true },
+            { name: 'My Incentives', href: '/admin/my-incentives', icon: 'workspace_premium', module: 'incentives', staffOnly: true },
         ],
     },
     {
@@ -91,93 +96,147 @@ const NAV_GROUPS: NavGroup[] = [
     },
 ];
 
-// ─── Task Notifier Component ────────────────────────────────────────────────
-const TaskNotifier = () => {
-    const { tasks, refreshData } = useData();
-    const [activeNotifications, setActiveNotifications] = useState<any[]>([]);
-    
-    // Use a ref to keep track of tasks we've already notified about in this session
-    // This prevents the same task from popping up constantly
-    const notifiedIds = useRef<Set<string>>(new Set());
+// ─── Notification Bell Dropdown ──────────────────────────────────────────────
+const COLOR_DOT: Record<string, string> = {
+    red: 'bg-red-500', amber: 'bg-amber-400', green: 'bg-green-500',
+    blue: 'bg-blue-500', orange: 'bg-orange-500', purple: 'bg-purple-500',
+};
+const COLOR_ICON: Record<string, string> = {
+    red: 'bg-red-50 text-red-600', amber: 'bg-amber-50 text-amber-600',
+    green: 'bg-green-50 text-green-600', blue: 'bg-blue-50 text-blue-600',
+    orange: 'bg-orange-50 text-orange-600', purple: 'bg-purple-50 text-purple-600',
+};
 
+const timeAgo = (dateStr: string) => {
+    const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+};
+
+const NotificationBell = () => {
+    const { notifications, unreadCount, criticalCount, markRead, dismiss, markAllRead } = useNotifications();
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    // Close on outside click
     useEffect(() => {
-        const interval = setInterval(() => {
-            const now = new Date();
-            
-            // Find tasks that are 'todo', have a due date in the past, and haven't been notified yet
-            const dueTasks = tasks.filter(t => {
-                if (t.status !== 'todo') return false;
-                if (notifiedIds.current.has(t.id)) return false;
-                
-                const dueDate = new Date(t.due_date);
-                return dueDate <= now;
-            });
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
-            if (dueTasks.length > 0) {
-                // Add new due tasks to notifications and mark as notified
-                dueTasks.forEach(t => notifiedIds.current.add(t.id));
-                setActiveNotifications(prev => [...prev, ...dueTasks]);
-            }
-        }, 10000); // Check every 10 seconds
-
-        return () => clearInterval(interval);
-    }, [tasks]);
-
-    const handleDismiss = (id: string) => {
-        setActiveNotifications(prev => prev.filter(t => t.id !== id));
-    };
-
-    const handleMarkComplete = async (id: string) => {
-        // Optimistically dismiss
-        handleDismiss(id);
-        
-        // Update database
-        await supabase.from('tasks').update({ status: 'completed' }).eq('id', id);
-        refreshData();
-    };
-
-    if (activeNotifications.length === 0) return null;
+    const recent = notifications.slice(0, 10);
 
     return (
-        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm pointer-events-none">
-            {activeNotifications.map(task => (
-                <div key={task.id} className="pointer-events-auto bg-white border border-slate-200 rounded-2xl p-4 shadow-2xl animate-fade-in relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 flex flex-col h-full bg-amber-400"></div>
-                    <div className="flex justify-between items-start mb-2 pl-2">
+        <div ref={ref} className="relative">
+            {/* Bell button */}
+            <button
+                onClick={() => setOpen(v => !v)}
+                className="relative p-2.5 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-xl transition-colors"
+                aria-label="Notifications"
+            >
+                <Bell size={20} />
+                {unreadCount > 0 && (
+                    <span className={`absolute top-1.5 right-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-black text-white ring-2 ring-white ${
+                        criticalCount > 0 ? 'bg-red-500 animate-pulse' : 'bg-primary'
+                    }`}>
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                )}
+            </button>
+
+            {/* Dropdown panel */}
+            {open && (
+                <div className="fixed left-4 right-4 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full mt-2 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden">
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                         <div className="flex items-center gap-2">
-                            <div className="size-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center">
-                                <span className="material-symbols-outlined text-sm">notifications_active</span>
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Follow-Up Due</p>
-                                <p className="text-sm font-bold text-slate-800">{task.title}</p>
-                            </div>
+                            <span className="font-black text-primary text-sm">Notifications</span>
+                            {unreadCount > 0 && (
+                                <span className="text-[10px] font-bold bg-primary text-white px-1.5 py-0.5 rounded-full">{unreadCount} new</span>
+                            )}
                         </div>
-                        <button onClick={() => handleDismiss(task.id)} className="text-slate-400 hover:text-slate-600 transition-colors">
-                            <span className="material-symbols-outlined text-lg">close</span>
+                        <button
+                            onClick={markAllRead}
+                            className="text-[11px] font-semibold text-slate-400 hover:text-primary transition-colors"
+                        >
+                            Mark all read
                         </button>
                     </div>
-                    {task.description && <p className="text-xs text-slate-500 mb-3 pl-2 line-clamp-2">{task.description}</p>}
-                    
-                    {task.lead && (
-                        <div className="mb-3 pl-2 flex items-center gap-2">
-                            <span className="material-symbols-outlined text-sm text-slate-400">person</span>
-                            <Link to={`/admin/leads/${task.lead_id}`} onClick={() => handleDismiss(task.id)} className="text-xs font-semibold text-primary hover:underline">
-                                {task.lead.full_name}
-                            </Link>
-                        </div>
-                    )}
-                    
-                    <div className="flex gap-2 pl-2 mt-3">
-                        <button onClick={() => handleDismiss(task.id)} className="flex-1 py-1.5 text-xs font-bold text-slate-600 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
-                            Remind Later
-                        </button>
-                        <button onClick={() => handleMarkComplete(task.id)} className="flex-1 py-1.5 text-xs font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors flex justify-center items-center gap-1">
-                            <span className="material-symbols-outlined text-[14px]">check</span> Done
-                        </button>
+
+                    {/* List */}
+                    <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-50">
+                        {recent.length === 0 ? (
+                            <div className="py-12 flex flex-col items-center gap-2 text-slate-300">
+                                <span className="material-symbols-outlined text-4xl">notifications_paused</span>
+                                <p className="text-xs font-medium">All caught up!</p>
+                            </div>
+                        ) : recent.map(n => (
+                            <div
+                                key={n.id}
+                                className={`flex items-start gap-3 px-4 py-3 hover:bg-slate-50 transition-colors cursor-default ${
+                                    !n.is_read ? 'bg-blue-50/40' : ''
+                                }`}
+                                onClick={() => !n.is_read && markRead(n.id)}
+                            >
+                                {/* Color dot + icon */}
+                                <div className="relative shrink-0 mt-0.5">
+                                    <div className={`size-9 rounded-xl flex items-center justify-center ${COLOR_ICON[n.color] || COLOR_ICON.blue}`}>
+                                        <span className="material-symbols-outlined text-[16px]">{n.icon}</span>
+                                    </div>
+                                    {!n.is_read && (
+                                        <span className={`absolute -top-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-white ${COLOR_DOT[n.color] || 'bg-blue-500'}`} />
+                                    )}
+                                </div>
+                                {/* Content */}
+                                <div className="flex-1 min-w-0">
+                                    <p className={`text-xs leading-snug mb-0.5 ${!n.is_read ? 'font-bold text-slate-800' : 'font-medium text-slate-600'}`}>
+                                        {n.title}
+                                    </p>
+                                    <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">{n.message}</p>
+                                    <div className="flex items-center gap-2 mt-1.5">
+                                        <span className="text-[10px] text-slate-300">{timeAgo(n.created_at)}</span>
+                                        {n.action_url && (
+                                            <Link
+                                                to={n.action_url}
+                                                onClick={() => { markRead(n.id); setOpen(false); }}
+                                                className="text-[10px] font-bold text-primary hover:underline"
+                                            >
+                                                {n.action_label || 'View →'}
+                                            </Link>
+                                        )}
+                                    </div>
+                                </div>
+                                {/* Dismiss */}
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); dismiss(n.id); }}
+                                    className="size-6 shrink-0 flex items-center justify-center text-slate-200 hover:text-slate-400 hover:bg-slate-100 rounded-lg transition-colors mt-0.5"
+                                    title="Dismiss"
+                                >
+                                    <span className="material-symbols-outlined text-sm">close</span>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="border-t border-slate-100 px-4 py-2.5">
+                        <Link
+                            to="/admin/notifications"
+                            onClick={() => setOpen(false)}
+                            className="flex items-center justify-center gap-1 text-xs font-bold text-primary hover:text-primary/80 transition-colors py-1"
+                        >
+                            View all notifications
+                            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                        </Link>
                     </div>
                 </div>
-            ))}
+            )}
         </div>
     );
 };
@@ -264,9 +323,14 @@ const AdminLayout: React.FC = () => {
     // Filter nav groups based on permissions for staff users
     const visibleNavGroups = NAV_GROUPS.map(group => ({
         ...group,
-        items: group.items.filter(item =>
-            isAdmin || hasPermission(item.module, 'view')
-        ),
+        items: group.items.filter(item => {
+            // Hide admin-only items from staff
+            if (item.adminOnly && !isAdmin) return false;
+            // Hide staff-only items from admins
+            if (item.staffOnly && isAdmin) return false;
+            // Check module permission
+            return isAdmin || hasPermission(item.module, 'view');
+        }),
     })).filter(group => group.items.length > 0);
 
     const handleLogout = async () => {
@@ -286,6 +350,7 @@ const AdminLayout: React.FC = () => {
 
     return (
         <DataProvider>
+            <NotificationProvider>
             <div className="min-h-screen w-full bg-slate-50 flex font-body">
             {/* Sidebar Overlay */}
             {sidebarOpen && (
@@ -414,10 +479,7 @@ const AdminLayout: React.FC = () => {
                             <Home size={15} />
                             <span className="hidden lg:inline">Website</span>
                         </Link>
-                        <Link to="/admin/notifications" className="relative p-2.5 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-xl transition-colors">
-                            <Bell size={20} />
-                            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-danger ring-2 ring-white"></span>
-                        </Link>
+                        <NotificationBell />
                         <div className="flex items-center gap-3 pl-3 border-l border-slate-100">
                             <div className="size-9 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white text-xs font-bold shadow-sm">
                                 {profile?.full_name ? profile.full_name.charAt(0).toUpperCase() : 'A'}
@@ -442,11 +504,12 @@ const AdminLayout: React.FC = () => {
                     <div className="max-w-7xl mx-auto w-full">
                         <Outlet />
                     </div>
-                    {/* Inject Task Notifier */}
-                    <TaskNotifier />
+                    {/* Smart Toast Engine */}
+                    <SmartToastEngine />
                 </main>
             </div>
             </div>
+            </NotificationProvider>
         </DataProvider>
     );
 };

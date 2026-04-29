@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useData } from '../../contexts/DataContext';
 import { supabase } from '../../lib/supabase';
@@ -63,12 +63,84 @@ const Customers = () => {
             });
     }, [detail]);
 
-    const filtered = customers.filter(c =>
-        c.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-        c.phone?.includes(search) ||
-        (c.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
-        (c.city ?? '').toLowerCase().includes(search.toLowerCase())
-    );
+    /**
+     * Bulk-fetch lead_car_interests with customer_id so we can search ALL customers
+     * by car interest (make/model/reg) without opening their detail panel first.
+     * This is separate from the per-detail fetch above which loads full car info for display.
+     */
+    const [customerCarInterestMap, setCustomerCarInterestMap] = useState<Map<string, Array<{ make: string; model: string; registration_no: string }>>>(new Map());
+
+    useEffect(() => {
+        supabase
+            .from('lead_car_interests')
+            .select('customer_id, car:inventory(make, model, registration_no)')
+            .not('customer_id', 'is', null)
+            .then(({ data }) => {
+                const map = new Map<string, Array<{ make: string; model: string; registration_no: string }>>();
+                (data || []).forEach((r: any) => {
+                    if (!r.customer_id || !r.car) return;
+                    if (!map.has(r.customer_id)) map.set(r.customer_id, []);
+                    map.get(r.customer_id)!.push({
+                        make:            (r.car.make            || '').toLowerCase(),
+                        model:           (r.car.model           || '').toLowerCase(),
+                        registration_no: (r.car.registration_no || '').toLowerCase(),
+                    });
+                });
+                setCustomerCarInterestMap(map);
+            });
+    }, []);
+
+    /**
+     * Build a lookup map: customerId → array of purchased car info.
+     * Source: sales with joined car:inventory(*) already loaded in DataContext.
+     * This allows searching customers by registration number, make, or model
+     * without any extra DB round-trip.
+     */
+    const customerCarMap = useMemo(() => {
+        const map = new Map<string, Array<{ make: string; model: string; registration_no: string }>>(
+        );
+        for (const sale of (sales || [])) {
+            const cid = sale.customer_id;
+            if (!cid || !sale.car) continue;
+            if (!map.has(cid)) map.set(cid, []);
+            map.get(cid)!.push({
+                make:            (sale.car.make            || '').toLowerCase(),
+                model:           (sale.car.model           || '').toLowerCase(),
+                registration_no: (sale.car.registration_no || '').toLowerCase(),
+            });
+        }
+        return map;
+    }, [sales]);
+
+    const filtered = useMemo(() => {
+        const q = search.toLowerCase().trim();
+        if (!q) return customers;
+        return customers.filter(c => {
+            // 1. Standard personal fields
+            if ((c.full_name || '').toLowerCase().includes(q)) return true;
+            if ((c.phone     || '').includes(q))               return true;
+            if ((c.email     || '').toLowerCase().includes(q)) return true;
+            if ((c.city      || '').toLowerCase().includes(q)) return true;
+
+            // 2. Cars from PURCHASE history (sales → inventory)
+            const purchasedCars = customerCarMap.get(c.id) || [];
+            if (purchasedCars.some(car =>
+                car.make.includes(q) ||
+                car.model.includes(q) ||
+                car.registration_no.includes(q) ||
+                `${car.make} ${car.model}`.includes(q)
+            )) return true;
+
+            // 3. Cars from INTEREST history (lead_car_interests with customer_id)
+            const interestedCars = customerCarInterestMap.get(c.id) || [];
+            return interestedCars.some(car =>
+                car.make.includes(q) ||
+                car.model.includes(q) ||
+                car.registration_no.includes(q) ||
+                `${car.make} ${car.model}`.includes(q)
+            );
+        });
+    }, [customers, search, customerCarMap, customerCarInterestMap]);
 
     const formatDate = (dateStr: string | null) => {
         if (!dateStr) return '—';
@@ -183,9 +255,9 @@ const Customers = () => {
             </div>
 
             {/* Search */}
-            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 h-10 w-full max-w-md">
+            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 h-10 w-full max-w-lg">
                 <span className="material-symbols-outlined text-slate-400 text-lg">search</span>
-                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, phone, email or city…" className="bg-transparent text-sm text-primary outline-none w-full" />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, phone, email, city, car brand or reg. no…" className="bg-transparent text-sm text-primary outline-none w-full" />
                 {search && <button onClick={() => setSearch('')} className="material-symbols-outlined text-slate-300 text-base hover:text-slate-500">close</button>}
             </div>
 

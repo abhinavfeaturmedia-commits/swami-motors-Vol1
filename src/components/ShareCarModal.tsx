@@ -63,7 +63,9 @@ const ShareCarModal: React.FC<Props> = ({ car, onClose }) => {
     const [sent, setSent] = useState(false);
     const [error, setError] = useState('');
     const [downloading, setDownloading] = useState(false);
+    const [photosDownloaded, setPhotosDownloaded] = useState(false);
     const [photoIndex, setPhotoIndex] = useState(0);
+    const [sendStep, setSendStep] = useState<'idle' | 'downloading' | 'ready' | 'opening'>('idle');
 
     // Fetch existing customers for quick-fill
     useEffect(() => {
@@ -95,10 +97,10 @@ const ShareCarModal: React.FC<Props> = ({ car, onClose }) => {
     });
 
     // Download all car images as files to the user's computer
-    const downloadAllImages = async () => {
+    const downloadAllImages = async (silent = false) => {
         const images = car.images ?? (car.thumbnail ? [car.thumbnail] : []);
         if (images.length === 0) return;
-        setDownloading(true);
+        if (!silent) setDownloading(true);
         const carSlug = `${car.year}-${car.make}-${car.model}`.replace(/\s+/g, '-').toLowerCase();
         for (let i = 0; i < images.length; i++) {
             try {
@@ -114,12 +116,15 @@ const ShareCarModal: React.FC<Props> = ({ car, onClose }) => {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(blobUrl);
                 // Small delay between downloads so browser doesn't block them
-                await new Promise(r => setTimeout(r, 400));
+                await new Promise(r => setTimeout(r, 350));
             } catch (e) {
                 console.warn('Failed to download image', images[i], e);
             }
         }
-        setDownloading(false);
+        if (!silent) {
+            setDownloading(false);
+            setPhotosDownloaded(true);
+        }
     };
 
     // Car listing link — use VITE_PUBLIC_URL in production, fallback to current origin in dev
@@ -143,13 +148,14 @@ const ShareCarModal: React.FC<Props> = ({ car, onClose }) => {
             car.body_type ? `Body Type    : ${car.body_type}` : null,
         ].filter(Boolean).join('\n');
 
-        const photoCount = (car.images ?? []).length;
-        const imageLinks = (car.images ?? [])
-            .map((url, i) => `Photo ${i + 1}: ${url}`)
-            .join('\n');
+        const photoCount = (car.images ?? (car.thumbnail ? [car.thumbnail] : [])).length;
 
         const featuresLine = car.features && car.features.length > 0
             ? `\nKey Features : ${car.features.slice(0, 4).join(', ')}${car.features.length > 4 ? ` + ${car.features.length - 4} more` : ''}`
+            : '';
+
+        const photoNote = photoCount > 0
+            ? `\n*Car Photos:* ${photoCount} photos shared separately in this chat.\n`
             : '';
 
         return `${greet}
@@ -164,7 +170,7 @@ Price: *Rs. ${formatPrice(car.price)}* (Negotiable)
 ---
 ${specsLines}${featuresLine}
 ---
-${imageLinks.length > 0 ? `\n*Car Photos (${photoCount}):*\n${imageLinks}\n` : ''}
+${photoNote}
 View full details and *book a FREE Test Drive* here:
 ${carLink}
 
@@ -195,8 +201,21 @@ Feel free to call or WhatsApp us anytime.`;
         const phone = customerPhone.replace(/\D/g, '');
         const fullPhone = phone.startsWith('91') ? phone : `91${phone}`;
         const message = buildMessage();
+        const hasPhotos = allImages.length > 0;
 
         setSending(true);
+
+        // Step 1: Download photos first (if any) so staff can attach them in WhatsApp
+        if (hasPhotos) {
+            setSendStep('downloading');
+            await downloadAllImages(true);
+            setSendStep('ready');
+            setPhotosDownloaded(true);
+            // Brief pause so user sees the "Photos downloaded" state
+            await new Promise(r => setTimeout(r, 800));
+        }
+
+        setSendStep('opening');
 
         // Log the share to Supabase
         const { error: dbErr } = await supabase.from('inventory_shares').insert({
@@ -214,6 +233,7 @@ Feel free to call or WhatsApp us anytime.`;
 
         setSending(false);
         setSent(true);
+        setSendStep('idle');
 
         // Open WhatsApp with text message
         const waUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`;
@@ -364,12 +384,34 @@ Feel free to call or WhatsApp us anytime.`;
                     {/* ── Photo strip ── */}
                     {allImages.length > 0 && (
                         <div className="space-y-2">
-                            {/* Instruction banner */}
-                            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-                                <span className="material-symbols-outlined text-amber-500 text-base mt-0.5 shrink-0">info</span>
-                                <div className="text-xs text-amber-800 leading-relaxed">
-                                    <p className="font-bold mb-0.5">How to send photos:</p>
-                                    <p>Clicking <strong>"Send on WhatsApp"</strong> will download all {allImages.length} photos automatically. Then in WhatsApp, click the <strong>📎 attachment icon → Photos</strong> and select the downloaded files.</p>
+                            {/* Step-by-step instruction banner */}
+                            <div className={`rounded-xl px-3 py-2.5 border transition-all ${
+                                photosDownloaded
+                                    ? 'bg-green-50 border-green-200'
+                                    : 'bg-blue-50 border-blue-200'
+                            }`}>
+                                <div className="flex items-start gap-2">
+                                    <span className={`material-symbols-outlined text-base mt-0.5 shrink-0 ${
+                                        photosDownloaded ? 'text-green-600' : 'text-blue-500'
+                                    }`}>
+                                        {photosDownloaded ? 'check_circle' : 'info'}
+                                    </span>
+                                    <div className={`text-xs leading-relaxed ${
+                                        photosDownloaded ? 'text-green-800' : 'text-blue-800'
+                                    }`}>
+                                        {photosDownloaded ? (
+                                            <>
+                                                <p className="font-bold mb-0.5">Photos downloaded! Next step:</p>
+                                                <p>WhatsApp will open next. After the text message sends, click the <strong>📎 attachment icon</strong> in that chat and select your just-downloaded photos to send them.</p>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <p className="font-bold mb-0.5">How photos are sent ({allImages.length} photo{allImages.length > 1 ? 's' : ''}):</p>
+                                                <p><strong>Step 1:</strong> Clicking "Send on WhatsApp" will first <strong>auto-download all {allImages.length} photos</strong> to your device.</p>
+                                                <p className="mt-0.5"><strong>Step 2:</strong> WhatsApp opens with the text message. Then click the <strong>📎 attachment icon → Photos</strong> and select the downloaded photos to send them in the same chat.</p>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
@@ -387,16 +429,20 @@ Feel free to call or WhatsApp us anytime.`;
                                     ))}
                                 </div>
                                 <button
-                                    onClick={downloadAllImages}
+                                    onClick={() => downloadAllImages(false)}
                                     disabled={downloading}
-                                    className="shrink-0 h-10 px-3 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5 disabled:opacity-60"
+                                    className={`shrink-0 h-10 px-3 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-60 ${
+                                        photosDownloaded
+                                            ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-200'
+                                            : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                    }`}
                                     title="Download all photos to attach in WhatsApp"
                                 >
                                     {downloading
                                         ? <span className="size-3.5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
-                                        : <span className="material-symbols-outlined text-base">download</span>
+                                        : <span className="material-symbols-outlined text-base">{photosDownloaded ? 'download_done' : 'download'}</span>
                                     }
-                                    {downloading ? 'Downloading…' : `Download All (${allImages.length})`}
+                                    {downloading ? 'Downloading…' : photosDownloaded ? 'Re-download' : `Download All (${allImages.length})`}
                                 </button>
                             </div>
                         </div>
@@ -529,25 +575,37 @@ Feel free to call or WhatsApp us anytime.`;
                             className={`flex-1 h-12 font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-sm ${
                                 sent
                                     ? 'bg-green-100 text-green-700 border border-green-200'
-                                    : 'bg-green-500 hover:bg-green-600 text-white'
-                            } disabled:opacity-70`}
+                                    : sendStep === 'ready'
+                                        ? 'bg-emerald-500 text-white'
+                                        : 'bg-green-500 hover:bg-green-600 text-white'
+                            } disabled:opacity-80`}
                         >
                             {sent ? (
                                 <>
                                     <span className="material-symbols-outlined text-lg">check_circle</span>
                                     Sent! Closing…
                                 </>
-                            ) : sending ? (
+                            ) : sendStep === 'downloading' ? (
                                 <>
                                     <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    Sending…
+                                    Downloading {allImages.length} Photo{allImages.length > 1 ? 's' : ''}…
+                                </>
+                            ) : sendStep === 'ready' ? (
+                                <>
+                                    <span className="material-symbols-outlined text-lg">download_done</span>
+                                    Photos Saved! Opening WhatsApp…
+                                </>
+                            ) : sendStep === 'opening' ? (
+                                <>
+                                    <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    Opening WhatsApp…
                                 </>
                             ) : (
                                 <>
                                     <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white shrink-0">
                                         <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
                                     </svg>
-                                    Send on WhatsApp
+                                    {allImages.length > 0 ? `Send + Download ${allImages.length} Photo${allImages.length > 1 ? 's' : ''}` : 'Send on WhatsApp'}
                                 </>
                             )}
                         </button>

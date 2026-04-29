@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Navigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -54,6 +55,10 @@ const emptyForm = {
 const UserManagement = () => {
     const { isAdmin, user: currentUser } = useAuth();
 
+    if (!isAdmin) {
+        return <Navigate to="/admin" replace />;
+    }
+
     const [users, setUsers] = useState<StaffUser[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -72,9 +77,8 @@ const UserManagement = () => {
     const [permSaving, setPermSaving] = useState(false);
     const [permSuccess, setPermSuccess] = useState(false);
 
-    // Delete user state
-    const [deletingId, setDeletingId] = useState<string | null>(null);
-    const [userToDelete, setUserToDelete] = useState<StaffUser | null>(null);
+    // Status toggle state
+    const [statusTogglingId, setStatusTogglingId] = useState<string | null>(null);
 
     // ─── Fetch users ─────────────────────────────────────────────────────────
 
@@ -144,13 +148,17 @@ const UserManagement = () => {
                 
                 // Audit log
                 if (currentUser) {
-                    await supabase.from('audit_logs').insert({
-                        user_id: currentUser.id,
-                        action: 'User Created',
-                        target_type: 'Staff Account',
-                        target_name: form.full_name,
-                        details: `Created new ${form.role} account`
-                    });
+                    try {
+                        await supabase.from('audit_logs').insert({
+                            user_id: currentUser.id,
+                            action: 'User Created',
+                            target_type: 'Staff Account',
+                            target_name: form.full_name,
+                            details: `Created new ${form.role} account`
+                        });
+                    } catch (e) {
+                        console.error('Audit log failed', e);
+                    }
                 }
             }
         } catch {
@@ -160,61 +168,7 @@ const UserManagement = () => {
         }
     };
 
-    // ─── Delete user ─────────────────────────────────────────────────────────
 
-    const confirmDeleteUser = (user: StaffUser) => {
-        setUserToDelete(user);
-    };
-
-    const handleDeleteUser = async () => {
-        if (!userToDelete) return;
-        
-        setDeletingId(userToDelete.id);
-        try {
-            const { data: { session: freshSession } } = await supabase.auth.getSession();
-            if (!freshSession?.access_token) {
-                alert('Session expired. Please refresh and try again.');
-                return;
-            }
-
-            const res = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-staff-user`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-                        Authorization: `Bearer ${freshSession.access_token}`,
-                    },
-                    body: JSON.stringify({ user_id: userToDelete.id }),
-                }
-            );
-
-            const result = await res.json();
-            if (!res.ok || result.error) {
-                alert(result.error || 'Failed to delete user.');
-            } else {
-                fetchUsers(); // Refresh the list
-
-                // Audit log
-                if (currentUser) {
-                    await supabase.from('audit_logs').insert({
-                        user_id: currentUser.id,
-                        action: 'User Deleted',
-                        target_type: 'Staff Account',
-                        target_name: userToDelete.full_name,
-                        details: `Permanently deleted staff user`
-                    });
-                }
-                
-                setUserToDelete(null); // Close modal
-            }
-        } catch (err) {
-            alert('Network error. Please try again.');
-        } finally {
-            setDeletingId(null);
-        }
-    };
 
     // ─── Load permissions for edit modal ─────────────────────────────────────
 
@@ -293,13 +247,17 @@ const UserManagement = () => {
             
             // Audit log
             if (currentUser) {
-                await supabase.from('audit_logs').insert({
-                    user_id: currentUser.id,
-                    action: 'Permissions Updated',
-                    target_type: 'Staff Account',
-                    target_name: editingUser.full_name,
-                    details: 'Modified module access permissions'
-                });
+                try {
+                    await supabase.from('audit_logs').insert({
+                        user_id: currentUser.id,
+                        action: 'Permissions Updated',
+                        target_type: 'Staff Account',
+                        target_name: editingUser.full_name,
+                        details: 'Modified module access permissions'
+                    });
+                } catch (e) {
+                    console.error('Audit log failed', e);
+                }
             }
         }
     };
@@ -307,6 +265,7 @@ const UserManagement = () => {
     // ─── Toggle active status ─────────────────────────────────────────────────
 
     const toggleActiveStatus = async (user: StaffUser) => {
+        setStatusTogglingId(user.id);
         const { error } = await supabase
             .from('profiles')
             .update({ is_active: !user.is_active })
@@ -318,15 +277,20 @@ const UserManagement = () => {
             
             // Audit log
             if (currentUser) {
-                await supabase.from('audit_logs').insert({
-                    user_id: currentUser.id,
-                    action: 'Status Changed',
-                    target_type: 'Staff Account',
-                    target_name: user.full_name,
-                    details: `Account ${!user.is_active ? 'activated' : 'deactivated'}`
-                });
+                try {
+                    await supabase.from('audit_logs').insert({
+                        user_id: currentUser.id,
+                        action: 'Status Changed',
+                        target_type: 'Staff Account',
+                        target_name: user.full_name,
+                        details: `Account ${!user.is_active ? 'activated' : 'deactivated'}`
+                    });
+                } catch (e) {
+                    console.error('Audit log failed', e);
+                }
             }
         }
+        setStatusTogglingId(null);
     };
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -443,20 +407,7 @@ const UserManagement = () => {
                                             {isAdmin && user.role === 'admin' && (
                                                 <span className="text-[10px] text-slate-300 italic">Full access</span>
                                             )}
-                                            {isAdmin && user.role === 'staff' && (
-                                                <button
-                                                    onClick={() => confirmDeleteUser(user)}
-                                                    disabled={deletingId === user.id}
-                                                    className="flex items-center justify-center size-8 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                                    title="Delete User"
-                                                >
-                                                    {deletingId === user.id ? (
-                                                        <span className="size-4 border-2 border-red-200 border-t-red-500 rounded-full animate-spin" />
-                                                    ) : (
-                                                        <span className="material-symbols-outlined text-sm">delete</span>
-                                                    )}
-                                                </button>
-                                            )}
+
                                         </div>
                                     </td>
                                 </tr>
@@ -643,7 +594,9 @@ const UserManagement = () => {
                                     </span>
                                 </div>
                                 <button onClick={() => toggleActiveStatus(editingUser)}
-                                    className={`text-xs font-bold px-3 py-1 rounded-lg transition-colors ${editingUser.is_active ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30' : 'bg-green-500/20 text-green-300 hover:bg-green-500/30'}`}>
+                                    disabled={statusTogglingId === editingUser.id}
+                                    className={`text-xs font-bold px-3 py-1 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 ${editingUser.is_active ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30' : 'bg-green-500/20 text-green-300 hover:bg-green-500/30'}`}>
+                                    {statusTogglingId === editingUser.id && <span className="size-3 border-2 border-current border-t-transparent rounded-full animate-spin" />}
                                     {editingUser.is_active ? 'Deactivate' : 'Activate'}
                                 </button>
                             </div>
@@ -755,43 +708,7 @@ const UserManagement = () => {
                 </div>
             )}
 
-            {/* ══════════════════════════════════════════════
-                ── Delete Confirmation Modal ──
-            ══════════════════════════════════════════════ */}
-            {userToDelete && (
-                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl p-6 text-center">
-                        <div className="size-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <span className="material-symbols-outlined text-red-500 text-3xl">warning</span>
-                        </div>
-                        <h3 className="text-lg font-black text-slate-800 mb-2">Delete User</h3>
-                        <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-                            Are you sure you want to permanently delete <strong className="text-slate-700">{userToDelete.full_name}</strong>?
-                            This action cannot be undone.
-                        </p>
-                        
-                        <div className="flex gap-3">
-                            <button 
-                                onClick={() => setUserToDelete(null)}
-                                disabled={deletingId !== null}
-                                className="flex-1 h-11 border border-slate-200 text-slate-600 font-semibold rounded-xl text-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-                            >
-                                Cancel
-                            </button>
-                            <button 
-                                onClick={handleDeleteUser}
-                                disabled={deletingId !== null}
-                                className="flex-1 h-11 bg-red-500 text-white font-bold rounded-xl text-sm hover:bg-red-600 transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-70"
-                            >
-                                {deletingId !== null
-                                    ? <><span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Deleting…</>
-                                    : 'Delete User'
-                                }
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+
         </div>
     );
 };
