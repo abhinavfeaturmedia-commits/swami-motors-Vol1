@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { toWhatsAppUrl } from '../../lib/utils';
+import HighlightText from '../../components/ui/HighlightText';
 
 interface ConsignmentCar {
     id: string;
@@ -290,16 +291,20 @@ const ConsignmentTracker = () => {
                                                         )}
                                                     </div>
                                                     <div>
-                                                        <p className="text-sm font-semibold text-primary">{car.year} {car.make} {car.model}</p>
-                                                        {car.variant && <p className="text-xs text-slate-400">{car.variant}</p>}
-                                                        {car.registration_no && <p className="text-[10px] text-slate-400 font-mono">{car.registration_no}</p>}
+                                                        <p className="text-sm font-semibold text-primary">
+                                                            {car.year} <HighlightText text={car.make} highlight={searchQuery} /> <HighlightText text={car.model} highlight={searchQuery} />
+                                                        </p>
+                                                        {car.variant && <p className="text-xs text-slate-400"><HighlightText text={car.variant} highlight={searchQuery} /></p>}
+                                                        {car.registration_no && <p className="text-[10px] text-slate-400 font-mono"><HighlightText text={car.registration_no} highlight={searchQuery} /></p>}
                                                     </div>
                                                 </div>
                                             </td>
 
                                             {/* Owner */}
                                             <td className="px-5 py-3.5">
-                                                <p className="text-sm font-semibold text-slate-700">{car.consignment_owner_name || '—'}</p>
+                                                <p className="text-sm font-semibold text-slate-700">
+                                                    <HighlightText text={car.consignment_owner_name || '—'} highlight={searchQuery} />
+                                                </p>
                                                 {car.consignment_owner_phone && (
                                                     <p className="text-xs text-slate-400 font-mono">{car.consignment_owner_phone}</p>
                                                 )}

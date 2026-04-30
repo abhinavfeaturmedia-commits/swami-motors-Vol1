@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useData } from '../../contexts/DataContext';
 import { Search, X, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
+import HighlightText from '../ui/HighlightText';
 
 type SearchCategory = 'All' | 'Leads' | 'Customers' | 'Inventory' | 'Bookings' | 'Sales' | 'Tasks' | 'Notes';
 
@@ -346,17 +347,21 @@ const GlobalSearch = () => {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between mb-0.5">
-                                            <p className="text-sm font-bold text-slate-800 truncate">{item.title}</p>
+                                            <p className="text-sm font-bold text-slate-800 truncate">
+                                                <HighlightText text={item.title} highlight={query} />
+                                            </p>
                                             <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 shrink-0 ml-2">{item.type}</span>
                                         </div>
-                                        <p className="text-xs text-slate-500 truncate">{item.subtitle}</p>
+                                        <p className="text-xs text-slate-500 truncate">
+                                            <HighlightText text={item.subtitle} highlight={query} />
+                                        </p>
                                         
                                         {/* Highlight Matched Note Snippet if applicable */}
                                         {item.matchedNote && (
                                             <div className="mt-1.5 p-1.5 bg-yellow-50/50 border border-yellow-100 rounded-md">
                                                 <p className="text-[10px] text-slate-600 line-clamp-1">
                                                     <span className="font-semibold text-yellow-700">Note match: </span> 
-                                                    "..." {item.matchedNote.substring(Math.max(0, item.matchedNote.toLowerCase().indexOf(query.toLowerCase()) - 20), item.matchedNote.toLowerCase().indexOf(query.toLowerCase()) + 60)} "..."
+                                                    "..." <HighlightText text={item.matchedNote.substring(Math.max(0, item.matchedNote.toLowerCase().indexOf(query.toLowerCase()) - 20), item.matchedNote.toLowerCase().indexOf(query.toLowerCase()) + 60)} highlight={query} /> "..."
                                                 </p>
                                             </div>
                                         )}

@@ -131,6 +131,8 @@ const UserDashboard = () => {
             sell_car: 'Sell My Car',
             insurance: 'Insurance',
             service: 'Service Booking',
+            finance: 'Finance Inquiry',
+            car_service: 'Car Services',
         };
         return map[type] || type;
     };
@@ -219,6 +221,8 @@ const UserDashboard = () => {
                                                             {b.type === 'test_drive' ? 'directions_car'
                                                                 : b.type === 'sell_car' ? 'sell'
                                                                 : b.type === 'insurance' ? 'shield'
+                                                                : b.type === 'finance' ? 'account_balance'
+                                                                : b.type === 'car_service' ? 'build'
                                                                 : 'chat'}
                                                         </span>
                                                     </div>

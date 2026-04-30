@@ -134,7 +134,9 @@ CREATE TABLE IF NOT EXISTS leads (
   source       TEXT DEFAULT 'website',
   user_id      UUID REFERENCES profiles(id),
   created_at   TIMESTAMPTZ DEFAULT now(),
-  updated_at   TIMESTAMPTZ DEFAULT now()
+  updated_at   TIMESTAMPTZ DEFAULT now(),
+  lead_quality TEXT CHECK (lead_quality IN ('hot', 'warm', 'cold', 'cakewalk')),
+  budget       TEXT
 );
 
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;

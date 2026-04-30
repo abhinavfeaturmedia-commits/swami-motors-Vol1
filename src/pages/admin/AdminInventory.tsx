@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import ShareCarModal from '../../components/ShareCarModal';
+import HighlightText from '../../components/ui/HighlightText';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface Car {
@@ -263,9 +264,11 @@ const AdminInventory = () => {
                                                 )}
                                             </div>
                                             <div>
-                                                <p className="text-sm font-semibold text-primary">{car.year} {car.make} {car.model}</p>
-                                                {car.variant && <p className="text-xs text-slate-400">{car.variant}</p>}
-                                                {car.registration_no && <p className="text-[10px] text-slate-400 font-mono">{car.registration_no}</p>}
+                                                <p className="text-sm font-semibold text-primary">
+                                                    {car.year} <HighlightText text={car.make} highlight={searchQuery} /> <HighlightText text={car.model} highlight={searchQuery} />
+                                                </p>
+                                                {car.variant && <p className="text-xs text-slate-400"><HighlightText text={car.variant} highlight={searchQuery} /></p>}
+                                                {car.registration_no && <p className="text-[10px] text-slate-400 font-mono"><HighlightText text={car.registration_no} highlight={searchQuery} /></p>}
                                                 {/* Source badge */}
                                                 {car.source === 'dealer' ? (
                                                     <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 uppercase tracking-wide mt-0.5" title="Dealer Car">

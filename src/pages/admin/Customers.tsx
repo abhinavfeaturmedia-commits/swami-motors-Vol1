@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import { supabase } from '../../lib/supabase';
 import { toWhatsAppUrl } from '../../lib/utils';
+import HighlightText from '../../components/ui/HighlightText';
 
 interface Customer {
     id: string;
@@ -20,6 +22,20 @@ interface Customer {
     created_at: string;
 }
 
+type TimelineEventType = 'sale' | 'lead' | 'service' | 'test_drive' | 'follow_up' | 'document' | 'car_interest';
+
+export interface TimelineEvent {
+    id: string;
+    type: TimelineEventType;
+    title: string;
+    description: string;
+    date: Date;
+    status?: string;
+    icon: string;
+    color: string;
+    data: any;
+}
+
 const emptyForm = {
     full_name: '',
     phone: '',
@@ -35,6 +51,7 @@ const emptyForm = {
 };
 
 const Customers = () => {
+    const { isAdmin } = useAuth();
     const { customers, sales, loading, refreshData } = useData();
     const [search, setSearch] = useState('');
     const [detail, setDetail] = useState<Customer | null>(null);
@@ -45,23 +62,134 @@ const Customers = () => {
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
-    // ─── Customer Car Interests ─────────────────────────────────────────
+    // ─── Customer 360 History ─────────────────────────────────────────
+    const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'documents'>('overview');
+    const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+    const [documents, setDocuments] = useState<any[]>([]);
     const [customerInterests, setCustomerInterests] = useState<any[]>([]);
-    const [interestsLoading, setInterestsLoading] = useState(false);
+    const [historyLoading, setHistoryLoading] = useState(false);
 
     useEffect(() => {
-        if (!detail) { setCustomerInterests([]); return; }
-        setInterestsLoading(true);
-        supabase
-            .from('lead_car_interests')
-            .select('*, car:inventory(id, make, model, year, price, thumbnail)')
-            .eq('customer_id', detail.id)
-            .order('created_at', { ascending: false })
-            .then(({ data }) => {
-                setCustomerInterests(data || []);
-                setInterestsLoading(false);
+        if (!detail) { 
+            setCustomerInterests([]); 
+            setTimelineEvents([]);
+            setDocuments([]);
+            setActiveTab('overview');
+            return; 
+        }
+
+        const fetchHistory = async () => {
+            setHistoryLoading(true);
+            
+            const safeFetch = async (query: any) => {
+                try { const res = await query; return res; } 
+                catch { return { data: [] }; }
+            };
+
+            const [
+                { data: interestsData },
+                { data: leadsData },
+                { data: serviceData },
+                { data: testDriveData },
+                { data: followUpData },
+                { data: docsData }
+            ] = await Promise.all([
+                safeFetch(supabase.from('lead_car_interests').select('*, car:inventory(id, make, model, year, price, thumbnail)').eq('customer_id', detail.id)),
+                safeFetch(supabase.from('leads').select('*').eq('phone', detail.phone)),
+                safeFetch(supabase.from('service_bookings').select('*').eq('phone', detail.phone)),
+                safeFetch(supabase.from('test_drive_bookings').select('*, car:inventory(make, model)').eq('phone', detail.phone)),
+                safeFetch(supabase.from('follow_ups').select('*').eq('customer_id', detail.id)),
+                safeFetch(supabase.from('documents').select('*').eq('customer_id', detail.id))
+            ]);
+
+            setCustomerInterests(interestsData || []);
+            setDocuments(docsData || []);
+
+            const events: TimelineEvent[] = [];
+
+            // 1. Sales (from DataContext)
+            const custSales = sales.filter(s => s.customer_id === detail.id);
+            custSales.forEach(s => {
+                events.push({
+                    id: `sale-${s.id}`,
+                    type: 'sale',
+                    title: `Purchased ${s.car?.make || ''} ${s.car?.model || ''}`,
+                    description: `Amount: ₹${(s.final_price || 0).toLocaleString('en-IN')}`,
+                    date: new Date(s.sale_date || s.created_at),
+                    icon: 'directions_car',
+                    color: 'emerald',
+                    data: s
+                });
             });
-    }, [detail]);
+
+            // 2. Leads (Car Interests, Insurance, Services)
+            (leadsData || []).forEach((l: any) => {
+                events.push({
+                    id: `lead-${l.id}`,
+                    type: 'lead',
+                    title: `Enquiry: ${l.type.replace('_', ' ').toUpperCase()}`,
+                    description: l.message || (l.car_make ? `Interested in ${l.car_make} ${l.car_model || ''}` : 'General Enquiry'),
+                    date: new Date(l.created_at),
+                    status: l.status,
+                    icon: l.type === 'insurance' ? 'shield' : l.type === 'service' ? 'build' : l.type === 'sell_car' ? 'sell' : 'person_search',
+                    color: l.type === 'insurance' ? 'indigo' : l.type === 'service' ? 'orange' : 'primary',
+                    data: l
+                });
+            });
+
+            // 3. Service Bookings
+            (serviceData || []).forEach((s: any) => {
+                events.push({
+                    id: `service-${s.id}`,
+                    type: 'service',
+                    title: `${s.service_type || 'Service'} Booking`,
+                    description: `${s.car_make || 'Vehicle'} ${s.car_model || ''} (${s.car_reg_no || 'N/A'})`,
+                    date: new Date(s.created_at),
+                    status: s.status,
+                    icon: 'home_repair_service',
+                    color: 'orange',
+                    data: s
+                });
+            });
+
+            // 4. Test Drives
+            (testDriveData || []).forEach((t: any) => {
+                events.push({
+                    id: `td-${t.id}`,
+                    type: 'test_drive',
+                    title: `Test Drive Booking`,
+                    description: t.car ? `${t.car.make} ${t.car.model}` : 'Vehicle details unavailable',
+                    date: new Date(t.created_at),
+                    status: t.status,
+                    icon: 'drive_eta',
+                    color: 'blue',
+                    data: t
+                });
+            });
+
+            // 5. Follow-ups
+            (followUpData || []).forEach((f: any) => {
+                events.push({
+                    id: `fu-${f.id}`,
+                    type: 'follow_up',
+                    title: `Interaction: ${f.type?.toUpperCase() || 'GENERAL'}`,
+                    description: f.notes || 'No notes provided',
+                    date: new Date(f.created_at),
+                    status: f.status,
+                    icon: f.type === 'call' ? 'call' : f.type === 'whatsapp' ? 'forum' : f.type === 'meeting' ? 'handshake' : 'headset_mic',
+                    color: 'slate',
+                    data: f
+                });
+            });
+
+            // Sort descending by date
+            events.sort((a, b) => b.date.getTime() - a.date.getTime());
+            setTimelineEvents(events);
+            setHistoryLoading(false);
+        };
+
+        fetchHistory();
+    }, [detail, sales]);
 
     /**
      * Bulk-fetch lead_car_interests with customer_id so we can search ALL customers
@@ -297,16 +425,16 @@ const Customers = () => {
                                                     {c.full_name?.charAt(0).toUpperCase() || 'U'}
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-semibold text-primary">{c.full_name}</p>
+                                                    <p className="text-sm font-semibold text-primary"><HighlightText text={c.full_name} highlight={search} /></p>
                                                     {c.occupation && <p className="text-[10px] text-slate-400">{c.occupation}</p>}
                                                 </div>
                                             </div>
                                         </td>
                                         <td className="px-5 py-3.5">
-                                            <p className="text-sm font-medium text-slate-700">{c.phone}</p>
-                                            {c.email && <p className="text-[10px] text-slate-400 truncate max-w-[160px]">{c.email}</p>}
+                                            <p className="text-sm font-medium text-slate-700"><HighlightText text={c.phone} highlight={search} /></p>
+                                            {c.email && <p className="text-[10px] text-slate-400 truncate max-w-[160px]"><HighlightText text={c.email} highlight={search} /></p>}
                                         </td>
-                                        <td className="px-5 py-3.5 text-sm text-slate-600">{c.city || '—'}</td>
+                                        <td className="px-5 py-3.5 text-sm text-slate-600"><HighlightText text={c.city || '—'} highlight={search} /></td>
                                         <td className="px-5 py-3.5">
                                             {custSales.length > 0 ? (
                                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-green-50 text-green-700 uppercase tracking-wide">
@@ -363,169 +491,267 @@ const Customers = () => {
                             </div>
                         </div>
 
-                        <div className="px-6 py-5 space-y-5">
-                            {/* Edit Form */}
-                            {isEditing && (
-                                <form onSubmit={handleEditSave} className="space-y-3">
-                                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Edit Details</p>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Full Name *</label><input required value={editForm.full_name} onChange={e => setEditForm({...editForm, full_name: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
-                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Phone *</label><input required value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
-                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Email</label><input type="email" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
-                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">City</label><input value={editForm.city} onChange={e => setEditForm({...editForm, city: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
-                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">WhatsApp</label><input value={editForm.whatsapp_number} onChange={e => setEditForm({...editForm, whatsapp_number: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
-                                        <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Occupation</label><input value={editForm.occupation} onChange={e => setEditForm({...editForm, occupation: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
-                                    </div>
-                                    <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Notes</label><textarea rows={2} value={editForm.notes} onChange={e => setEditForm({...editForm, notes: e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/10 resize-none" /></div>
-                                    <div className="flex gap-2">
-                                        <button type="button" onClick={handleDelete} disabled={deleting} className="flex-1 h-10 bg-red-50 text-red-600 font-bold rounded-xl text-sm hover:bg-red-100 transition disabled:opacity-60">{deleting ? 'Deleting…' : 'Delete Customer'}</button>
-                                        <button type="submit" disabled={saving} className="flex-1 h-10 bg-primary text-white font-bold rounded-xl text-sm hover:bg-primary-light transition disabled:opacity-60">{saving ? 'Saving…' : 'Save Changes'}</button>
-                                    </div>
-                                </form>
-                            )}
+                        {/* Tabs Navigation */}
+                        <div className="flex border-b border-slate-100 bg-slate-50/50 px-4 pt-2">
+                            {(['overview', 'timeline', 'documents'] as const).map(tab => (
+                                <button
+                                    key={tab}
+                                    onClick={() => setActiveTab(tab)}
+                                    className={`px-4 py-3 text-sm font-bold uppercase tracking-wide border-b-2 transition-colors ${
+                                        activeTab === tab
+                                            ? 'border-primary text-primary'
+                                            : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300'
+                                    }`}
+                                >
+                                    {tab}
+                                </button>
+                            ))}
+                        </div>
 
-                            {/* Contact Info */}
-                            <div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Contact Information</p>
-                                <div className="grid grid-cols-2 gap-3">
-                                    {[
-                                        { icon: 'call', label: 'Phone', value: detail.phone },
-                                        { icon: 'phone_in_talk', label: 'Alt. Phone', value: detail.alternate_phone },
-                                        { icon: 'forum', label: 'WhatsApp', value: detail.whatsapp_number },
-                                        { icon: 'mail', label: 'Email', value: detail.email },
-                                        { icon: 'location_on', label: 'City', value: detail.city },
-                                    ].map((item, i) => item.value && (
-                                        <div key={i} className="bg-slate-50 rounded-xl px-3.5 py-3">
-                                            <div className="flex items-center gap-2 mb-0.5">
-                                                <span className="material-symbols-outlined text-slate-400 text-sm">{item.icon}</span>
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{item.label}</p>
+                        <div className="px-6 py-5 bg-slate-50/30">
+                            {activeTab === 'overview' && (
+                                <div className="space-y-5">
+                                    {/* Edit Form */}
+                                    {isEditing && (
+                                        <form onSubmit={handleEditSave} className="space-y-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Edit Details</p>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Full Name *</label><input required value={editForm.full_name} onChange={e => setEditForm({...editForm, full_name: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
+                                                <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Phone *</label><input required value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
+                                                <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Email</label><input type="email" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
+                                                <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">City</label><input value={editForm.city} onChange={e => setEditForm({...editForm, city: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
+                                                <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">WhatsApp</label><input value={editForm.whatsapp_number} onChange={e => setEditForm({...editForm, whatsapp_number: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
+                                                <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Occupation</label><input value={editForm.occupation} onChange={e => setEditForm({...editForm, occupation: e.target.value})} className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-primary/10" /></div>
                                             </div>
-                                            <p className="text-sm font-semibold text-primary pl-6">{item.value}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
+                                            <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Notes</label><textarea rows={2} value={editForm.notes} onChange={e => setEditForm({...editForm, notes: e.target.value})} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/10 resize-none" /></div>
+                                            <div className="flex gap-2">
+                                                {isAdmin && (
+                                                    <button type="button" onClick={handleDelete} disabled={deleting} className="flex-1 h-10 bg-red-50 text-red-600 font-bold rounded-xl text-sm hover:bg-red-100 transition disabled:opacity-60">{deleting ? 'Deleting…' : 'Delete Customer'}</button>
+                                                )}
+                                                <button type="submit" disabled={saving} className="flex-1 h-10 bg-primary text-white font-bold rounded-xl text-sm hover:bg-primary-light transition disabled:opacity-60">{saving ? 'Saving…' : 'Save Changes'}</button>
+                                            </div>
+                                        </form>
+                                    )}
 
-                            {/* Personal Info */}
-                            {(detail.address || detail.office_address || detail.date_of_birth) && (
-                                <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Personal Details</p>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {detail.date_of_birth && (
-                                            <div className="bg-slate-50 rounded-xl px-3.5 py-3">
-                                                <div className="flex items-center gap-2 mb-0.5">
-                                                    <span className="material-symbols-outlined text-slate-400 text-sm">cake</span>
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Date of Birth</p>
-                                                </div>
-                                                <p className="text-sm font-semibold text-primary pl-6">{formatDate(detail.date_of_birth)}</p>
-                                            </div>
-                                        )}
-                                        {detail.address && (
-                                            <div className="bg-slate-50 rounded-xl px-3.5 py-3 col-span-2">
-                                                <div className="flex items-center gap-2 mb-0.5">
-                                                    <span className="material-symbols-outlined text-slate-400 text-sm">home</span>
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Personal Address</p>
-                                                </div>
-                                                <p className="text-sm font-semibold text-primary pl-6">{detail.address}</p>
-                                            </div>
-                                        )}
-                                        {detail.office_address && (
-                                            <div className="bg-slate-50 rounded-xl px-3.5 py-3 col-span-2">
-                                                <div className="flex items-center gap-2 mb-0.5">
-                                                    <span className="material-symbols-outlined text-slate-400 text-sm">business</span>
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Office Address</p>
-                                                </div>
-                                                <p className="text-sm font-semibold text-primary pl-6">{detail.office_address}</p>
-                                            </div>
-                                        )}
+                                    {/* Action Buttons */}
+                                    <div className="grid grid-cols-2 gap-2 pt-1">
+                                        <a href={`tel:${detail.phone}`} className="h-11 bg-green-50 text-green-700 hover:bg-green-100 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors border border-green-200 shadow-sm">
+                                            <span className="material-symbols-outlined text-base">call</span> Call
+                                        </a>
+                                        <a href={toWhatsAppUrl(detail.whatsapp_number || detail.phone)} target="_blank" rel="noreferrer" className="h-11 bg-[#25D366] text-white hover:bg-[#1ebd5a] rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
+                                            <span className="material-symbols-outlined text-base">forum</span> WhatsApp
+                                        </a>
                                     </div>
-                                </div>
-                            )}
 
-                            {/* Notes */}
-                            {detail.notes && (
-                                <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="material-symbols-outlined text-amber-500 text-sm">sticky_note_2</span>
-                                        <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">Notes</p>
-                                    </div>
-                                    <p className="text-sm text-amber-900 leading-relaxed">{detail.notes}</p>
-                                </div>
-                            )}
-
-                            {/* Purchase History */}
-                            {getCustomerSales(detail.id).length > 0 && (
-                                <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Purchase History</p>
-                                    <div className="space-y-2">
-                                        {getCustomerSales(detail.id).map(sale => (
-                                            <div key={sale.id} className="bg-green-50 border border-green-100 rounded-xl p-3">
-                                                <div className="flex justify-between items-start mb-1">
-                                                    <p className="text-sm font-bold text-primary">{sale.car?.year} {sale.car?.make} {sale.car?.model}</p>
-                                                    <span className="text-xs font-black text-green-700">{formatCurrency(sale.final_price)}</span>
-                                                </div>
-                                                <p className="text-xs text-slate-500">Sold on {formatDate(sale.sale_date)}</p>
-                                                {sale.notes && <p className="text-xs text-slate-600 mt-1.5 bg-white/60 px-2 py-1 rounded-lg">{sale.notes}</p>}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Car Interests */}
-                            {(interestsLoading || customerInterests.length > 0) && (
-                                <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Car Interests</p>
-                                    {interestsLoading ? (
-                                        <p className="text-xs text-slate-400">Loading...</p>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {customerInterests.map((interest: any) => (
-                                                <div key={interest.id} className="flex items-center gap-3 bg-slate-50 rounded-xl px-3.5 py-2.5">
-                                                    <div className="size-10 rounded-lg bg-slate-200 overflow-hidden shrink-0">
-                                                        {interest.car?.thumbnail ? (
-                                                            <img src={interest.car.thumbnail} alt="" className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center">
-                                                                <span className="material-symbols-outlined text-slate-400 text-base">directions_car</span>
-                                                            </div>
-                                                        )}
+                                    {/* Contact Info */}
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Contact Information</p>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {[
+                                                { icon: 'call', label: 'Phone', value: detail.phone },
+                                                { icon: 'phone_in_talk', label: 'Alt. Phone', value: detail.alternate_phone },
+                                                { icon: 'forum', label: 'WhatsApp', value: detail.whatsapp_number },
+                                                { icon: 'mail', label: 'Email', value: detail.email },
+                                                { icon: 'location_on', label: 'City', value: detail.city },
+                                            ].map((item, i) => item.value && (
+                                                <div key={i} className="bg-white border border-slate-100 shadow-sm rounded-xl px-3.5 py-3">
+                                                    <div className="flex items-center gap-2 mb-0.5">
+                                                        <span className="material-symbols-outlined text-slate-400 text-sm">{item.icon}</span>
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{item.label}</p>
                                                     </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-semibold text-primary truncate">
-                                                            {interest.car?.year} {interest.car?.make} {interest.car?.model}
-                                                        </p>
-                                                        <p className="text-xs text-slate-500">₹{interest.car?.price?.toLocaleString('en-IN')}</p>
-                                                    </div>
-                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
-                                                        interest.interest_level === 'hot' ? 'bg-red-100 text-red-600' :
-                                                        interest.interest_level === 'warm' ? 'bg-amber-100 text-amber-700' :
-                                                        'bg-slate-100 text-slate-500'
-                                                    }`}>
-                                                        {interest.interest_level === 'hot' ? '🔥' : interest.interest_level === 'warm' ? '⭐' : '❄️'} {interest.interest_level}
-                                                    </span>
+                                                    <p className="text-sm font-semibold text-slate-700 pl-6">{item.value}</p>
                                                 </div>
                                             ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Personal Info */}
+                                    {(detail.address || detail.office_address || detail.date_of_birth) && (
+                                        <div>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Personal Details</p>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {detail.date_of_birth && (
+                                                    <div className="bg-white border border-slate-100 shadow-sm rounded-xl px-3.5 py-3">
+                                                        <div className="flex items-center gap-2 mb-0.5">
+                                                            <span className="material-symbols-outlined text-slate-400 text-sm">cake</span>
+                                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Date of Birth</p>
+                                                        </div>
+                                                        <p className="text-sm font-semibold text-slate-700 pl-6">{formatDate(detail.date_of_birth)}</p>
+                                                    </div>
+                                                )}
+                                                {detail.address && (
+                                                    <div className="bg-white border border-slate-100 shadow-sm rounded-xl px-3.5 py-3 col-span-2">
+                                                        <div className="flex items-center gap-2 mb-0.5">
+                                                            <span className="material-symbols-outlined text-slate-400 text-sm">home</span>
+                                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Personal Address</p>
+                                                        </div>
+                                                        <p className="text-sm font-semibold text-slate-700 pl-6">{detail.address}</p>
+                                                    </div>
+                                                )}
+                                                {detail.office_address && (
+                                                    <div className="bg-white border border-slate-100 shadow-sm rounded-xl px-3.5 py-3 col-span-2">
+                                                        <div className="flex items-center gap-2 mb-0.5">
+                                                            <span className="material-symbols-outlined text-slate-400 text-sm">business</span>
+                                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Office Address</p>
+                                                        </div>
+                                                        <p className="text-sm font-semibold text-slate-700 pl-6">{detail.office_address}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Notes */}
+                                    {detail.notes && (
+                                        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 shadow-sm">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="material-symbols-outlined text-amber-500 text-sm">sticky_note_2</span>
+                                                <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">Notes</p>
+                                            </div>
+                                            <p className="text-sm text-amber-900 leading-relaxed whitespace-pre-wrap">{detail.notes}</p>
+                                        </div>
+                                    )}
+
+                                    {/* Car Interests */}
+                                    {(historyLoading || customerInterests.length > 0) && (
+                                        <div>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Car Interests</p>
+                                            {historyLoading ? (
+                                                <div className="h-16 bg-slate-100 rounded-xl animate-pulse"></div>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {customerInterests.map((interest: any) => (
+                                                        <div key={interest.id} className="flex items-center gap-3 bg-white border border-slate-100 shadow-sm rounded-xl px-3.5 py-2.5">
+                                                            <div className="size-10 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
+                                                                {interest.car?.thumbnail ? (
+                                                                    <img src={interest.car.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <div className="w-full h-full flex items-center justify-center">
+                                                                        <span className="material-symbols-outlined text-slate-400 text-base">directions_car</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-sm font-bold text-slate-700 truncate">
+                                                                    {interest.car?.year} {interest.car?.make} {interest.car?.model}
+                                                                </p>
+                                                                <p className="text-xs text-slate-500 font-medium">₹{interest.car?.price?.toLocaleString('en-IN')}</p>
+                                                            </div>
+                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 border ${
+                                                                interest.interest_level === 'hot' ? 'bg-red-50 text-red-600 border-red-200' :
+                                                                interest.interest_level === 'warm' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                                'bg-slate-50 text-slate-500 border-slate-200'
+                                                            }`}>
+                                                                {interest.interest_level === 'hot' ? '🔥' : interest.interest_level === 'warm' ? '⭐' : '❄️'} {interest.interest_level}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Lead Origin Link */}
+                                    {(detail as any).lead_id && (
+                                        <Link to={`/admin/leads/${(detail as any).lead_id}`} onClick={() => setDetail(null)} className="flex items-center justify-center gap-2 h-11 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 transition-colors">
+                                            <span className="material-symbols-outlined text-base">person_search</span> View Original Lead
+                                        </Link>
+                                    )}
+                                </div>
+                            )}
+
+                            {activeTab === 'timeline' && (
+                                <div className="space-y-4">
+                                    {historyLoading ? (
+                                        <div className="py-12 text-center text-slate-400 font-medium animate-pulse flex flex-col items-center gap-3">
+                                            <span className="size-6 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin"></span>
+                                            Loading history...
+                                        </div>
+                                    ) : timelineEvents.length === 0 ? (
+                                        <div className="py-16 text-center bg-white border border-slate-100 rounded-2xl shadow-sm">
+                                            <span className="material-symbols-outlined text-4xl text-slate-200 mb-3 block">history</span>
+                                            <p className="text-slate-500 font-medium text-sm">No history found for this customer.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="relative border-l-2 border-slate-200 ml-4 space-y-6 pb-4 pt-2">
+                                            {timelineEvents.map((event, idx) => {
+                                                const bgCol = event.color === 'emerald' ? 'bg-emerald-500' :
+                                                              event.color === 'indigo' ? 'bg-indigo-500' :
+                                                              event.color === 'orange' ? 'bg-orange-500' :
+                                                              event.color === 'blue' ? 'bg-blue-500' :
+                                                              event.color === 'primary' ? 'bg-primary' : 'bg-slate-500';
+                                                
+                                                const textCol = event.color === 'emerald' ? 'text-emerald-700' :
+                                                                event.color === 'indigo' ? 'text-indigo-700' :
+                                                                event.color === 'orange' ? 'text-orange-700' :
+                                                                event.color === 'blue' ? 'text-blue-700' :
+                                                                event.color === 'primary' ? 'text-primary' : 'text-slate-700';
+
+                                                return (
+                                                    <div key={event.id || idx} className="relative pl-6">
+                                                        {/* Timeline node */}
+                                                        <div className={`absolute -left-[17px] top-1 size-8 rounded-full border-4 border-slate-50 flex items-center justify-center text-white ${bgCol} shadow-sm z-10`}>
+                                                            <span className="material-symbols-outlined text-[14px]">{event.icon}</span>
+                                                        </div>
+                                                        {/* Content card */}
+                                                        <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.1)] hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.1)] transition-all relative group overflow-hidden">
+                                                            {event.type === 'sale' && <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-emerald-100/50 to-transparent rounded-bl-full pointer-events-none -mr-4 -mt-4"></div>}
+                                                            
+                                                            <div className="flex justify-between items-start gap-3 mb-1.5 relative z-10">
+                                                                <h4 className={`text-sm font-black ${textCol}`}>{event.title}</h4>
+                                                                <span className="text-[9px] font-bold text-slate-500 whitespace-nowrap bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                                                                    {formatDate(event.date.toISOString())}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs text-slate-600 font-medium leading-relaxed relative z-10">{event.description}</p>
+                                                            
+                                                            {event.status && (
+                                                                <div className="mt-2.5 relative z-10">
+                                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200`}>
+                                                                        Status: {event.status}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
                             )}
 
-                            {/* Lead Origin Link */}
-                            {(detail as any).lead_id && (
-                                <Link to={`/admin/leads/${(detail as any).lead_id}`} onClick={() => setDetail(null)} className="flex items-center gap-2 text-sm font-semibold text-accent hover:underline">
-                                    <span className="material-symbols-outlined text-base">person_search</span> View Original Lead →
-                                </Link>
+                            {activeTab === 'documents' && (
+                                <div className="space-y-4">
+                                    {historyLoading ? (
+                                        <div className="py-12 text-center text-slate-400 font-medium animate-pulse flex flex-col items-center gap-3">
+                                            <span className="size-6 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin"></span>
+                                            Loading documents...
+                                        </div>
+                                    ) : documents.length === 0 ? (
+                                        <div className="py-16 text-center bg-white border border-slate-100 rounded-2xl shadow-sm">
+                                            <span className="material-symbols-outlined text-4xl text-slate-200 mb-3 block">description</span>
+                                            <p className="text-slate-500 font-medium text-sm">No documents uploaded.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {documents.map((doc: any) => (
+                                                <a key={doc.id} href={doc.file_url} target="_blank" rel="noreferrer" className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl p-3.5 hover:border-primary/40 hover:shadow-md transition-all group relative overflow-hidden">
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                                    <div className="size-11 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center shrink-0 border border-blue-100 group-hover:bg-blue-500 group-hover:text-white group-hover:border-blue-600 transition-colors z-10">
+                                                        <span className="material-symbols-outlined text-lg">description</span>
+                                                    </div>
+                                                    <div className="min-w-0 z-10 flex-1">
+                                                        <p className="text-xs font-bold text-slate-700 truncate group-hover:text-primary transition-colors">{doc.name || doc.type}</p>
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{doc.type}</p>
+                                                    </div>
+                                                    <span className="material-symbols-outlined text-slate-300 group-hover:text-primary text-sm z-10">open_in_new</span>
+                                                </a>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             )}
-                            {/* Action Buttons */}
-                            <div className="grid grid-cols-2 gap-2 pt-1">
-                                <a href={`tel:${detail.phone}`} className="h-11 bg-green-50 text-green-700 hover:bg-green-100 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors">
-                                    <span className="material-symbols-outlined text-base">call</span> Call
-                                </a>
-                                <a href={toWhatsAppUrl(detail.whatsapp_number || detail.phone)} target="_blank" rel="noreferrer" className="h-11 bg-primary text-white hover:bg-primary-light rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors">
-                                    <span className="material-symbols-outlined text-base">forum</span> WhatsApp
-                                </a>
-                            </div>
                         </div>
                     </div>
                 </div>

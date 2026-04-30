@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
+import HighlightText from '../../components/ui/HighlightText';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,8 @@ interface Lead {
     created_at: string;
     assigned_to: string | null;
     created_by: string | null;
+    lead_quality?: string | null;
+    budget?: string | null;
 }
 
 interface StaffProfile {
@@ -53,8 +56,19 @@ const statusColors: Record<string, string> = {
     closed_lost: 'bg-slate-100 text-slate-500',
 };
 
-const filterTabs = ['All Leads', 'contact', 'sell_car', 'test_drive', 'insurance'];
+const filterTabs = ['All Leads', 'contact', 'sell_car', 'test_drive', 'insurance', 'finance', 'car_service'];
 const statusTabs = ['All Statuses', 'new', 'contacted', 'negotiation', 'closed_won', 'closed_lost'];
+const qualityTabs = ['All Types', 'hot', 'warm', 'cold', 'cakewalk'];
+
+const formatQualityEmoji = (val: string | null | undefined) => {
+    switch(val) {
+        case 'hot': return '🔥 Hot';
+        case 'warm': return '☀️ Warm';
+        case 'cold': return '❄️ Cold';
+        case 'cakewalk': return '🍰 Cakewalk';
+        default: return '—';
+    }
+};
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
@@ -69,6 +83,8 @@ const AdminLeads = () => {
     const [loading, setLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState('All Leads');
     const [activeStatusFilter, setActiveStatusFilter] = useState('All Statuses');
+    const [activeQualityFilter, setActiveQualityFilter] = useState('All Types');
+    const [activeStaffFilter, setActiveStaffFilter] = useState('All Staff');
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
 
@@ -114,14 +130,30 @@ const AdminLeads = () => {
         email: '',
         message: '',
         assigned_to: null,
+        lead_quality: null,
+        budget: null,
     });
 
     // ─── Pending Car Interests (manual lead form) ────────────────────────────
     const [pendingCarInterests, setPendingCarInterests] = useState<Array<{
-        inventory_id: string; interest_level: string; notes: string; carLabel: string;
+        inventory_id: string;
+        interest_level: string;
+        notes: string;
+        carLabel: string;
+        // Wishlist fields (when car is not in inventory)
+        is_wishlist?: boolean;
+        custom_make?: string;
+        custom_model?: string;
+        custom_year?: string;
+        custom_variant?: string;
+        custom_color?: string;
     }>>([]);
     const [showCarSelector, setShowCarSelector] = useState(false);
+    const [carSelectorMode, setCarSelectorMode] = useState<'stock' | 'wishlist'>('stock');
     const [carSelectorForm, setCarSelectorForm] = useState({ inventory_id: '', interest_level: 'warm', notes: '' });
+    const [wishlistForm, setWishlistForm] = useState({ make: '', model: '', year: '', variant: '', color: '', interest_level: 'warm', notes: '' });
+    const [carSearch, setCarSearch] = useState('');
+    const [carSearchOpen, setCarSearchOpen] = useState(false);
 
     // Import logic
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -194,11 +226,20 @@ const AdminLeads = () => {
                 if (!r.lead_id) return;
                 counts[r.lead_id] = (counts[r.lead_id] || 0) + 1;
                 if (r.car) {
+                    // Inventory car
                     if (!carMap[r.lead_id]) carMap[r.lead_id] = [];
                     carMap[r.lead_id].push({
                         make:            (r.car.make            || '').toLowerCase(),
                         model:           (r.car.model           || '').toLowerCase(),
                         registration_no: (r.car.registration_no || '').toLowerCase(),
+                    });
+                } else if (r.is_wishlist && r.custom_make) {
+                    // Wishlist car (not in inventory) — still searchable by make/model
+                    if (!carMap[r.lead_id]) carMap[r.lead_id] = [];
+                    carMap[r.lead_id].push({
+                        make:            (r.custom_make  || '').toLowerCase(),
+                        model:           (r.custom_model || '').toLowerCase(),
+                        registration_no: '',
                     });
                 }
             });
@@ -286,18 +327,34 @@ const AdminLeads = () => {
             // Insert pending car interests
             if (pendingCarInterests.length > 0) {
                 await supabase.from('lead_car_interests').insert(
-                    pendingCarInterests.map(i => ({
-                        lead_id: newLead.id,
-                        inventory_id: i.inventory_id,
-                        interest_level: i.interest_level,
-                        notes: i.notes || null,
-                        added_by: user?.id ?? null,
-                    }))
+                    pendingCarInterests.map(i => i.is_wishlist
+                        ? {
+                            lead_id: newLead.id,
+                            inventory_id: null,
+                            is_wishlist: true,
+                            custom_make: i.custom_make,
+                            custom_model: i.custom_model,
+                            custom_year: i.custom_year ? Number(i.custom_year) : null,
+                            custom_variant: i.custom_variant || null,
+                            custom_color: i.custom_color || null,
+                            interest_level: i.interest_level,
+                            notes: i.notes || null,
+                            added_by: user?.id ?? null,
+                        }
+                        : {
+                            lead_id: newLead.id,
+                            inventory_id: i.inventory_id,
+                            is_wishlist: false,
+                            interest_level: i.interest_level,
+                            notes: i.notes || null,
+                            added_by: user?.id ?? null,
+                        }
+                    )
                 );
             }
             setIsAddingManual(false);
             setPendingCarInterests([]);
-            setManualForm({ full_name: '', phone: '', secondary_phone: '', whatsapp_number: '', personal_address: '', office_address: '', type: 'contact', status: 'new', source: 'Walk-in', email: '', message: '', assigned_to: null });
+            setManualForm({ full_name: '', phone: '', secondary_phone: '', whatsapp_number: '', personal_address: '', office_address: '', type: 'contact', status: 'new', source: 'Walk-in', email: '', message: '', assigned_to: null, lead_quality: null, budget: null });
             fetchLeads();
             fetchInterestCounts();
         } else {
@@ -312,6 +369,8 @@ const AdminLeads = () => {
             personal_address: '', office_address: '',
             type: 'contact', status: 'new',
             source: 'Walk-in', email: '', message: '',
+            lead_quality: null,
+            budget: null,
             // Staff automatically assigned to themselves
             assigned_to: isAdmin ? null : (user?.id ?? null),
         });
@@ -319,10 +378,14 @@ const AdminLeads = () => {
         setPhoneCheckState('idle');
         setDuplicateLeads([]);
         setDuplicateAcknowledged(false);
-        // Reset pending car interests
+        // Reset pending car interests and search state
         setPendingCarInterests([]);
         setShowCarSelector(false);
+        setCarSelectorMode('stock');
         setCarSelectorForm({ inventory_id: '', interest_level: 'warm', notes: '' });
+        setWishlistForm({ make: '', model: '', year: '', variant: '', color: '', interest_level: 'warm', notes: '' });
+        setCarSearch('');
+        setCarSearchOpen(false);
         setIsAddingManual(true);
     };
 
@@ -408,6 +471,14 @@ const AdminLeads = () => {
 
     const updateLeadStatus = async (id: string, newStatus: string) => {
         const lead = leads.find(l => l.id === id);
+        
+        // Authorization check
+        if (!isAdmin && lead?.assigned_to !== user?.id) {
+            const assignedStaff = staffMembers.find(s => s.id === lead?.assigned_to)?.full_name || 'an Admin';
+            alert(`This lead is assigned to ${assignedStaff}. Please contact them to update the status.`);
+            return;
+        }
+
         const updates: any = { status: newStatus };
 
         if (newStatus !== 'new' && lead?.status === 'new') {
@@ -505,6 +576,8 @@ const AdminLeads = () => {
             sell_car: 'Sell Car',
             test_drive: 'Test Drive',
             insurance: 'Insurance',
+            finance: 'Finance',
+            car_service: 'Car Services',
             new: 'New',
             contacted: 'Contacted',
             negotiation: 'Negotiating',
@@ -519,29 +592,34 @@ const AdminLeads = () => {
     const filteredAndSearchedLeads = leads.filter(l => {
         const matchesTab = activeFilter === 'All Leads' || l.type === activeFilter;
         const matchesStatus = activeStatusFilter === 'All Statuses' || l.status === activeStatusFilter;
+        const matchesStaff = activeStaffFilter === 'All Staff' || 
+                             (activeStaffFilter === 'Unassigned' && !l.assigned_to) ||
+                             (l.assigned_to === activeStaffFilter);
+        const matchesQuality = activeQualityFilter === 'All Types' || l.lead_quality === activeQualityFilter;
+                             
+        if (!(matchesTab && matchesStatus && matchesStaff && matchesQuality)) return false;
+
         const q = searchQuery.toLowerCase().trim();
-        if (!q) return matchesTab && matchesStatus;
+        if (!q) return true;
 
         // 1. Standard personal fields
-        if ((l.full_name || '').toLowerCase().includes(q)) return matchesTab && matchesStatus;
-        if ((l.phone || '').includes(q))                   return matchesTab && matchesStatus;
-        if ((l.secondary_phone || '').includes(q))         return matchesTab && matchesStatus;
+        if ((l.full_name || '').toLowerCase().includes(q)) return true;
+        if ((l.phone || '').includes(q))                   return true;
+        if ((l.secondary_phone || '').includes(q))         return true;
 
         // 2. sell_car lead — car the customer wants to sell (stored directly on lead row)
-        if ((l.car_make  || '').toLowerCase().includes(q)) return matchesTab && matchesStatus;
-        if ((l.car_model || '').toLowerCase().includes(q)) return matchesTab && matchesStatus;
-        if (`${(l.car_make || '')} ${(l.car_model || '')}`.toLowerCase().includes(q)) return matchesTab && matchesStatus;
+        if ((l.car_make  || '').toLowerCase().includes(q)) return true;
+        if ((l.car_model || '').toLowerCase().includes(q)) return true;
+        if (`${(l.car_make || '')} ${(l.car_model || '')}`.toLowerCase().includes(q)) return true;
 
         // 3. Inventory car interests (test_drive / contact / insurance leads)
-        //    leadCarMap is keyed by lead_id and holds cars from lead_car_interests + inventory join
         const interestedCars = leadCarMap[l.id] || [];
-        const matchesCar = interestedCars.some(car =>
-            car.make.includes(q) ||
-            car.model.includes(q) ||
-            car.registration_no.includes(q) ||
-            `${car.make} ${car.model}`.includes(q)
+        return interestedCars.some(car =>
+            car.make.toLowerCase().includes(q) ||
+            car.model.toLowerCase().includes(q) ||
+            car.registration_no.toLowerCase().includes(q) ||
+            `${car.make} ${car.model}`.toLowerCase().includes(q)
         );
-        return matchesTab && matchesStatus && matchesCar;
     });
 
     const totalPages = Math.ceil(filteredAndSearchedLeads.length / leadsPerPage);
@@ -580,10 +658,7 @@ const AdminLeads = () => {
                 <div>
                     <h1 className="text-2xl font-black text-primary font-display">Lead Management</h1>
                     <p className="text-slate-500 text-sm">
-                        {isAdmin
-                            ? 'All customer enquiries across your team.'
-                            : 'Leads assigned to you or created by you.'
-                        }
+                        All customer enquiries across your team.
                     </p>
                 </div>
                 <div className="flex flex-wrap gap-3">
@@ -634,16 +709,6 @@ const AdminLeads = () => {
                 </div>
             </div>
 
-            {/* Staff scope banner */}
-            {!isAdmin && (
-                <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
-                    <span className="material-symbols-outlined text-amber-500 text-base shrink-0">info</span>
-                    <p className="text-xs text-amber-700 font-medium">
-                        Showing leads <strong>assigned to you</strong> or <strong>created by you</strong>. Contact an admin to get new leads assigned.
-                    </p>
-                </div>
-            )}
-
             {/* Tabs & Bulk Actions */}
             <div className="flex flex-col gap-4 border-b border-slate-200 pb-2">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -664,17 +729,47 @@ const AdminLeads = () => {
                     )}
                 </div>
 
-                {/* Status sub-tabs */}
-                <div className="flex gap-2 overflow-x-auto pb-2 w-full">
-                    {statusTabs.map(status => (
-                        <button
-                            key={status}
-                            onClick={() => { setActiveStatusFilter(status); setCurrentPage(1); setSelectedLeads([]); }}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition-all border ${activeStatusFilter === status ? 'bg-primary text-white border-primary' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
+                {/* Status sub-tabs & Staff Filter */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
+                    <div className="flex gap-2 overflow-x-auto pb-2 w-full sm:w-auto">
+                        {statusTabs.map(status => (
+                            <button
+                                key={status}
+                                onClick={() => { setActiveStatusFilter(status); setCurrentPage(1); setSelectedLeads([]); }}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition-all border ${activeStatusFilter === status ? 'bg-primary text-white border-primary' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}
+                            >
+                                {status === 'All Statuses' ? 'All Statuses' : formatLabel(status)} <span className="opacity-70 ml-1">({statusCount(status)})</span>
+                            </button>
+                        ))}
+                    </div>
+                    
+                    {/* Staff Filter Dropdown */}
+                    <div className="shrink-0 mb-2 sm:mb-0">
+                        <select
+                            value={activeStaffFilter}
+                            onChange={(e) => { setActiveStaffFilter(e.target.value); setCurrentPage(1); setSelectedLeads([]); }}
+                            className="h-9 px-3 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-primary/20 bg-slate-50 hover:bg-slate-100 transition-colors"
                         >
-                            {status === 'All Statuses' ? 'All Statuses' : formatLabel(status)} <span className="opacity-70 ml-1">({statusCount(status)})</span>
-                        </button>
-                    ))}
+                            <option value="All Staff">All Staff</option>
+                            <option value="Unassigned">Unassigned</option>
+                            {staffMembers.map(s => (
+                                <option key={s.id} value={s.id}>{s.full_name || 'Unknown Staff'}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Quality Filter Dropdown */}
+                    <div className="shrink-0 mb-2 sm:mb-0">
+                        <select
+                            value={activeQualityFilter}
+                            onChange={(e) => { setActiveQualityFilter(e.target.value); setCurrentPage(1); setSelectedLeads([]); }}
+                            className="h-9 px-3 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-primary/20 bg-slate-50 hover:bg-slate-100 transition-colors"
+                        >
+                            {qualityTabs.map(q => (
+                                <option key={q} value={q}>{q === 'All Types' ? 'All Lead Types' : formatQualityEmoji(q)}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -752,15 +847,24 @@ const AdminLeads = () => {
                                                     {lead.full_name.charAt(0).toUpperCase()}
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-bold text-primary">{lead.full_name}</p>
-                                                    <p className="text-xs font-medium text-slate-500">{lead.phone}</p>
+                                                    <p className="text-sm font-bold text-primary">
+                                                        <HighlightText text={lead.full_name} highlight={searchQuery} />
+                                                    </p>
+                                                    <p className="text-xs font-medium text-slate-500">
+                                                        <HighlightText text={lead.phone} highlight={searchQuery} />
+                                                    </p>
                                                 </div>
                                             </div>
                                         </td>
 
                                         {/* Type */}
                                         <td className="px-5 py-4">
-                                            <span className="text-xs font-semibold px-2 py-1 bg-slate-100 rounded-md text-slate-600">{formatLabel(lead.type)}</span>
+                                            <div className="flex flex-col items-start gap-1">
+                                                <span className="text-xs font-semibold px-2 py-1 bg-slate-100 rounded-md text-slate-600">{formatLabel(lead.type)}</span>
+                                                {lead.lead_quality && (
+                                                    <span className="text-xs font-bold text-slate-700 whitespace-nowrap">{formatQualityEmoji(lead.lead_quality)}</span>
+                                                )}
+                                            </div>
                                         </td>
 
                                         {/* Details */}
@@ -770,6 +874,8 @@ const AdminLeads = () => {
                                                 {lead.type === 'contact' && (lead.message ? lead.message : '—')}
                                                 {lead.type === 'test_drive' && 'Test Drive Booking'}
                                                 {lead.type === 'insurance' && 'Insurance Inquiry'}
+                                                {lead.type === 'finance' && 'Finance Inquiry'}
+                                                {lead.type === 'car_service' && 'Car Services Request'}
                                             </p>
                                             <p className="text-xs text-slate-400 truncate max-w-[180px]">From: {lead.source}</p>
                                             {(interestCounts[lead.id] ?? 0) > 0 && (
@@ -835,8 +941,8 @@ const AdminLeads = () => {
                                                 <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" title="WhatsApp" className="size-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-green-100 hover:text-green-600 transition-colors">
                                                     <span className="material-symbols-outlined text-[18px]">chat</span>
                                                 </a>
-                                                {/* Delete — only admin OR staff managing their own lead */}
-                                                {(isAdmin || lead.created_by === user?.id) && (
+                                                {/* Delete — only admin OR assigned staff */}
+                                                {(isAdmin || lead.assigned_to === user?.id) && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); requestDeleteLead(lead.id); }}
                                                         title="Delete Lead"
@@ -1022,6 +1128,31 @@ const AdminLeads = () => {
                                         placeholder="ramesh@example.com" />
                                 </div>
 
+                                {/* Lead Quality */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Lead Quality</label>
+                                    <select
+                                        value={manualForm.lead_quality || ''}
+                                        onChange={e => setManualForm(prev => ({ ...prev, lead_quality: e.target.value || null }))}
+                                        className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10 bg-white"
+                                    >
+                                        <option value="" disabled>Select Quality...</option>
+                                        <option value="hot">🔥 Hot</option>
+                                        <option value="warm">☀️ Warm</option>
+                                        <option value="cold">❄️ Cold</option>
+                                        <option value="cakewalk">🍰 Cakewalk</option>
+                                    </select>
+                                </div>
+
+                                {/* Budget */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">Budget <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
+                                    <input type="text" value={manualForm.budget || ''}
+                                        onChange={e => setManualForm(prev => ({ ...prev, budget: e.target.value }))}
+                                        className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10"
+                                        placeholder="e.g. 5-6 Lakhs" />
+                                </div>
+
                                 {/* Secondary Phone */}
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Secondary Phone <span className="text-xs text-slate-400 font-normal">(optional)</span></label>
@@ -1069,6 +1200,8 @@ const AdminLeads = () => {
                                         <option value="sell_car">Sell Car</option>
                                         <option value="test_drive">Test Drive</option>
                                         <option value="insurance">Insurance</option>
+                                        <option value="finance">Finance</option>
+                                        <option value="car_service">Car Services</option>
                                     </select>
                                 </div>
 
@@ -1145,84 +1278,182 @@ const AdminLeads = () => {
                                     </button>
                                 </div>
 
-                                {showCarSelector && (
-                                    <div className="bg-white border border-slate-200 rounded-xl p-3 mb-3 space-y-2">
-                                        <select
-                                            value={carSelectorForm.inventory_id}
-                                            onChange={e => setCarSelectorForm(f => ({ ...f, inventory_id: e.target.value }))}
-                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200"
-                                        >
-                                            <option value="">-- Select Available Car --</option>
-                                            {availableInventory.map((car: any) => (
-                                                <option key={car.id} value={car.id}>
-                                                    {car.year} {car.make} {car.model} — ₹{car.price?.toLocaleString('en-IN')}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <div className="flex gap-1.5">
-                                            {(['hot', 'warm', 'cold'] as const).map(level => (
-                                                <button
-                                                    key={level}
-                                                    type="button"
-                                                    onClick={() => setCarSelectorForm(f => ({ ...f, interest_level: level }))}
-                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all capitalize ${
-                                                        carSelectorForm.interest_level === level
-                                                            ? level === 'hot' ? 'bg-red-500 text-white border-red-500'
-                                                            : level === 'warm' ? 'bg-amber-500 text-white border-amber-500'
-                                                            : 'bg-slate-500 text-white border-slate-500'
-                                                            : 'bg-white text-slate-500 border-slate-200'
-                                                    }`}
-                                                >
-                                                    {level === 'hot' ? '🔥' : level === 'warm' ? '⭐' : '❄️'} {level}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <input
-                                            type="text"
-                                            value={carSelectorForm.notes}
-                                            onChange={e => setCarSelectorForm(f => ({ ...f, notes: e.target.value }))}
-                                            placeholder="Notes (optional)"
-                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                if (!carSelectorForm.inventory_id) return;
-                                                if (pendingCarInterests.some(p => p.inventory_id === carSelectorForm.inventory_id)) {
-                                                    alert('This car is already added.'); return;
-                                                }
-                                                const car = availableInventory.find((c: any) => c.id === carSelectorForm.inventory_id);
-                                                setPendingCarInterests(prev => [...prev, {
-                                                    inventory_id: carSelectorForm.inventory_id,
-                                                    interest_level: carSelectorForm.interest_level,
-                                                    notes: carSelectorForm.notes,
-                                                    carLabel: car ? `${car.year} ${car.make} ${car.model}` : 'Unknown Car',
-                                                }]);
-                                                setCarSelectorForm({ inventory_id: '', interest_level: 'warm', notes: '' });
-                                                setShowCarSelector(false);
-                                            }}
-                                            className="w-full h-9 bg-blue-500 text-white text-sm font-bold rounded-lg hover:bg-blue-600 transition"
-                                        >
-                                            Add to List
+                                {showCarSelector && (() => {
+                                    // ── Tab toggle ──────────────────────────────────────
+                                    const tabBtn = (mode: 'stock' | 'wishlist', label: string, icon: string) => (
+                                        <button type="button" onClick={() => { setCarSelectorMode(mode); setCarSearch(''); setCarSelectorForm(f => ({ ...f, inventory_id: '' })); }}
+                                            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition-all ${carSelectorMode === mode ? mode === 'stock' ? 'bg-blue-500 text-white' : 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                                            <span className="material-symbols-outlined text-[14px]">{icon}</span>{label}
                                         </button>
-                                    </div>
-                                )}
+                                    );
+
+                                    // ── In-Stock filtered list ───────────────────────────
+                                    const normalizedSearch = carSearch.toLowerCase().replace(/\s/g, '');
+                                    const filteredCars = availableInventory.filter((car: any) => {
+                                        if (!normalizedSearch) return true;
+                                        const nameMatch = `${car.year} ${car.make} ${car.model}`.toLowerCase().includes(carSearch.toLowerCase());
+                                        const regMatch = (car.registration_no || '').toLowerCase().replace(/\s/g, '').includes(normalizedSearch);
+                                        return nameMatch || regMatch;
+                                    });
+                                    const selectedCar = availableInventory.find((c: any) => c.id === carSelectorForm.inventory_id);
+
+                                    return (
+                                        <div className="bg-white border border-slate-200 rounded-xl p-3 mb-3 space-y-2">
+
+                                            {/* ── Mode tabs ── */}
+                                            <div className="flex gap-1.5 p-1 bg-slate-100 rounded-lg">
+                                                {tabBtn('stock', 'In Stock', 'inventory')}
+                                                {tabBtn('wishlist', 'Not In Stock', 'search')}
+                                            </div>
+
+                                            {carSelectorMode === 'stock' ? (
+                                                <>
+                                                    {/* ── Searchable picker ── */}
+                                                    <div className="relative">
+                                                        <div className="relative">
+                                                            <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[16px] pointer-events-none">search</span>
+                                                            <input type="text" value={carSearch}
+                                                                onChange={e => { setCarSearch(e.target.value); setCarSearchOpen(true); if (carSelectorForm.inventory_id) setCarSelectorForm(f => ({ ...f, inventory_id: '' })); }}
+                                                                onFocus={() => setCarSearchOpen(true)}
+                                                                onBlur={() => setTimeout(() => setCarSearchOpen(false), 150)}
+                                                                placeholder="Search by car name or registration no..."
+                                                                className="w-full h-9 border border-slate-200 rounded-lg pl-8 pr-3 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200" />
+                                                            {carSearch && (
+                                                                <button type="button" onClick={() => { setCarSearch(''); setCarSelectorForm(f => ({ ...f, inventory_id: '' })); setCarSearchOpen(false); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                                                    <span className="material-symbols-outlined text-[15px]">close</span>
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        {selectedCar && (
+                                                            <div className="mt-1.5 flex items-center gap-2 px-2.5 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+                                                                <span className="material-symbols-outlined text-blue-500 text-[14px]">directions_car</span>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="text-xs font-bold text-blue-700 truncate">{selectedCar.year} {selectedCar.make} {selectedCar.model}</p>
+                                                                    <p className="text-[10px] text-blue-500 font-mono">{selectedCar.registration_no || 'No Reg'} · ₹{Number(selectedCar.price).toLocaleString('en-IN')}</p>
+                                                                </div>
+                                                                <span className="text-[10px] font-bold text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded">Selected</span>
+                                                            </div>
+                                                        )}
+                                                        {carSearchOpen && (
+                                                            <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
+                                                                {filteredCars.length === 0 ? (
+                                                                    <div className="flex flex-col items-center py-6 text-slate-400">
+                                                                        <span className="material-symbols-outlined text-2xl mb-1">search_off</span>
+                                                                        <p className="text-xs font-medium">No cars match your search</p>
+                                                                        <p className="text-[10px] mt-0.5">Try car name or registration number</p>
+                                                                    </div>
+                                                                ) : filteredCars.map((car: any) => {
+                                                                    const isSelected = car.id === carSelectorForm.inventory_id;
+                                                                    const isAlreadyAdded = pendingCarInterests.some(p => p.inventory_id === car.id);
+                                                                    return (
+                                                                        <button key={car.id} type="button" disabled={isAlreadyAdded}
+                                                                            onClick={() => { setCarSelectorForm(f => ({ ...f, inventory_id: car.id })); setCarSearch(`${car.year} ${car.make} ${car.model}`); setCarSearchOpen(false); }}
+                                                                            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors border-b border-slate-50 last:border-0 ${isAlreadyAdded ? 'opacity-40 cursor-not-allowed bg-slate-50' : isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
+                                                                            <div className="size-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                                                                                <span className="material-symbols-outlined text-slate-500 text-[15px]">directions_car</span>
+                                                                            </div>
+                                                                            <div className="flex-1 min-w-0">
+                                                                                <p className="text-xs font-bold text-slate-700 truncate">{car.year} {car.make} {car.model}</p>
+                                                                                <p className="text-[10px] text-slate-400 font-mono">{car.registration_no || 'No Reg'}</p>
+                                                                            </div>
+                                                                            <div className="text-right shrink-0">
+                                                                                <p className="text-xs font-bold text-primary">₹{Number(car.price).toLocaleString('en-IN')}</p>
+                                                                                {isAlreadyAdded && <p className="text-[9px] text-slate-400">Added</p>}
+                                                                                {isSelected && !isAlreadyAdded && <span className="material-symbols-outlined text-blue-500 text-[14px]">check_circle</span>}
+                                                                            </div>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {/* Interest level */}
+                                                    <div className="flex gap-1.5">
+                                                        {(['hot', 'warm', 'cold'] as const).map(level => (
+                                                            <button key={level} type="button" onClick={() => setCarSelectorForm(f => ({ ...f, interest_level: level }))}
+                                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all capitalize ${carSelectorForm.interest_level === level ? level === 'hot' ? 'bg-red-500 text-white border-red-500' : level === 'warm' ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-500 text-white border-slate-500' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                                                {level === 'hot' ? '🔥' : level === 'warm' ? '⭐' : '❄️'} {level}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    <input type="text" value={carSelectorForm.notes} onChange={e => setCarSelectorForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes (optional)" className="w-full h-9 border border-slate-200 rounded-lg px-3 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200" />
+                                                    <button type="button" disabled={!carSelectorForm.inventory_id}
+                                                        onClick={() => {
+                                                            if (!carSelectorForm.inventory_id) return;
+                                                            if (pendingCarInterests.some(p => p.inventory_id === carSelectorForm.inventory_id)) { alert('This car is already added.'); return; }
+                                                            const car = availableInventory.find((c: any) => c.id === carSelectorForm.inventory_id);
+                                                            setPendingCarInterests(prev => [...prev, { inventory_id: carSelectorForm.inventory_id, interest_level: carSelectorForm.interest_level, notes: carSelectorForm.notes, carLabel: car ? `${car.year} ${car.make} ${car.model}` : 'Unknown Car', is_wishlist: false }]);
+                                                            setCarSelectorForm({ inventory_id: '', interest_level: 'warm', notes: '' }); setCarSearch(''); setCarSearchOpen(false); setShowCarSelector(false);
+                                                        }}
+                                                        className="w-full h-9 bg-blue-500 text-white text-sm font-bold rounded-lg hover:bg-blue-600 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                                                        Add to List
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {/* ── Wishlist / Not In Stock form ── */}
+                                                    <div className="rounded-lg bg-purple-50 border border-purple-100 px-3 py-2 flex items-center gap-2 mb-1">
+                                                        <span className="material-symbols-outlined text-purple-500 text-[15px]">info</span>
+                                                        <p className="text-[11px] text-purple-700">Car not in your inventory? Fill in the details below — we'll track what the customer wants.</p>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Make <span className="text-red-400">*</span></label>
+                                                            <input type="text" value={wishlistForm.make} onChange={e => setWishlistForm(f => ({ ...f, make: e.target.value }))} placeholder="e.g. Maruti, Honda" className="w-full h-9 border border-slate-200 rounded-lg px-3 text-sm bg-white outline-none focus:ring-2 focus:ring-purple-200" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Model <span className="text-red-400">*</span></label>
+                                                            <input type="text" value={wishlistForm.model} onChange={e => setWishlistForm(f => ({ ...f, model: e.target.value }))} placeholder="e.g. Swift, City" className="w-full h-9 border border-slate-200 rounded-lg px-3 text-sm bg-white outline-none focus:ring-2 focus:ring-purple-200" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Year</label>
+                                                            <input type="number" value={wishlistForm.year} onChange={e => setWishlistForm(f => ({ ...f, year: e.target.value }))} placeholder="e.g. 2020" min="1990" max="2030" className="w-full h-9 border border-slate-200 rounded-lg px-3 text-sm bg-white outline-none focus:ring-2 focus:ring-purple-200" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Color</label>
+                                                            <input type="text" value={wishlistForm.color} onChange={e => setWishlistForm(f => ({ ...f, color: e.target.value }))} placeholder="e.g. White, Red" className="w-full h-9 border border-slate-200 rounded-lg px-3 text-sm bg-white outline-none focus:ring-2 focus:ring-purple-200" />
+                                                        </div>
+                                                    </div>
+                                                    <input type="text" value={wishlistForm.variant} onChange={e => setWishlistForm(f => ({ ...f, variant: e.target.value }))} placeholder="Variant (optional) — e.g. VXI, ZXI+" className="w-full h-9 border border-slate-200 rounded-lg px-3 text-sm bg-white outline-none focus:ring-2 focus:ring-purple-200" />
+                                                    {/* Interest level */}
+                                                    <div className="flex gap-1.5">
+                                                        {(['hot', 'warm', 'cold'] as const).map(level => (
+                                                            <button key={level} type="button" onClick={() => setWishlistForm(f => ({ ...f, interest_level: level }))}
+                                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all capitalize ${wishlistForm.interest_level === level ? level === 'hot' ? 'bg-red-500 text-white border-red-500' : level === 'warm' ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-500 text-white border-slate-500' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                                                {level === 'hot' ? '🔥' : level === 'warm' ? '⭐' : '❄️'} {level}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    <input type="text" value={wishlistForm.notes} onChange={e => setWishlistForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes (optional) — budget, condition, etc." className="w-full h-9 border border-slate-200 rounded-lg px-3 text-sm bg-white outline-none focus:ring-2 focus:ring-purple-200" />
+                                                    <button type="button" disabled={!wishlistForm.make.trim() || !wishlistForm.model.trim()}
+                                                        onClick={() => {
+                                                            if (!wishlistForm.make.trim() || !wishlistForm.model.trim()) return;
+                                                            const label = `${wishlistForm.year ? wishlistForm.year + ' ' : ''}${wishlistForm.make} ${wishlistForm.model}${wishlistForm.variant ? ' ' + wishlistForm.variant : ''}`;
+                                                            setPendingCarInterests(prev => [...prev, { inventory_id: '', interest_level: wishlistForm.interest_level, notes: wishlistForm.notes, carLabel: label, is_wishlist: true, custom_make: wishlistForm.make, custom_model: wishlistForm.model, custom_year: wishlistForm.year, custom_variant: wishlistForm.variant, custom_color: wishlistForm.color }]);
+                                                            setWishlistForm({ make: '', model: '', year: '', variant: '', color: '', interest_level: 'warm', notes: '' }); setShowCarSelector(false);
+                                                        }}
+                                                        className="w-full h-9 bg-purple-500 text-white text-sm font-bold rounded-lg hover:bg-purple-600 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                                                        Add to Wishlist
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
 
                                 {pendingCarInterests.length > 0 ? (
                                     <div className="flex flex-wrap gap-2">
                                         {pendingCarInterests.map((interest, idx) => (
                                             <div key={idx} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold border ${
+                                                interest.is_wishlist ? 'bg-purple-50 text-purple-700 border-purple-200' :
                                                 interest.interest_level === 'hot' ? 'bg-red-50 text-red-600 border-red-200' :
                                                 interest.interest_level === 'warm' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                                 'bg-slate-100 text-slate-600 border-slate-200'
                                             }`}>
-                                                <span>{interest.interest_level === 'hot' ? '🔥' : interest.interest_level === 'warm' ? '⭐' : '❄️'}</span>
+                                                <span>{interest.is_wishlist ? '🔍' : interest.interest_level === 'hot' ? '🔥' : interest.interest_level === 'warm' ? '⭐' : '❄️'}</span>
                                                 <span>{interest.carLabel}</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setPendingCarInterests(prev => prev.filter((_, i) => i !== idx))}
-                                                    className="ml-0.5 hover:text-red-500 transition-colors"
-                                                >
+                                                {interest.is_wishlist && <span className="text-[9px] bg-purple-100 px-1 rounded">Sourcing</span>}
+                                                <button type="button" onClick={() => setPendingCarInterests(prev => prev.filter((_, i) => i !== idx))} className="ml-0.5 hover:text-red-500 transition-colors">
                                                     <span className="material-symbols-outlined text-[12px]">close</span>
                                                 </button>
                                             </div>

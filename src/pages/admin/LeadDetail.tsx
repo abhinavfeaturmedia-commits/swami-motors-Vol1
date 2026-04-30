@@ -27,10 +27,16 @@ interface CarInterest {
     id: string;
     lead_id: string;
     customer_id: string | null;
-    inventory_id: string;
+    inventory_id: string | null;
     interest_level: 'hot' | 'warm' | 'cold';
     notes: string | null;
     created_at: string;
+    is_wishlist?: boolean;
+    custom_make?: string | null;
+    custom_model?: string | null;
+    custom_year?: number | null;
+    custom_variant?: string | null;
+    custom_color?: string | null;
     car?: {
         id: string;
         make: string;
@@ -62,6 +68,19 @@ interface Lead {
     lost_reason: string | null;
     contacted_at: string | null;
     created_at: string;
+    assigned_to: string | null;
+    lead_quality?: string | null;
+    budget?: string | null;
+    assigned_profile?: {
+        full_name: string;
+        email: string | null;
+    } | null;
+}
+
+interface StaffProfile {
+    id: string;
+    full_name: string;
+    role: string;
 }
 
 const statusColors: Record<string, string> = {
@@ -89,8 +108,20 @@ const formatType = (val: string) => {
         sell_car: 'Sell Car',
         test_drive: 'Test Drive',
         insurance: 'Insurance',
+        finance: 'Finance',
+        car_service: 'Car Services',
     };
     return map[val] || val;
+};
+
+const formatQualityEmoji = (val: string | null | undefined) => {
+    switch(val) {
+        case 'hot': return '🔥 Hot';
+        case 'warm': return '☀️ Warm';
+        case 'cold': return '❄️ Cold';
+        case 'cakewalk': return '🍰 Cakewalk';
+        default: return null;
+    }
 };
 
 const LeadDetail = () => {
@@ -101,6 +132,9 @@ const LeadDetail = () => {
     
     const [lead, setLead] = useState<Lead | null>(null);
     const [loading, setLoading] = useState(true);
+
+    const isAdmin = profile?.role === 'admin';
+    const canEdit = isAdmin || (lead?.assigned_to === profile?.id);
     
     const [isEditing, setIsEditing] = useState(false);
     const [editForm, setEditForm] = useState<Partial<Lead>>({});
@@ -108,6 +142,9 @@ const LeadDetail = () => {
     // Conversion State
     const [isConverting, setIsConverting] = useState(false);
     const [convertForm, setConvertForm] = useState({ inventory_id: '', final_price: '' });
+
+    // Staff State
+    const [staffMembers, setStaffMembers] = useState<StaffProfile[]>([]);
 
     // Activity State
     const [note, setNote] = useState('');
@@ -136,6 +173,10 @@ const LeadDetail = () => {
     const [isAddingCarInterest, setIsAddingCarInterest] = useState(false);
     const [carInterestForm, setCarInterestForm] = useState({ inventory_id: '', interest_level: 'warm', notes: '' });
     const [carInterestSaving, setCarInterestSaving] = useState(false);
+    const [carSearch, setCarSearch] = useState('');
+    const [carSearchOpen, setCarSearchOpen] = useState(false);
+    const [carSelectorMode, setCarSelectorMode] = useState<'stock' | 'wishlist'>('stock');
+    const [wishlistForm, setWishlistForm] = useState({ make: '', model: '', year: '', variant: '', color: '', interest_level: 'warm', notes: '' });
 
     const fetchFollowUps = useCallback(async () => {
         if (!id) return;
@@ -239,21 +280,49 @@ const LeadDetail = () => {
 
     const handleAddCarInterest = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!carInterestForm.inventory_id || carInterestSaving) return;
+        if (carInterestSaving) return;
+
+        // Validation
+        if (carSelectorMode === 'stock' && !carInterestForm.inventory_id) return;
+        if (carSelectorMode === 'wishlist' && (!wishlistForm.make.trim() || !wishlistForm.model.trim())) return;
+
         setCarInterestSaving(true);
-        const { error } = await supabase.from('lead_car_interests').insert({
-            lead_id: id,
-            inventory_id: carInterestForm.inventory_id,
-            interest_level: carInterestForm.interest_level,
-            notes: carInterestForm.notes.trim() || null,
-            added_by: profile?.id ?? null,
-        });
+
+        let error;
+        if (carSelectorMode === 'wishlist') {
+            ({ error } = await supabase.from('lead_car_interests').insert({
+                lead_id: id,
+                inventory_id: null,
+                is_wishlist: true,
+                custom_make: wishlistForm.make.trim(),
+                custom_model: wishlistForm.model.trim(),
+                custom_year: wishlistForm.year ? Number(wishlistForm.year) : null,
+                custom_variant: wishlistForm.variant.trim() || null,
+                custom_color: wishlistForm.color.trim() || null,
+                interest_level: wishlistForm.interest_level,
+                notes: wishlistForm.notes.trim() || null,
+                added_by: profile?.id ?? null,
+            }));
+        } else {
+            ({ error } = await supabase.from('lead_car_interests').insert({
+                lead_id: id,
+                inventory_id: carInterestForm.inventory_id,
+                is_wishlist: false,
+                interest_level: carInterestForm.interest_level,
+                notes: carInterestForm.notes.trim() || null,
+                added_by: profile?.id ?? null,
+            }));
+        }
+
         if (!error) {
             setCarInterestForm({ inventory_id: '', interest_level: 'warm', notes: '' });
+            setWishlistForm({ make: '', model: '', year: '', variant: '', color: '', interest_level: 'warm', notes: '' });
+            setCarSearch('');
+            setCarSelectorMode('stock');
             setIsAddingCarInterest(false);
             fetchCarInterests();
         } else {
-            alert('Failed to save. This car may already be tracked for this lead.');
+            alert('Failed to save. ' + (error.message || 'Please try again.'));
         }
         setCarInterestSaving(false);
     };
@@ -293,10 +362,20 @@ const LeadDetail = () => {
         }
     };
 
+    const fetchStaff = useCallback(async () => {
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('id, full_name, role')
+            .in('role', ['admin', 'staff'])
+            .eq('is_active', true)
+            .order('full_name');
+        if (!error && data) setStaffMembers(data as StaffProfile[]);
+    }, []);
+
     const fetchLead = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase.from('leads').select('*').eq('id', id).single();
+            const { data, error } = await supabase.from('leads').select('*, assigned_profile:profiles!leads_assigned_to_fkey(full_name, email)').eq('id', id).single();
             if (data) {
                 setLead(data as unknown as Lead);
                 setEditForm(data);
@@ -313,13 +392,17 @@ const LeadDetail = () => {
             fetchLead();
             fetchFollowUps();
             fetchCarInterests();
+            fetchStaff();
         }
-    }, [id]);
+    }, [id, fetchFollowUps, fetchCarInterests, fetchStaff]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const { error } = await supabase.from('leads').update(editForm).eq('id', id);
+            // Remove joined fields that shouldn't be updated
+            const { assigned_profile, ...updatePayload } = editForm;
+            
+            const { error } = await supabase.from('leads').update(updatePayload).eq('id', id);
             if (!error) {
                 // Log status change or update
                 let activityNote = 'Lead details updated.';
@@ -327,6 +410,10 @@ const LeadDetail = () => {
                 if (lead?.status !== editForm.status) {
                     type = 'status_change';
                     activityNote = `Lead status changed from ${formatStatus(lead?.status || '')} to ${formatStatus(editForm.status || '')}.`;
+                } else if (lead?.assigned_to !== editForm.assigned_to) {
+                    type = 'assignment_change';
+                    const newAssignee = staffMembers.find(s => s.id === editForm.assigned_to)?.full_name || 'Unassigned';
+                    activityNote = `Lead assigned to ${newAssignee}.`;
                 }
 
                 await supabase.from('lead_activities').insert({
@@ -344,6 +431,30 @@ const LeadDetail = () => {
             }
         } catch (error) {
             console.error("Error updating lead", error);
+        }
+    };
+
+    const handleQualityChange = async (newQuality: string) => {
+        if (!id || newQuality === lead?.lead_quality) return;
+
+        try {
+            const { error } = await supabase.from('leads').update({ lead_quality: newQuality }).eq('id', id);
+            if (!error) {
+                await supabase.from('lead_activities').insert({
+                    lead_id: id,
+                    activity_type: 'note',
+                    notes: `Lead quality updated to ${newQuality}.`,
+                    created_by: profile?.id ?? null,
+                });
+                
+                setLead(prev => prev ? { ...prev, lead_quality: newQuality } : null);
+                setEditForm(prev => ({ ...prev, lead_quality: newQuality }));
+                await refreshData();
+            } else {
+                alert('Error updating lead quality.');
+            }
+        } catch (error) {
+            console.error("Error updating lead quality", error);
         }
     };
 
@@ -534,7 +645,15 @@ const LeadDetail = () => {
                 </div>
                 {!isEditing && (
                     <div className="flex gap-2">
-                        <button onClick={() => setIsEditing(true)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-sm transition-colors flex items-center gap-2">
+                        <button onClick={() => {
+                            const isAdmin = profile?.role === 'admin';
+                            if (!isAdmin && lead.assigned_to !== profile?.id) {
+                                const assignedStaff = staffMembers.find(s => s.id === lead.assigned_to)?.full_name || 'an Admin';
+                                alert(`This lead is assigned to ${assignedStaff}. Please contact them to edit.`);
+                                return;
+                            }
+                            setIsEditing(true);
+                        }} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-sm transition-colors flex items-center gap-2">
                             <span className="material-symbols-outlined text-sm">edit</span> Edit
                         </button>
                     </div>
@@ -604,12 +723,43 @@ const LeadDetail = () => {
                             </div>
                         )}
                         <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Lead Quality</label>
+                            <select value={editForm.lead_quality || ''} onChange={e => setEditForm({ ...editForm, lead_quality: e.target.value || null })} className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10 bg-white">
+                                <option value="" disabled>Select Quality...</option>
+                                <option value="hot">🔥 Hot</option>
+                                <option value="warm">☀️ Warm</option>
+                                <option value="cold">❄️ Cold</option>
+                                <option value="cakewalk">🍰 Cakewalk</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Budget</label>
+                            <input type="text" value={editForm.budget || ''} onChange={e => setEditForm({ ...editForm, budget: e.target.value })} className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" placeholder="e.g. 5-6 Lakhs" />
+                        </div>
+                        <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
                             <select value={editForm.type || 'contact'} onChange={e => setEditForm({ ...editForm, type: e.target.value })} className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10 bg-white">
                                 <option value="contact">General Contact</option>
                                 <option value="sell_car">Sell Car</option>
                                 <option value="test_drive">Test Drive</option>
                                 <option value="insurance">Insurance</option>
+                                <option value="finance">Finance</option>
+                                <option value="car_service">Car Services</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
+                            <select
+                                value={editForm.assigned_to || ''}
+                                onChange={e => setEditForm({ ...editForm, assigned_to: e.target.value || null })}
+                                className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10 bg-white"
+                            >
+                                <option value="">Unassigned</option>
+                                {staffMembers.map(staff => (
+                                    <option key={staff.id} value={staff.id}>
+                                        {staff.full_name} ({staff.role})
+                                    </option>
+                                ))}
                             </select>
                         </div>
                         <div>
@@ -676,11 +826,39 @@ const LeadDetail = () => {
                                     <div className="flex items-center gap-3 mb-1">
                                         <h2 className="text-2xl font-black text-primary font-display">{lead.full_name}</h2>
                                         <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${statusColors[lead.status] || 'bg-slate-100 text-slate-500'}`}>{formatStatus(lead.status)}</span>
+                                        {canEdit ? (
+                                            <select
+                                                value={lead.lead_quality || ''}
+                                                onChange={e => handleQualityChange(e.target.value)}
+                                                className="text-[10px] font-bold px-2.5 py-1 rounded-full border outline-none cursor-pointer bg-white text-slate-700 border-slate-200 hover:border-primary/40 focus:ring-2 focus:ring-primary/20"
+                                            >
+                                                <option value="" disabled>Set Quality</option>
+                                                <option value="hot">🔥 Hot</option>
+                                                <option value="warm">☀️ Warm</option>
+                                                <option value="cold">❄️ Cold</option>
+                                                <option value="cakewalk">🍰 Cakewalk</option>
+                                            </select>
+                                        ) : lead.lead_quality && (
+                                            <span className="text-[10px] font-bold bg-slate-50 px-2.5 py-1 rounded-full border border-slate-200 text-slate-700">
+                                                {formatQualityEmoji(lead.lead_quality)}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500 mt-2">
                                         <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[15px]">category</span> {formatType(lead.type)}</span>
                                         <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[15px]">event</span> {new Date(lead.created_at).toLocaleDateString()}</span>
                                         <span className="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-full text-xs font-semibold text-slate-600 border border-slate-200">Source: {lead.source || 'Website'}</span>
+                                        {lead.assigned_profile ? (
+                                            <span className="flex items-center gap-1 bg-blue-50 px-2.5 py-0.5 rounded-full text-xs font-bold text-blue-700 border border-blue-200">
+                                                <span className="material-symbols-outlined text-[14px]">assignment_ind</span>
+                                                Assigned: {lead.assigned_profile.full_name}
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-1 bg-amber-50 px-2.5 py-0.5 rounded-full text-xs font-bold text-amber-700 border border-amber-200">
+                                                <span className="material-symbols-outlined text-[14px]">warning</span>
+                                                Unassigned
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -715,6 +893,17 @@ const LeadDetail = () => {
                                         <p className="text-sm font-bold text-primary">{lead.email || 'Not provided'}</p>
                                     </div>
                                 </div>
+                                {lead.budget && (
+                                    <div className="flex items-center gap-3">
+                                        <div className="size-8 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
+                                            <span className="material-symbols-outlined text-slate-400 text-sm">account_balance_wallet</span>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] text-slate-400 uppercase font-bold">Budget</p>
+                                            <p className="text-sm font-bold text-primary">{lead.budget}</p>
+                                        </div>
+                                    </div>
+                                )}
                                 {lead.whatsapp_number && (
                                     <div className="flex items-center gap-3">
                                         <div className="size-8 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
@@ -797,7 +986,8 @@ const LeadDetail = () => {
                         <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-[var(--shadow-card)]">
                             <h3 className="font-bold text-primary font-display mb-5 flex items-center gap-2"><span className="material-symbols-outlined text-accent text-lg">history</span> Activity Timeline</h3>
                             
-                            <form onSubmit={handleAddActivity} className="mb-8 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                            {canEdit && (
+                                <form onSubmit={handleAddActivity} className="mb-8 bg-slate-50 p-4 rounded-xl border border-slate-100">
                                 <div className="flex items-center gap-3 mb-3">
                                     <select value={noteType} onChange={(e) => setNoteType(e.target.value)} className="h-9 px-3 border border-slate-200 rounded-lg text-sm bg-white text-slate-700 font-bold outline-none focus:border-primary/50 cursor-pointer">
                                         <option value="note">Internal Note</option>
@@ -810,7 +1000,8 @@ const LeadDetail = () => {
                                 <div className="flex justify-end">
                                     <button type="submit" className="h-9 px-5 bg-primary text-white text-sm font-bold rounded-lg hover:bg-primary-light transition-colors shadow-sm">Log Activity</button>
                                 </div>
-                            </form>
+                                </form>
+                            )}
 
                             <div className="space-y-6">
                                 {fullTimeline.map((event, i) => (
@@ -832,7 +1023,7 @@ const LeadDetail = () => {
 
                     {/* Right Sidebar */}
                     <div className="space-y-4">
-                        {lead.status !== 'closed_won' && (
+                        {lead.status !== 'closed_won' && canEdit && (
                             <div className="bg-green-50 border border-green-200 rounded-2xl p-5 shadow-sm">
                                 <div className="flex items-center gap-2 mb-2">
                                     <span className="material-symbols-outlined text-green-600 text-lg">workspace_premium</span>
@@ -918,82 +1109,148 @@ const LeadDetail = () => {
                                         <p className="text-[10px] text-slate-400 mt-0.5">{carInterests.length} car{carInterests.length !== 1 ? 's' : ''} tracked</p>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => setIsAddingCarInterest(v => !v)}
-                                    className={`flex items-center gap-1 h-8 px-3 rounded-lg text-xs font-bold transition-all ${
-                                        isAddingCarInterest
-                                            ? 'bg-slate-200 text-slate-600'
-                                            : 'bg-blue-500 text-white hover:bg-blue-600 shadow-sm'
-                                    }`}
-                                >
-                                    <span className="material-symbols-outlined text-sm">{isAddingCarInterest ? 'close' : 'add'}</span>
-                                    {isAddingCarInterest ? 'Cancel' : 'Add Car'}
-                                </button>
+                                {canEdit && (
+                                    <button
+                                        onClick={() => setIsAddingCarInterest(v => !v)}
+                                        className={`flex items-center gap-1 h-8 px-3 rounded-lg text-xs font-bold transition-all ${
+                                            isAddingCarInterest
+                                                ? 'bg-slate-200 text-slate-600'
+                                                : 'bg-blue-500 text-white hover:bg-blue-600 shadow-sm'
+                                        }`}
+                                    >
+                                        <span className="material-symbols-outlined text-sm">{isAddingCarInterest ? 'close' : 'add'}</span>
+                                        {isAddingCarInterest ? 'Cancel' : 'Add Car'}
+                                    </button>
+                                )}
                             </div>
 
-                            {/* Add Car Form */}
                             {isAddingCarInterest && (
                                 <form onSubmit={handleAddCarInterest} className="p-4 border-b border-slate-100 bg-blue-50/30 space-y-3">
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Select Car</label>
-                                        <select
-                                            required
-                                            value={carInterestForm.inventory_id}
-                                            onChange={e => setCarInterestForm(f => ({ ...f, inventory_id: e.target.value }))}
-                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:border-blue-400 transition"
-                                        >
-                                            <option value="">-- Choose Available Car --</option>
-                                            {availableCars.map(car => (
-                                                <option key={car.id} value={car.id}>
-                                                    {car.year} {car.make} {car.model} — ₹{car.price?.toLocaleString('en-IN')}
-                                                </option>
-                                            ))}
-                                        </select>
+                                    {/* ── Mode tabs ── */}
+                                    <div className="flex gap-1.5 p-1 bg-slate-100 rounded-lg">
+                                        {(['stock', 'wishlist'] as const).map(mode => (
+                                            <button key={mode} type="button"
+                                                onClick={() => { setCarSelectorMode(mode); setCarSearch(''); setCarInterestForm(f => ({ ...f, inventory_id: '' })); }}
+                                                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                                                    carSelectorMode === mode ? mode === 'stock' ? 'bg-blue-500 text-white' : 'bg-purple-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                                                }`}>
+                                                <span className="material-symbols-outlined text-[13px]">{mode === 'stock' ? 'inventory' : 'search'}</span>
+                                                {mode === 'stock' ? 'In Stock' : 'Not In Stock'}
+                                            </button>
+                                        ))}
                                     </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Interest Level</label>
-                                        <div className="flex gap-1.5">
-                                            {(['hot', 'warm', 'cold'] as const).map(level => (
-                                                <button
-                                                    key={level}
-                                                    type="button"
-                                                    onClick={() => setCarInterestForm(f => ({ ...f, interest_level: level }))}
-                                                    className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all capitalize ${
-                                                        carInterestForm.interest_level === level
-                                                            ? level === 'hot' ? 'bg-red-500 text-white border-red-500'
-                                                            : level === 'warm' ? 'bg-amber-500 text-white border-amber-500'
-                                                            : 'bg-slate-500 text-white border-slate-500'
-                                                            : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
-                                                    }`}
-                                                >
-                                                    {level === 'hot' ? '🔥' : level === 'warm' ? '⭐' : '❄️'} {level}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Notes <span className="font-normal normal-case text-slate-400">(optional)</span></label>
-                                        <textarea
-                                            value={carInterestForm.notes}
-                                            onChange={e => setCarInterestForm(f => ({ ...f, notes: e.target.value }))}
-                                            placeholder="Budget, preferences, specific requirements..."
-                                            rows={2}
-                                            className="w-full border border-slate-200 rounded-lg p-2.5 text-xs bg-white outline-none focus:border-blue-400 transition resize-none"
-                                        />
-                                    </div>
-                                    <button
-                                        type="submit"
-                                        disabled={carInterestSaving}
-                                        className="w-full h-9 bg-blue-500 text-white text-xs font-bold rounded-lg hover:bg-blue-600 transition shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5"
-                                    >
-                                        {carInterestSaving ? (
-                                            <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Saving...</>
-                                        ) : (
-                                            <><span className="material-symbols-outlined text-sm">save</span> Save Interest</>
-                                        )}
-                                    </button>
+
+                                    {carSelectorMode === 'stock' ? (
+                                        <>
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Select Car</label>
+                                                {/* Searchable combobox */}
+                                                {(() => {
+                                                    const normalizedSearch = carSearch.toLowerCase().replace(/\s/g, '');
+                                                    const filteredCars = availableCars.filter((car: any) => {
+                                                        if (!normalizedSearch) return true;
+                                                        const nameMatch = `${car.year} ${car.make} ${car.model}`.toLowerCase().includes(carSearch.toLowerCase());
+                                                        const regMatch = (car.registration_no || '').toLowerCase().replace(/\s/g, '').includes(normalizedSearch);
+                                                        return nameMatch || regMatch;
+                                                    });
+                                                    const selectedCar = availableCars.find((c: any) => c.id === carInterestForm.inventory_id);
+                                                    return (
+                                                        <div className="relative">
+                                                            <div className="relative">
+                                                                <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[16px] pointer-events-none">search</span>
+                                                                <input type="text" value={carSearch}
+                                                                    onChange={e => { setCarSearch(e.target.value); setCarSearchOpen(true); if (carInterestForm.inventory_id) setCarInterestForm(f => ({ ...f, inventory_id: '' })); }}
+                                                                    onFocus={() => setCarSearchOpen(true)}
+                                                                    onBlur={() => setTimeout(() => setCarSearchOpen(false), 150)}
+                                                                    placeholder="Search by car name or registration no..."
+                                                                    className="w-full h-9 border border-slate-200 rounded-lg pl-8 pr-8 text-xs bg-white outline-none focus:border-blue-400 transition" />
+                                                                {carSearch && (<button type="button" onClick={() => { setCarSearch(''); setCarInterestForm(f => ({ ...f, inventory_id: '' })); setCarSearchOpen(false); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><span className="material-symbols-outlined text-[15px]">close</span></button>)}
+                                                            </div>
+                                                            {selectedCar && (
+                                                                <div className="mt-1.5 flex items-center gap-2 px-2.5 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+                                                                    <span className="material-symbols-outlined text-blue-500 text-[14px]">directions_car</span>
+                                                                    <div className="flex-1 min-w-0"><p className="text-xs font-bold text-blue-700 truncate">{selectedCar.year} {selectedCar.make} {selectedCar.model}</p><p className="text-[10px] text-blue-500 font-mono">{selectedCar.registration_no || 'No Reg'} · ₹{Number(selectedCar.price).toLocaleString('en-IN')}</p></div>
+                                                                    <span className="text-[10px] font-bold text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded">Selected</span>
+                                                                </div>
+                                                            )}
+                                                            {carSearchOpen && (
+                                                                <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
+                                                                    {filteredCars.length === 0 ? (
+                                                                        <div className="flex flex-col items-center py-6 text-slate-400"><span className="material-symbols-outlined text-2xl mb-1">search_off</span><p className="text-xs font-medium">No cars match your search</p></div>
+                                                                    ) : filteredCars.map((car: any) => {
+                                                                        const isSelected = car.id === carInterestForm.inventory_id;
+                                                                        const isAlreadyAdded = carInterests.some(i => i.inventory_id === car.id);
+                                                                        return (
+                                                                            <button key={car.id} type="button" disabled={isAlreadyAdded}
+                                                                                onClick={() => { setCarInterestForm(f => ({ ...f, inventory_id: car.id })); setCarSearch(`${car.year} ${car.make} ${car.model}`); setCarSearchOpen(false); }}
+                                                                                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors border-b border-slate-50 last:border-0 ${isAlreadyAdded ? 'opacity-40 cursor-not-allowed bg-slate-50' : isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
+                                                                                <div className="size-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0"><span className="material-symbols-outlined text-slate-500 text-[15px]">directions_car</span></div>
+                                                                                <div className="flex-1 min-w-0"><p className="text-xs font-bold text-slate-700 truncate">{car.year} {car.make} {car.model}</p><p className="text-[10px] text-slate-400 font-mono">{car.registration_no || 'No Reg'}</p></div>
+                                                                                <div className="text-right shrink-0"><p className="text-xs font-bold text-primary">₹{Number(car.price).toLocaleString('en-IN')}</p>{isAlreadyAdded && <p className="text-[9px] text-slate-400">Added</p>}{isSelected && !isAlreadyAdded && <span className="material-symbols-outlined text-blue-500 text-[14px]">check_circle</span>}</div>
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Interest Level</label>
+                                                <div className="flex gap-1.5">
+                                                    {(['hot', 'warm', 'cold'] as const).map(level => (
+                                                        <button key={level} type="button" onClick={() => setCarInterestForm(f => ({ ...f, interest_level: level }))}
+                                                            className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all capitalize ${carInterestForm.interest_level === level ? level === 'hot' ? 'bg-red-500 text-white border-red-500' : level === 'warm' ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-500 text-white border-slate-500' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+                                                            {level === 'hot' ? '🔥' : level === 'warm' ? '⭐' : '❄️'} {level}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Notes <span className="font-normal normal-case text-slate-400">(optional)</span></label>
+                                                <textarea value={carInterestForm.notes} onChange={e => setCarInterestForm(f => ({ ...f, notes: e.target.value }))} placeholder="Budget, preferences, specific requirements..." rows={2} className="w-full border border-slate-200 rounded-lg p-2.5 text-xs bg-white outline-none focus:border-blue-400 transition resize-none" />
+                                            </div>
+                                            <button type="submit" disabled={carInterestSaving || !carInterestForm.inventory_id}
+                                                className="w-full h-9 bg-blue-500 text-white text-xs font-bold rounded-lg hover:bg-blue-600 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5">
+                                                {carInterestSaving ? <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Saving...</> : <><span className="material-symbols-outlined text-sm">save</span> Save Interest</>}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {/* Wishlist form */}
+                                            <div className="rounded-lg bg-purple-50 border border-purple-100 px-3 py-2 flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-purple-500 text-[15px]">info</span>
+                                                <p className="text-[11px] text-purple-700">Car not in your inventory? Fill in the details — we'll track what the customer wants.</p>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div><label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Make <span className="text-red-400">*</span></label><input type="text" value={wishlistForm.make} onChange={e => setWishlistForm(f => ({ ...f, make: e.target.value }))} placeholder="e.g. Maruti, Honda" className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:ring-2 focus:ring-purple-200" /></div>
+                                                <div><label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Model <span className="text-red-400">*</span></label><input type="text" value={wishlistForm.model} onChange={e => setWishlistForm(f => ({ ...f, model: e.target.value }))} placeholder="e.g. Swift, City" className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:ring-2 focus:ring-purple-200" /></div>
+                                                <div><label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Year</label><input type="number" value={wishlistForm.year} onChange={e => setWishlistForm(f => ({ ...f, year: e.target.value }))} placeholder="e.g. 2020" min="1990" max="2030" className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:ring-2 focus:ring-purple-200" /></div>
+                                                <div><label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Color</label><input type="text" value={wishlistForm.color} onChange={e => setWishlistForm(f => ({ ...f, color: e.target.value }))} placeholder="e.g. White" className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:ring-2 focus:ring-purple-200" /></div>
+                                            </div>
+                                            <input type="text" value={wishlistForm.variant} onChange={e => setWishlistForm(f => ({ ...f, variant: e.target.value }))} placeholder="Variant (optional) — e.g. VXI, ZXI+" className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:ring-2 focus:ring-purple-200" />
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Interest Level</label>
+                                                <div className="flex gap-1.5">
+                                                    {(['hot', 'warm', 'cold'] as const).map(level => (
+                                                        <button key={level} type="button" onClick={() => setWishlistForm(f => ({ ...f, interest_level: level }))}
+                                                            className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all capitalize ${wishlistForm.interest_level === level ? level === 'hot' ? 'bg-red-500 text-white border-red-500' : level === 'warm' ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-500 text-white border-slate-500' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+                                                            {level === 'hot' ? '🔥' : level === 'warm' ? '⭐' : '❄️'} {level}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <textarea value={wishlistForm.notes} onChange={e => setWishlistForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes (optional) — budget, condition, etc." rows={2} className="w-full border border-slate-200 rounded-lg p-2.5 text-xs bg-white outline-none focus:border-purple-400 transition resize-none" />
+                                            <button type="submit" disabled={carInterestSaving || !wishlistForm.make.trim() || !wishlistForm.model.trim()}
+                                                className="w-full h-9 bg-purple-500 text-white text-xs font-bold rounded-lg hover:bg-purple-600 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5">
+                                                {carInterestSaving ? <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Saving...</> : <><span className="material-symbols-outlined text-sm">bookmark_add</span> Add to Wishlist</>}
+                                            </button>
+                                        </>
+                                    )}
                                 </form>
                             )}
+
 
                             {/* Interests List */}
                             <div className="divide-y divide-slate-50 max-h-[320px] overflow-y-auto">
@@ -1007,19 +1264,20 @@ const LeadDetail = () => {
                                     </div>
                                 ) : carInterests.map(interest => (
                                     <div key={interest.id} className="px-4 py-3 flex items-start gap-3 hover:bg-slate-50/60 transition-colors">
-                                        <div className="size-12 rounded-xl bg-slate-100 overflow-hidden shrink-0">
-                                            {interest.car?.thumbnail ? (
+                                        <div className={`size-12 rounded-xl overflow-hidden shrink-0 flex items-center justify-center ${interest.is_wishlist ? 'bg-purple-100' : 'bg-slate-100'}`}>
+                                            {!interest.is_wishlist && interest.car?.thumbnail ? (
                                                 <img src={interest.car.thumbnail} alt="" className="w-full h-full object-cover" />
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center">
-                                                    <span className="material-symbols-outlined text-slate-300 text-xl">directions_car</span>
-                                                </div>
+                                                <span className={`material-symbols-outlined text-xl ${interest.is_wishlist ? 'text-purple-400' : 'text-slate-300'}`}>{interest.is_wishlist ? 'search' : 'directions_car'}</span>
                                             )}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-1.5 mb-0.5">
+                                            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                                                 <p className="text-xs font-bold text-primary truncate">
-                                                    {interest.car?.year} {interest.car?.make} {interest.car?.model}
+                                                    {interest.is_wishlist
+                                                        ? `${interest.custom_year ? interest.custom_year + ' ' : ''}${interest.custom_make} ${interest.custom_model}${interest.custom_variant ? ' ' + interest.custom_variant : ''}`
+                                                        : `${interest.car?.year} ${interest.car?.make} ${interest.car?.model}`
+                                                    }
                                                 </p>
                                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
                                                     interest.interest_level === 'hot' ? 'bg-red-100 text-red-600' :
@@ -1028,19 +1286,21 @@ const LeadDetail = () => {
                                                 }`}>
                                                     {interest.interest_level === 'hot' ? '🔥' : interest.interest_level === 'warm' ? '⭐' : '❄️'} {interest.interest_level}
                                                 </span>
+                                                {interest.is_wishlist && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-600">🔍 Sourcing</span>}
                                             </div>
-                                            <p className="text-[11px] font-semibold text-green-700">₹{interest.car?.price?.toLocaleString('en-IN')}</p>
-                                            {interest.notes && (
-                                                <p className="text-[10px] text-slate-500 mt-0.5 truncate">{interest.notes}</p>
+                                            {interest.is_wishlist ? (
+                                                <p className="text-[11px] text-purple-600 font-medium">{[interest.custom_color, 'Not in stock'].filter(Boolean).join(' · ')}</p>
+                                            ) : (
+                                                <p className="text-[11px] font-semibold text-green-700">₹{interest.car?.price?.toLocaleString('en-IN')}</p>
                                             )}
+                                            {interest.notes && (<p className="text-[10px] text-slate-500 mt-0.5 truncate">{interest.notes}</p>)}
                                         </div>
-                                        <button
-                                            onClick={() => handleRemoveCarInterest(interest.id)}
-                                            title="Remove"
-                                            className="size-7 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-red-100 hover:text-red-500 text-slate-400 transition-colors shrink-0"
-                                        >
-                                            <span className="material-symbols-outlined text-[14px]">close</span>
-                                        </button>
+                                        {canEdit && (
+                                            <button onClick={() => handleRemoveCarInterest(interest.id)} title="Remove"
+                                                className="size-7 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-red-100 hover:text-red-500 text-slate-400 transition-colors shrink-0">
+                                                <span className="material-symbols-outlined text-[14px]">close</span>
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -1059,17 +1319,19 @@ const LeadDetail = () => {
                                         <p className="text-[10px] text-slate-400 mt-0.5">{followUps.length} contact attempt{followUps.length !== 1 ? 's' : ''}</p>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => setIsLoggingFollowUp(v => !v)}
-                                    className={`flex items-center gap-1 h-8 px-3 rounded-lg text-xs font-bold transition-all ${
-                                        isLoggingFollowUp
-                                            ? 'bg-slate-200 text-slate-600'
-                                            : 'bg-primary text-white hover:bg-primary-light shadow-sm'
-                                    }`}
-                                >
-                                    <span className="material-symbols-outlined text-sm">{isLoggingFollowUp ? 'close' : 'add'}</span>
-                                    {isLoggingFollowUp ? 'Cancel' : 'Log New'}
-                                </button>
+                                {canEdit && (
+                                    <button
+                                        onClick={() => setIsLoggingFollowUp(v => !v)}
+                                        className={`flex items-center gap-1 h-8 px-3 rounded-lg text-xs font-bold transition-all ${
+                                            isLoggingFollowUp
+                                                ? 'bg-slate-200 text-slate-600'
+                                                : 'bg-primary text-white hover:bg-primary-light shadow-sm'
+                                        }`}
+                                    >
+                                        <span className="material-symbols-outlined text-sm">{isLoggingFollowUp ? 'close' : 'add'}</span>
+                                        {isLoggingFollowUp ? 'Cancel' : 'Log New'}
+                                    </button>
+                                )}
                             </div>
 
                             {/* Log New Form */}
@@ -1257,14 +1519,14 @@ const LeadDetail = () => {
                                         <button type="submit" className="flex-1 bg-amber-500 text-white h-8 rounded-lg text-xs font-bold hover:bg-amber-600 transition shadow-sm">Save Task</button>
                                     </div>
                                 </form>
-                            ) : (
+                            ) : canEdit ? (
                                 <>
                                     <p className="text-sm text-slate-500 mb-4 leading-relaxed">Set a calendar reminder separate from follow-up calls.</p>
                                     <button onClick={() => setIsAddingTask(true)} className="w-full flex items-center justify-center gap-2 h-10 bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-200 hover:border-amber-500 text-amber-600 font-bold rounded-xl text-sm transition-all shadow-sm">
                                         <span className="material-symbols-outlined text-base">add_task</span> Add Reminder Task
                                     </button>
                                 </>
-                            )}
+                            ) : null}
                         </div>
                     </div>
                 </div>

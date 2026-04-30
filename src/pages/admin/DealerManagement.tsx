@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
+import HighlightText from '../../components/ui/HighlightText';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Dealer {
@@ -429,8 +430,8 @@ const DealerManagement = () => {
                                                 {dealer.name.charAt(0).toUpperCase()}
                                             </div>
                                             <div>
-                                                <p className="font-bold text-primary text-sm">{dealer.name}</p>
-                                                <p className="text-[10px] font-bold text-slate-400 font-mono tracking-wider mt-0.5">{dealer.dealer_code}</p>
+                                                <p className="font-bold text-primary text-sm"><HighlightText text={dealer.name} highlight={search} /></p>
+                                                <p className="text-[10px] font-bold text-slate-400 font-mono tracking-wider mt-0.5"><HighlightText text={dealer.dealer_code} highlight={search} /></p>
                                             </div>
                                         </div>
                                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${statusColors[dealer.status]}`}>
@@ -468,7 +469,7 @@ const DealerManagement = () => {
                                         {dealer.city && (
                                             <div className="flex items-center gap-2">
                                                 <span className="material-symbols-outlined text-slate-300 text-[14px]">location_on</span>
-                                                {dealer.city}
+                                                <HighlightText text={dealer.city} highlight={search} />
                                             </div>
                                         )}
                                         {dealer.address && (
@@ -571,8 +572,8 @@ const DealerManagement = () => {
                                                             }
                                                         </div>
                                                         <div>
-                                                            <p className="text-sm font-semibold text-primary">{car.year} {car.make} {car.model}</p>
-                                                            {car.registration_no && <p className="text-[10px] text-slate-400 font-mono">{car.registration_no}</p>}
+                                                            <p className="text-sm font-semibold text-primary">{car.year} <HighlightText text={car.make} highlight={search} /> <HighlightText text={car.model} highlight={search} /></p>
+                                                            {car.registration_no && <p className="text-[10px] text-slate-400 font-mono"><HighlightText text={car.registration_no} highlight={search} /></p>}
                                                         </div>
                                                     </div>
                                                 </td>

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useData } from '../../contexts/DataContext';
 import { toWhatsAppUrl } from '../../lib/utils';
+import HighlightText from '../../components/ui/HighlightText';
 
 const statusColors: Record<string, string> = {
     scheduled: 'bg-blue-100 text-blue-700',
@@ -225,17 +226,17 @@ const AdminBookings = () => {
                                                     <div>
                                                         {b.lead?.id ? (
                                                             <Link to={`/admin/leads/${b.lead.id}`} onClick={e => e.stopPropagation()} className="text-sm font-medium text-primary hover:text-accent hover:underline line-clamp-1">
-                                                                {b.lead.full_name || 'Unknown'}
+                                                                <HighlightText text={b.lead.full_name || 'Unknown'} highlight={search} />
                                                             </Link>
                                                         ) : (
-                                                            <p className="text-sm font-medium text-primary line-clamp-1">{b.lead?.full_name || 'Deleted Lead'}</p>
+                                                            <p className="text-sm font-medium text-primary line-clamp-1"><HighlightText text={b.lead?.full_name || 'Deleted Lead'} highlight={search} /></p>
                                                         )}
-                                                        <p className="text-[10px] text-slate-400">{b.lead?.phone}</p>
+                                                        <p className="text-[10px] text-slate-400"><HighlightText text={b.lead?.phone || ''} highlight={search} /></p>
                                                     </div>
                                                 </div>
                                             </td>
                                             <td className="px-5 py-3.5 text-sm text-slate-700">
-                                                {b.car ? `${b.car.year} ${b.car.make} ${b.car.model}`.trim() : <span className="text-slate-300 italic">No specific car</span>}
+                                                {b.car ? <span>{b.car.year} <HighlightText text={b.car.make} highlight={search} /> <HighlightText text={b.car.model} highlight={search} /></span> : <span className="text-slate-300 italic">No specific car</span>}
                                             </td>
                                             <td className="px-5 py-3.5">
                                                 <p className="text-sm text-primary font-bold">{formatDate(b.booking_date)}</p>

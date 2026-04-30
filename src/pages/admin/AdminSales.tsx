@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { TrendingUp } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import { formatCurrency } from '../../lib/utils';
+import HighlightText from '../../components/ui/HighlightText';
 
 // ─── Sale Type Config ──────────────────────────────────────────────────────────
 const saleTypeBadge: Record<string, { label: string; cls: string }> = {
@@ -165,12 +166,12 @@ const AdminSales = () => {
                                         <tr key={sale.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => setDetail(sale)}>
                                             <td className="px-5 py-3.5">
                                                 <div>
-                                                    <p className="text-sm font-semibold text-primary">{sale.car?.year} {sale.car?.make} {sale.car?.model}</p>
+                                                    <p className="text-sm font-semibold text-primary">{sale.car?.year} <HighlightText text={sale.car?.make || ''} highlight={search} /> <HighlightText text={sale.car?.model || ''} highlight={search} /></p>
                                                     <p className="text-xs text-slate-400">{sale.car?.transmission || ''}</p>
                                                 </div>
                                             </td>
                                             <td className="px-5 py-3.5">
-                                                <p className="text-sm font-semibold text-primary">{sale.customer?.full_name || 'Unknown'}</p>
+                                                <p className="text-sm font-semibold text-primary"><HighlightText text={sale.customer?.full_name || 'Unknown'} highlight={search} /></p>
                                                 <p className="text-xs text-slate-400">{sale.customer?.phone || ''}</p>
                                             </td>
                                             <td className="px-5 py-3.5">

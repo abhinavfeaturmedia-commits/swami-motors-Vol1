@@ -28,6 +28,7 @@ interface CarData {
     model: string;
     year: number;
     price: number;
+    original_price?: number;
     fuel_type: string;
     transmission: string;
     mileage: number;
@@ -188,10 +189,15 @@ const CarDetails = () => {
                         <div className="flex items-start justify-between mb-4">
                             <div>
                                 <p className="text-xs text-slate-500 font-medium mb-1">Total Price</p>
-                                <p className="text-3xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)}</p>
-                                <p className="text-xl font-black text-primary font-display">Lakh</p>
+                                <div className="flex items-baseline gap-2">
+                                    <p className="text-3xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)}</p>
+                                    <p className="text-xl font-black text-primary font-display">Lakh</p>
+                                </div>
+                                {car.original_price && (
+                                    <p className="text-sm font-medium text-slate-400 line-through mt-1">₹ {formatPriceLakh(car.original_price)} Lakh</p>
+                                )}
                             </div>
-                            <span className="bg-accent-light text-accent text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase">Fixed Price</span>
+                            <span className="bg-accent-light text-accent text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase">Negotiable</span>
                         </div>
                         <Link to={`/finance?price=${car.price}`} className="text-sm font-semibold text-accent hover:underline flex items-center gap-1 mb-6">
                             Calculate EMI Options <span className="material-symbols-outlined text-sm">open_in_new</span>
@@ -200,7 +206,7 @@ const CarDetails = () => {
                             <Link to={`/book-test-drive?car=${car.id}`} className="w-full h-12 flex items-center justify-center gap-2 bg-accent text-primary font-bold rounded-xl hover:bg-accent-hover transition-all shadow-sm text-sm">
                                 <span className="material-symbols-outlined text-lg">directions_car</span> Book Test Drive
                             </Link>
-                            <a href={`https://wa.me/919876543210?text=I'm interested in the ${car.year} ${car.make} ${car.model} (ID: ${car.id})`} target="_blank" rel="noreferrer" className="w-full h-12 flex items-center justify-center gap-2 bg-[#25D366] text-white font-bold rounded-xl hover:bg-[#20bd5a] transition-colors text-sm">
+                            <a href={`https://wa.me/919823237975?text=I'm interested in the ${car.year} ${car.make} ${car.model} (ID: ${car.id})`} target="_blank" rel="noreferrer" className="w-full h-12 flex items-center justify-center gap-2 bg-[#25D366] text-white font-bold rounded-xl hover:bg-[#20bd5a] transition-colors text-sm">
                                 <span className="material-symbols-outlined text-lg">forum</span> WhatsApp Inquiry
                             </a>
                         </div>
