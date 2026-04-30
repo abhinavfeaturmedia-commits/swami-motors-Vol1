@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
@@ -22,7 +22,7 @@ interface Customer {
     created_at: string;
 }
 
-type TimelineEventType = 'sale' | 'lead' | 'service' | 'test_drive' | 'follow_up' | 'document' | 'car_interest';
+type TimelineEventType = 'sale' | 'lead' | 'service' | 'test_drive' | 'follow_up' | 'car_interest';
 
 export interface TimelineEvent {
     id: string;
@@ -62,10 +62,29 @@ const Customers = () => {
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
+    // ─── Debounced RPC search ────────────────────────────────────────────────
+    const [rpcMatchIds, setRpcMatchIds] = useState<Set<string> | null>(null);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        const q = search.trim();
+        if (!q) {
+            setRpcMatchIds(null);
+            return;
+        }
+        debounceRef.current = setTimeout(async () => {
+            const { data, error } = await supabase.rpc('search_customers_by_text', { search_term: q });
+            if (!error && data) {
+                setRpcMatchIds(new Set(data as string[]));
+            }
+        }, 450);
+        return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    }, [search]);
+
     // ─── Customer 360 History ─────────────────────────────────────────
-    const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'documents'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'timeline'>('overview');
     const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
-    const [documents, setDocuments] = useState<any[]>([]);
     const [customerInterests, setCustomerInterests] = useState<any[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -73,7 +92,6 @@ const Customers = () => {
         if (!detail) { 
             setCustomerInterests([]); 
             setTimelineEvents([]);
-            setDocuments([]);
             setActiveTab('overview');
             return; 
         }
@@ -92,18 +110,15 @@ const Customers = () => {
                 { data: serviceData },
                 { data: testDriveData },
                 { data: followUpData },
-                { data: docsData }
             ] = await Promise.all([
                 safeFetch(supabase.from('lead_car_interests').select('*, car:inventory(id, make, model, year, price, thumbnail)').eq('customer_id', detail.id)),
                 safeFetch(supabase.from('leads').select('*').eq('phone', detail.phone)),
                 safeFetch(supabase.from('service_bookings').select('*').eq('phone', detail.phone)),
                 safeFetch(supabase.from('test_drive_bookings').select('*, car:inventory(make, model)').eq('phone', detail.phone)),
                 safeFetch(supabase.from('follow_ups').select('*').eq('customer_id', detail.id)),
-                safeFetch(supabase.from('documents').select('*').eq('customer_id', detail.id))
             ]);
 
             setCustomerInterests(interestsData || []);
-            setDocuments(docsData || []);
 
             const events: TimelineEvent[] = [];
 
@@ -243,12 +258,21 @@ const Customers = () => {
     const filtered = useMemo(() => {
         const q = search.toLowerCase().trim();
         if (!q) return customers;
+
+        // If RPC results are ready, use them as primary filter (searches relations deeply)
+        if (rpcMatchIds !== null) {
+            return customers.filter(c => rpcMatchIds.has(c.id));
+        }
+
+        // Instant local filter while RPC loads (covers all direct customer fields + car lookup maps)
         return customers.filter(c => {
-            // 1. Standard personal fields
-            if ((c.full_name || '').toLowerCase().includes(q)) return true;
-            if ((c.phone     || '').includes(q))               return true;
-            if ((c.email     || '').toLowerCase().includes(q)) return true;
-            if ((c.city      || '').toLowerCase().includes(q)) return true;
+            // 1. Standard personal fields (expanded)
+            if ([
+                c.full_name, c.phone, c.email, c.city,
+                c.alternate_phone, c.whatsapp_number,
+                c.address, c.office_address,
+                c.occupation, c.notes,
+            ].some(v => v && String(v).toLowerCase().includes(q))) return true;
 
             // 2. Cars from PURCHASE history (sales → inventory)
             const purchasedCars = customerCarMap.get(c.id) || [];
@@ -268,7 +292,7 @@ const Customers = () => {
                 `${car.make} ${car.model}`.includes(q)
             );
         });
-    }, [customers, search, customerCarMap, customerCarInterestMap]);
+    }, [customers, search, rpcMatchIds, customerCarMap, customerCarInterestMap]);
 
     const formatDate = (dateStr: string | null) => {
         if (!dateStr) return '—';
@@ -493,7 +517,7 @@ const Customers = () => {
 
                         {/* Tabs Navigation */}
                         <div className="flex border-b border-slate-100 bg-slate-50/50 px-4 pt-2">
-                            {(['overview', 'timeline', 'documents'] as const).map(tab => (
+                            {(['overview', 'timeline'] as const).map(tab => (
                                 <button
                                     key={tab}
                                     onClick={() => setActiveTab(tab)}
@@ -716,38 +740,6 @@ const Customers = () => {
                                                     </div>
                                                 );
                                             })}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {activeTab === 'documents' && (
-                                <div className="space-y-4">
-                                    {historyLoading ? (
-                                        <div className="py-12 text-center text-slate-400 font-medium animate-pulse flex flex-col items-center gap-3">
-                                            <span className="size-6 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin"></span>
-                                            Loading documents...
-                                        </div>
-                                    ) : documents.length === 0 ? (
-                                        <div className="py-16 text-center bg-white border border-slate-100 rounded-2xl shadow-sm">
-                                            <span className="material-symbols-outlined text-4xl text-slate-200 mb-3 block">description</span>
-                                            <p className="text-slate-500 font-medium text-sm">No documents uploaded.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                            {documents.map((doc: any) => (
-                                                <a key={doc.id} href={doc.file_url} target="_blank" rel="noreferrer" className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl p-3.5 hover:border-primary/40 hover:shadow-md transition-all group relative overflow-hidden">
-                                                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                                    <div className="size-11 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center shrink-0 border border-blue-100 group-hover:bg-blue-500 group-hover:text-white group-hover:border-blue-600 transition-colors z-10">
-                                                        <span className="material-symbols-outlined text-lg">description</span>
-                                                    </div>
-                                                    <div className="min-w-0 z-10 flex-1">
-                                                        <p className="text-xs font-bold text-slate-700 truncate group-hover:text-primary transition-colors">{doc.name || doc.type}</p>
-                                                        <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{doc.type}</p>
-                                                    </div>
-                                                    <span className="material-symbols-outlined text-slate-300 group-hover:text-primary text-sm z-10">open_in_new</span>
-                                                </a>
-                                            ))}
                                         </div>
                                     )}
                                 </div>

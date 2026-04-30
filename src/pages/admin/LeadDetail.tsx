@@ -10,7 +10,7 @@ import { toWhatsAppUrl } from '../../lib/utils';
 interface FollowUp {
     id: string;
     lead_id: string;
-    contacted_via: 'call' | 'whatsapp' | 'email' | 'visit' | 'meeting';
+    contacted_via: string[];
     outcome: 'answered' | 'no_answer' | 'callback_requested' | 'not_interested' | 'interested' | 'converted' | null;
     notes: string | null;
     next_followup_date: string | null;
@@ -159,7 +159,7 @@ const LeadDetail = () => {
     const [followUpsLoading, setFollowUpsLoading] = useState(false);
     const [isLoggingFollowUp, setIsLoggingFollowUp] = useState(false);
     const [followUpForm, setFollowUpForm] = useState({
-        contacted_via: 'call' as FollowUp['contacted_via'],
+        contacted_via: ['call'] as string[],
         outcome: 'answered' as NonNullable<FollowUp['outcome']>,
         notes: '',
         next_followup_date: '',
@@ -226,10 +226,11 @@ const LeadDetail = () => {
         const { error } = await supabase.from('follow_ups').insert(payload);
         if (!error) {
             // Also log an activity for the timeline
+            const methodsJoined = followUpForm.contacted_via.join(', ');
             await supabase.from('lead_activities').insert({
                 lead_id: id,
-                activity_type: followUpForm.contacted_via,
-                notes: `Follow-up via ${followUpForm.contacted_via}: ${outcomeLabel(followUpForm.outcome)}${followUpForm.notes ? ' — ' + followUpForm.notes : ''}`,
+                activity_type: followUpForm.contacted_via.join(',') || 'call',
+                notes: `Follow-up via ${methodsJoined}: ${outcomeLabel(followUpForm.outcome)}${followUpForm.notes ? ' — ' + followUpForm.notes : ''}`,
                 created_by: profile?.id ?? null,
             });
 
@@ -238,7 +239,7 @@ const LeadDetail = () => {
                 await supabase.from('leads').update({ status: 'negotiation' }).eq('id', id);
             }
 
-            setFollowUpForm({ contacted_via: 'call', outcome: 'answered', notes: '', next_followup_date: '', duration_minutes: '' });
+            setFollowUpForm({ contacted_via: ['call'], outcome: 'answered', notes: '', next_followup_date: '', duration_minutes: '' });
             setIsLoggingFollowUp(false);
             fetchFollowUps();
             refreshData();
@@ -613,25 +614,32 @@ const LeadDetail = () => {
     const leadActivities = activities.filter(a => a.lead_id === id);
     const activityIcon = (type: string) => {
         if(type === 'call') return {icon: 'call', color: 'bg-green-500'};
+        if(type === 'whatsapp') return {icon: 'chat', color: 'bg-green-600'};
+        if(type === 'visit') return {icon: 'directions_walk', color: 'bg-emerald-600'};
         if(type === 'email') return {icon: 'mail', color: 'bg-blue-500'};
         if(type === 'meeting') return {icon: 'groups', color: 'bg-purple-500'};
-        return {icon: 'sticky_note_2', color: 'bg-amber-500'};
+        if(type === 'note') return {icon: 'sticky_note_2', color: 'bg-amber-500'};
+        if(type === 'status_change') return {icon: 'swap_horiz', color: 'bg-indigo-500'};
+        if(type === 'assignment_change') return {icon: 'person_add_alt', color: 'bg-teal-500'};
+        return {icon: 'info', color: 'bg-slate-500'};
     };
 
     const dynamicTimeline = leadActivities.map(a => {
-        const style = activityIcon(a.activity_type);
+        const types = a.activity_type ? a.activity_type.split(',') : ['note'];
+        const mainStyle = activityIcon(types[0]);
+        const allIcons = types.map((t: string) => activityIcon(t).icon);
         return {
-            icon: style.icon,
-            title: a.activity_type.toUpperCase(),
+            icons: allIcons,
+            title: a.activity_type ? a.activity_type.replace(/,/g, ', ').toUpperCase() : 'ACTIVITY',
             desc: a.notes,
             time: new Date(a.created_at).toLocaleString('en-IN', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}),
-            color: style.color
+            color: mainStyle.color
         };
     });
 
     const fullTimeline = [
         ...dynamicTimeline,
-        { icon: 'person_add', title: 'LEAD GENERATED', desc: `Inquiry received via ${formatType(lead.type)}`, time: new Date(lead.created_at).toLocaleString('en-IN', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}), color: 'bg-slate-800' }
+        { icons: ['person_add'], title: 'LEAD GENERATED', desc: `Inquiry received via ${formatType(lead.type)}`, time: new Date(lead.created_at).toLocaleString('en-IN', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}), color: 'bg-slate-800' }
     ];
 
     const availableCars = inventory.filter(c => c.status !== 'sold');
@@ -1007,7 +1015,13 @@ const LeadDetail = () => {
                                 {fullTimeline.map((event, i) => (
                                     <div key={i} className="flex gap-4">
                                         <div className="flex flex-col items-center">
-                                            <div className={`size-10 rounded-xl ${event.color} flex items-center justify-center shadow-inner shrink-0`}><span className="material-symbols-outlined text-white text-[18px]">{event.icon}</span></div>
+                                            <div className={`size-10 rounded-xl ${event.color} flex items-center justify-center shadow-inner shrink-0 px-1`}>
+                                                <div className={`flex items-center justify-center ${event.icons.length > 1 ? '-space-x-1.5' : ''}`}>
+                                                    {event.icons.slice(0, 3).map((ic: string, idx: number) => (
+                                                        <span key={idx} className={`material-symbols-outlined text-white drop-shadow-sm ${event.icons.length > 1 ? 'text-[15px]' : 'text-[18px]'}`}>{ic}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
                                             {i < fullTimeline.length - 1 && <div className="w-0.5 flex-1 bg-slate-100 mt-2" />}
                                         </div>
                                         <div className="pb-4">
@@ -1341,21 +1355,29 @@ const LeadDetail = () => {
                                     <div>
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Contact Method</label>
                                         <div className="flex gap-1.5 flex-wrap">
-                                            {(['call','whatsapp','email','visit','meeting'] as const).map(v => (
-                                                <button
-                                                    key={v}
-                                                    type="button"
-                                                    onClick={() => setFollowUpForm(f => ({ ...f, contacted_via: v }))}
-                                                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
-                                                        followUpForm.contacted_via === v
-                                                            ? 'bg-primary text-white border-primary shadow-sm'
-                                                            : 'bg-white text-slate-600 border-slate-200 hover:border-primary/40'
-                                                    }`}
-                                                >
-                                                    <span className="material-symbols-outlined text-[13px]">{viaIcon(v)}</span>
-                                                    {v.charAt(0).toUpperCase() + v.slice(1)}
-                                                </button>
-                                            ))}
+                                            {(['call','whatsapp','email','visit','meeting'] as const).map(v => {
+                                                const isSelected = followUpForm.contacted_via.includes(v);
+                                                return (
+                                                    <button
+                                                        key={v}
+                                                        type="button"
+                                                        onClick={() => setFollowUpForm(f => ({
+                                                            ...f,
+                                                            contacted_via: isSelected
+                                                                ? f.contacted_via.filter(m => m !== v)
+                                                                : [...f.contacted_via, v]
+                                                        }))}
+                                                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                                                            isSelected
+                                                                ? 'bg-primary text-white border-primary shadow-sm'
+                                                                : 'bg-white text-slate-600 border-slate-200 hover:border-primary/40'
+                                                        }`}
+                                                    >
+                                                        <span className="material-symbols-outlined text-[13px]">{viaIcon(v)}</span>
+                                                        {v.charAt(0).toUpperCase() + v.slice(1)}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     </div>
 
@@ -1432,17 +1454,29 @@ const LeadDetail = () => {
                                             fu.outcome === 'not_interested' ? 'bg-red-50' :
                                             'bg-blue-50'
                                         }`}>
-                                            <span className={`material-symbols-outlined text-[16px] ${
-                                                fu.outcome === 'no_answer' ? 'text-slate-400' :
-                                                fu.outcome === 'converted' ? 'text-emerald-600' :
-                                                fu.outcome === 'interested' ? 'text-green-600' :
-                                                fu.outcome === 'not_interested' ? 'text-red-400' :
-                                                'text-blue-500'
-                                            }`}>{viaIcon(fu.contacted_via)}</span>
+                                            {fu.contacted_via && fu.contacted_via.length > 0 ? (
+                                                <div className="flex -space-x-1">
+                                                    {fu.contacted_via.slice(0, 2).map((method: string, i: number) => (
+                                                        <span key={i} className={`material-symbols-outlined text-[14px] bg-white rounded-full ${
+                                                            fu.outcome === 'no_answer' ? 'text-slate-400' :
+                                                            fu.outcome === 'converted' ? 'text-emerald-600' :
+                                                            fu.outcome === 'interested' ? 'text-green-600' :
+                                                            fu.outcome === 'not_interested' ? 'text-red-400' :
+                                                            'text-blue-500'
+                                                        }`}>{viaIcon(method)}</span>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="material-symbols-outlined text-[16px] text-slate-400">phone</span>
+                                            )}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-1.5 mb-0.5">
-                                                <span className="text-xs font-bold text-primary capitalize">{fu.contacted_via}</span>
+                                                <div className="flex gap-1">
+                                                    {(fu.contacted_via || []).map((method: string, i: number) => (
+                                                        <span key={i} className="text-xs font-bold text-primary capitalize">{method}{i < (fu.contacted_via?.length || 1) - 1 ? ',' : ''}</span>
+                                                    ))}
+                                                </div>
                                                 {fu.outcome && (
                                                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${outcomeColor(fu.outcome)}`}>
                                                         {outcomeLabel(fu.outcome)}

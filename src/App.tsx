@@ -43,7 +43,6 @@ import LeadSources from './pages/admin/LeadSources';
 
 // Admin — Operations
 import VehicleInspection from './pages/admin/VehicleInspection';
-import Documents from './pages/admin/Documents';
 import PriceHistory from './pages/admin/PriceHistory';
 import VehicleExpenses from './pages/admin/VehicleExpenses';
 import ShareLogs from './pages/admin/ShareLogs';
@@ -128,7 +127,6 @@ const App: React.FC = () => {
 
                         {/* Operations */}
                         <Route path="inspections" element={<ModuleRoute module="operations"><VehicleInspection /></ModuleRoute>} />
-                        <Route path="documents" element={<ModuleRoute module="operations"><Documents /></ModuleRoute>} />
                         <Route path="price-history" element={<ModuleRoute module="operations"><PriceHistory /></ModuleRoute>} />
                         <Route path="expenses" element={<ModuleRoute module="operations"><VehicleExpenses /></ModuleRoute>} />
                         <Route path="share-logs" element={<ModuleRoute module="operations"><ShareLogs /></ModuleRoute>} />

@@ -57,7 +57,6 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Operations',
         items: [
             { name: 'Inspections', href: '/admin/inspections', icon: 'checklist', module: 'operations' },
-            { name: 'Documents', href: '/admin/documents', icon: 'folder', module: 'operations' },
             { name: 'Price History', href: '/admin/price-history', icon: 'trending_up', module: 'operations' },
             { name: 'Expenses', href: '/admin/expenses', icon: 'receipt_long', module: 'operations' },
             { name: 'Share Logs', href: '/admin/share-logs', icon: 'share', module: 'operations' },

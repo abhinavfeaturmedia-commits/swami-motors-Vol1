@@ -29,6 +29,8 @@ interface Lead {
     created_by: string | null;
     lead_quality?: string | null;
     budget?: string | null;
+    notes?: string | null;
+    internal_notes?: string | null;
 }
 
 interface StaffProfile {
@@ -88,8 +90,11 @@ const AdminLeads = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
 
-    // leadCarMap: leadId → [{make, model, registration_no}] built from lead_car_interests + inventory
-    const [leadCarMap, setLeadCarMap] = useState<Record<string, Array<{ make: string; model: string; registration_no: string }>>>({});
+    // leadCarMap: leadId → [{make, model, registration_no, dealer_code, dealer_name, notes}] built from lead_car_interests + inventory + dealers
+    const [leadCarMap, setLeadCarMap] = useState<Record<string, Array<{ make: string; model: string; registration_no: string; dealer_code?: string; dealer_name?: string; notes?: string }>>>({});
+    const [leadFollowUpMap, setLeadFollowUpMap] = useState<Record<string, Array<{ notes: string; type: string }>>>({});
+    const [rpcMatchIds, setRpcMatchIds] = useState<Set<string> | null>(null);
+    const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
     const leadsPerPage = 15;
 
     // Bulk Actions state
@@ -215,31 +220,37 @@ const AdminLeads = () => {
     };
 
     const fetchInterestCounts = useCallback(async () => {
-        // Fetch car details from inventory so we can search leads by car name/reg
+        // Fetch car details from inventory and dealer info
         const { data } = await supabase
             .from('lead_car_interests')
-            .select('lead_id, car:inventory(make, model, registration_no)');
+            .select('lead_id, notes, custom_make, custom_model, car:inventory(make, model, registration_no, dealer:dealers(name, dealer_code))');
         if (data) {
             const counts: Record<string, number> = {};
-            const carMap: Record<string, Array<{ make: string; model: string; registration_no: string }>> = {};
+            const carMap: Record<string, Array<{ make: string; model: string; registration_no: string; dealer_code?: string; dealer_name?: string; notes?: string }>> = {};
             data.forEach((r: any) => {
                 if (!r.lead_id) return;
                 counts[r.lead_id] = (counts[r.lead_id] || 0) + 1;
+                
+                if (!carMap[r.lead_id]) carMap[r.lead_id] = [];
+                
                 if (r.car) {
                     // Inventory car
-                    if (!carMap[r.lead_id]) carMap[r.lead_id] = [];
+                    const dealer = r.car.dealer || {};
                     carMap[r.lead_id].push({
                         make:            (r.car.make            || '').toLowerCase(),
                         model:           (r.car.model           || '').toLowerCase(),
                         registration_no: (r.car.registration_no || '').toLowerCase(),
+                        dealer_code:     (dealer.dealer_code    || '').toLowerCase(),
+                        dealer_name:     (dealer.name           || '').toLowerCase(),
+                        notes:           (r.notes               || '').toLowerCase()
                     });
-                } else if (r.is_wishlist && r.custom_make) {
-                    // Wishlist car (not in inventory) — still searchable by make/model
-                    if (!carMap[r.lead_id]) carMap[r.lead_id] = [];
+                } else if (r.custom_make || r.custom_model) {
+                    // Wishlist car (not in inventory)
                     carMap[r.lead_id].push({
                         make:            (r.custom_make  || '').toLowerCase(),
                         model:           (r.custom_model || '').toLowerCase(),
                         registration_no: '',
+                        notes:           (r.notes        || '').toLowerCase()
                     });
                 }
             });
@@ -248,11 +259,52 @@ const AdminLeads = () => {
         }
     }, []);
 
+    const fetchFollowUps = useCallback(async () => {
+        const { data } = await supabase.from('follow_ups').select('lead_id, notes, type');
+        if (data) {
+            const fuMap: Record<string, Array<{ notes: string; type: string }>> = {};
+            data.forEach((r: any) => {
+                if (!r.lead_id) return;
+                if (!fuMap[r.lead_id]) fuMap[r.lead_id] = [];
+                fuMap[r.lead_id].push({
+                    notes: (r.notes || '').toLowerCase(),
+                    type: (r.type || '').toLowerCase()
+                });
+            });
+            setLeadFollowUpMap(fuMap);
+        }
+    }, []);
+
     useEffect(() => {
         fetchStaff();
         fetchLeads();
         fetchInterestCounts();
+        fetchFollowUps();
     }, []);
+
+    // ─── Debounced RPC Search ──────────────────────────────────────────────────
+    useEffect(() => {
+        if (searchTimeout.current) clearTimeout(searchTimeout.current);
+
+        const query = searchQuery.trim();
+        if (query.length < 2) {
+            setRpcMatchIds(null); // disable RPC filter layer
+            return;
+        }
+
+        searchTimeout.current = setTimeout(async () => {
+            // Optional: call the backend RPC if the user deployed the migration
+            // This falls back silently if the RPC does not exist
+            const { data, error } = await supabase.rpc('search_leads_by_text', { search_term: query });
+            if (!error && data) {
+                setRpcMatchIds(new Set(data.map((id: string) => id)));
+            }
+        }, 500);
+
+        return () => {
+            if (searchTimeout.current) clearTimeout(searchTimeout.current);
+        };
+    }, [searchQuery]);
 
     // ─── CSV Import ────────────────────────────────────────────────────────────
 
@@ -602,24 +654,56 @@ const AdminLeads = () => {
         const q = searchQuery.toLowerCase().trim();
         if (!q) return true;
 
-        // 1. Standard personal fields
-        if ((l.full_name || '').toLowerCase().includes(q)) return true;
-        if ((l.phone || '').includes(q))                   return true;
-        if ((l.secondary_phone || '').includes(q))         return true;
+        // RPC Filter Layer
+        const rpcMatch = rpcMatchIds ? rpcMatchIds.has(l.id) : false;
 
-        // 2. sell_car lead — car the customer wants to sell (stored directly on lead row)
-        if ((l.car_make  || '').toLowerCase().includes(q)) return true;
-        if ((l.car_model || '').toLowerCase().includes(q)) return true;
-        if (`${(l.car_make || '')} ${(l.car_model || '')}`.toLowerCase().includes(q)) return true;
+        // 1. Standard personal fields & metadata
+        const localMatch = (
+            (l.full_name || '').toLowerCase().includes(q) ||
+            (l.phone || '').includes(q) ||
+            (l.secondary_phone || '').includes(q) ||
+            (l.whatsapp_number || '').includes(q) ||
+            (l.email || '').toLowerCase().includes(q) ||
+            (l.personal_address || '').toLowerCase().includes(q) ||
+            (l.office_address || '').toLowerCase().includes(q) ||
+            (l.type || '').toLowerCase().includes(q) ||
+            (l.source || '').toLowerCase().includes(q) ||
+            (l.status || '').toLowerCase().includes(q) ||
+            (l.notes || '').toLowerCase().includes(q) ||
+            (l.internal_notes || '').toLowerCase().includes(q) ||
+            (l.message || '').toLowerCase().includes(q) ||
+            (l.budget || '').toLowerCase().includes(q) ||
+            (l.lead_quality || '').toLowerCase().includes(q) ||
+            
+            // 2. sell_car lead — car the customer wants to sell
+            (l.car_make  || '').toLowerCase().includes(q) ||
+            (l.car_model || '').toLowerCase().includes(q) ||
+            `${(l.car_make || '')} ${(l.car_model || '')}`.toLowerCase().includes(q) ||
+            (l.car_year?.toString() || '').includes(q) ||
+            (l.car_mileage?.toString() || '').includes(q) ||
 
-        // 3. Inventory car interests (test_drive / contact / insurance leads)
-        const interestedCars = leadCarMap[l.id] || [];
-        return interestedCars.some(car =>
-            car.make.toLowerCase().includes(q) ||
-            car.model.toLowerCase().includes(q) ||
-            car.registration_no.toLowerCase().includes(q) ||
-            `${car.make} ${car.model}`.toLowerCase().includes(q)
+            // 3. Staff name (Dealer Name in some contexts)
+            (getAssignedName(l.assigned_to) || '').toLowerCase().includes(q) ||
+
+            // 4. Inventory car interests (test_drive / contact / insurance leads)
+            (leadCarMap[l.id] || []).some(car =>
+                car.make.includes(q) ||
+                car.model.includes(q) ||
+                car.registration_no.includes(q) ||
+                `${car.make} ${car.model}`.includes(q) ||
+                (car.dealer_code || '').includes(q) ||
+                (car.dealer_name || '').includes(q) ||
+                (car.notes || '').includes(q)
+            ) ||
+
+            // 5. Follow-ups logs
+            (leadFollowUpMap[l.id] || []).some(fu =>
+                fu.notes.includes(q) ||
+                fu.type.includes(q)
+            )
         );
+
+        return localMatch || rpcMatch;
     });
 
     const totalPages = Math.ceil(filteredAndSearchedLeads.length / leadsPerPage);

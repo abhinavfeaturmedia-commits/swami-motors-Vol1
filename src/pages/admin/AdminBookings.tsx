@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useData } from '../../contexts/DataContext';
@@ -22,6 +22,25 @@ const AdminBookings = () => {
     const [search, setSearch]     = useState('');
     const [updatingId, setUpdatingId] = useState<string | null>(null);
     const [pendingUpdate, setPendingUpdate] = useState<{ id: string; old: string; newStatus: string } | null>(null);
+    const [rpcMatchIds, setRpcMatchIds] = useState<Set<string> | null>(null);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // ─── Debounced RPC search ────────────────────────────────────────────────
+    useEffect(() => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        const q = search.trim();
+        if (!q) {
+            setRpcMatchIds(null);
+            return;
+        }
+        debounceRef.current = setTimeout(async () => {
+            const { data, error } = await supabase.rpc('search_bookings_by_text', { search_term: q });
+            if (!error && data) {
+                setRpcMatchIds(new Set(data as string[]));
+            }
+        }, 450);
+        return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    }, [search]);
 
     // ─── Date helpers ─────────────────────────────────────────────────────────
     const todayStr  = new Date().toISOString().split('T')[0];
@@ -47,28 +66,29 @@ const AdminBookings = () => {
                 if (dateTab === 'This Week' && (b.booking_date < weekStart || b.booking_date > weekEnd)) return false;
                 if (search) {
                     const q = search.toLowerCase().trim();
-                    const name = (b.lead?.full_name || '').toLowerCase();
-                    const phone = (b.lead?.phone || '');
-                    const carMake  = (b.car?.make  || '').toLowerCase();
-                    const carModel = (b.car?.model || '').toLowerCase();
-                    const carYear  = String(b.car?.year || '');
-                    const regNo    = (b.car?.registration_no || '').toLowerCase();
-                    const carFull  = `${carMake} ${carModel}`.trim();
-                    if (
-                        !name.includes(q) &&
-                        !phone.includes(q) &&
-                        !carMake.includes(q) &&
-                        !carModel.includes(q) &&
-                        !carYear.includes(q) &&
-                        !regNo.includes(q) &&
-                        !carFull.includes(q)
-                    ) return false;
+                    // If RPC has returned results, use them as the primary filter
+                    if (rpcMatchIds !== null) {
+                        return rpcMatchIds.has(b.id);
+                    }
+                    // Instant client-side filter while RPC is loading (expanded fields)
+                    const lead = b.lead || {};
+                    const car  = b.car  || {};
+                    const localMatch = [
+                        lead.full_name, lead.phone, lead.email,
+                        lead.secondary_phone, lead.whatsapp_number,
+                        lead.personal_address, lead.office_address,
+                        lead.notes, lead.internal_notes,
+                        lead.budget, lead.message, lead.source, lead.type,
+                        car.make, car.model, String(car.year || ''), car.registration_no,
+                        b.status, b.booking_type, b.notes,
+                    ].some(v => v && String(v).toLowerCase().includes(q));
+                    if (!localMatch) return false;
                 }
                 return true;
             })
             .sort((a, b) => new Date(a.booking_date + 'T' + (a.booking_time || '00:00')).getTime() -
                              new Date(b.booking_date + 'T' + (b.booking_time || '00:00')).getTime());
-    }, [bookings, typeTab, dateTab, search, todayStr, weekStart, weekEnd]);
+    }, [bookings, typeTab, dateTab, search, rpcMatchIds, todayStr, weekStart, weekEnd]);
 
     // ─── Stats ────────────────────────────────────────────────────────────────
     const todayCount   = bookings.filter(b => b.booking_date === todayStr && b.status === 'scheduled').length;
@@ -176,7 +196,7 @@ const AdminBookings = () => {
                 {/* Search */}
                 <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 h-10 flex-1 min-w-[200px]">
                     <span className="material-symbols-outlined text-slate-400 text-lg">search</span>
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, phone, car or reg. no…" className="bg-transparent text-sm text-primary outline-none w-full" />
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, phone, notes, car, dealer, follow-ups…" className="bg-transparent text-sm text-primary outline-none w-full" />
                     {search && <button onClick={() => setSearch('')} className="material-symbols-outlined text-slate-300 text-base hover:text-slate-500">close</button>}
                 </div>
             </div>

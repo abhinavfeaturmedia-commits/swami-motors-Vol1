@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
 import imageCompression from 'browser-image-compression';
 
 const MAKES = ['Maruti Suzuki', 'Hyundai', 'Tata', 'Honda', 'Toyota', 'Kia', 'MG', 'Mahindra', 'Volkswagen', 'Skoda', 'Renault', 'Nissan', 'Ford', 'Jeep', 'Mercedes-Benz', 'BMW', 'Audi', 'Other'];
@@ -18,6 +19,7 @@ const InventoryForm = () => {
     const isEditMode = Boolean(id);
     const navigate = useNavigate();
     const { user, hasPermission } = useAuth();
+    const { refreshData } = useData() || {};
     const canManage = hasPermission('inventory', 'manage');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -531,6 +533,9 @@ const InventoryForm = () => {
                 if (insertError) throw insertError;
             }
 
+            if (refreshData) {
+                await refreshData();
+            }
             navigate('/admin/inventory');
         } catch (err: any) {
             setError(err.message || 'An unexpected error occurred. Please try again.');

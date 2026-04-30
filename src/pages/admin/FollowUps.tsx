@@ -176,13 +176,17 @@ const FollowUps = () => {
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-0.5">
                                     <Link to={`/admin/leads/${f.lead_id}`} className="text-sm font-bold text-primary hover:underline">{f.lead?.full_name || 'Unknown Lead'}</Link>
-                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${f.outcome === 'interested' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'} capitalize`}>{f.outcome || f.contacted_via}</span>
+                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${f.outcome === 'interested' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'} capitalize`}>{f.outcome || (f.contacted_via && f.contacted_via.length ? f.contacted_via.join(', ') : 'unknown')}</span>
                                     {f.isOverdue && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600">OVERDUE</span>}
                                     {f.is_done && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">DONE</span>}
                                 </div>
                                 <div className="flex items-center gap-1.5 mt-1">
-                                    <span className="material-symbols-outlined text-[14px] text-slate-400">{viaIcon(f.contacted_via)}</span>
-                                    <p className="text-xs text-slate-500 font-medium capitalize">{f.contacted_via} Follow-Up</p>
+                                    <div className="flex -space-x-1">
+                                        {(f.contacted_via || []).slice(0, 2).map((method: string, i: number) => (
+                                            <span key={i} className="material-symbols-outlined text-[14px] text-slate-400 bg-white rounded-full">{viaIcon(method)}</span>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-slate-500 font-medium capitalize">{(f.contacted_via || []).join(', ')} Follow-Up</p>
                                 </div>
                                 {f.notes && <p className="text-xs text-slate-400 truncate mt-0.5">{f.notes}</p>}
                             </div>
