@@ -209,10 +209,28 @@ const CarDetails = () => {
                             <a href={`https://wa.me/919823237975?text=I'm interested in the ${car.year} ${car.make} ${car.model} (ID: ${car.id})`} target="_blank" rel="noreferrer" className="w-full h-12 flex items-center justify-center gap-2 bg-[#25D366] text-white font-bold rounded-xl hover:bg-[#20bd5a] transition-colors text-sm">
                                 <span className="material-symbols-outlined text-lg">forum</span> WhatsApp Inquiry
                             </a>
+                            <button 
+                                onClick={async () => {
+                                    const shareData = {
+                                        title: `${car.year} ${car.make} ${car.model}`,
+                                        text: `Check out this ${car.year} ${car.make} ${car.model} at Shree Swami Samarth Motors!`,
+                                        url: window.location.href,
+                                    };
+                                    if (navigator.share) {
+                                        try { await navigator.share(shareData); } catch (err) { console.log('Share canceled or failed', err); }
+                                    } else {
+                                        navigator.clipboard.writeText(window.location.href);
+                                        alert("Link copied to clipboard!");
+                                    }
+                                }}
+                                className="w-full h-10 flex items-center justify-center gap-2 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition-colors text-sm mt-2"
+                            >
+                                <span className="material-symbols-outlined text-lg">share</span> Share Car
+                            </button>
                         </div>
                         <div className="flex items-center gap-2 text-xs text-slate-500 justify-center">
                             <span className="material-symbols-outlined text-sm text-success">verified</span>
-                            7-Day Money Back Guarantee
+                            100% Satisfaction Guarantee
                         </div>
                     </div>
 

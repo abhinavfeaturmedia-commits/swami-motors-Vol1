@@ -60,6 +60,9 @@ export default function Incentives() {
   const [showAnnForm, setShowAnnForm] = useState(false);
   const [incForm, setIncForm] = useState(emptyInc);
   const [annForm, setAnnForm] = useState(emptyAnn);
+  const [editingIncId, setEditingIncId] = useState<string|null>(null);
+  const [editingAnnId, setEditingAnnId] = useState<string|null>(null);
+  const [viewingInc, setViewingInc] = useState<Incentive|null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string|null>(null);
   const [notifSent, setNotifSent] = useState<string | null>(null);
@@ -69,6 +72,19 @@ export default function Incentives() {
     setNotifSent(msg);
     if (notifTimer.current) clearTimeout(notifTimer.current);
     notifTimer.current = setTimeout(() => setNotifSent(null), 4000);
+  };
+
+  const openAddInc = () => { setEditingIncId(null); setIncForm(emptyInc); setShowIncForm(true); };
+  const openEditInc = (inc: Incentive) => {
+    setEditingIncId(inc.id);
+    setIncForm({ staff_id: inc.staff_id, amount: String(inc.amount), reason: inc.reason, incentive_type: inc.incentive_type, month: inc.month, notes: inc.notes ?? '' });
+    setShowIncForm(true);
+  };
+  const openAddAnn = () => { setEditingAnnId(null); setAnnForm(emptyAnn); setShowAnnForm(true); };
+  const openEditAnn = (a: Announcement) => {
+    setEditingAnnId(a.id);
+    setAnnForm({ title: a.title, body: a.body, priority: a.priority, is_pinned: a.is_pinned, expires_at: a.expires_at ? a.expires_at.slice(0,10) : '' });
+    setShowAnnForm(true);
   };
 
   const fetchAll = useCallback(async () => {
@@ -107,58 +123,72 @@ export default function Incentives() {
     return Object.values(map).sort((a,b) => b.total - a.total);
   })();
 
-  // ── Save incentive ───────────────────────────────────────────────────────
+  // ── Save incentive (insert or update) ───────────────────────────────────
   const saveIncentive = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!incForm.staff_id || !incForm.amount || !incForm.reason) return;
     setSaving(true);
 
-    const { data: inserted, error } = await supabase
-      .from('staff_incentives')
-      .insert({
-        staff_id: incForm.staff_id, amount: Number(incForm.amount),
-        reason: incForm.reason, incentive_type: incForm.incentive_type,
-        month: incForm.month, notes: incForm.notes || null, awarded_by: user?.id,
-      })
-      .select()
-      .single();
+    if (editingIncId) {
+      // ── UPDATE existing incentive ──
+      const { error } = await supabase
+        .from('staff_incentives')
+        .update({
+          staff_id: incForm.staff_id, amount: Number(incForm.amount),
+          reason: incForm.reason, incentive_type: incForm.incentive_type,
+          month: incForm.month, notes: incForm.notes || null,
+        })
+        .eq('id', editingIncId);
 
-    if (!error && inserted) {
-      const amountFmt = `₹${Number(inserted.amount).toLocaleString('en-IN')}`;
-      const typeLabel = (inserted.incentive_type || 'incentive')
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (c: string) => c.toUpperCase());
-      const dedupKey = `incentive_awarded_${inserted.id}`;
+      if (!error) flashNotif('✏️ Incentive updated successfully ✓');
+    } else {
+      // ── INSERT new incentive ──
+      const { data: inserted, error } = await supabase
+        .from('staff_incentives')
+        .insert({
+          staff_id: incForm.staff_id, amount: Number(incForm.amount),
+          reason: incForm.reason, incentive_type: incForm.incentive_type,
+          month: incForm.month, notes: incForm.notes || null, awarded_by: user?.id,
+        })
+        .select()
+        .single();
 
-      // Fallback: insert notification directly (covers cases where realtime hasn't fired yet)
-      await addNotification({
-        type: 'incentive_awarded',
-        category: 'staff',
-        priority: 1,
-        icon: 'workspace_premium',
-        color: 'green',
-        title: `🏆 You've Earned a ${typeLabel}!`,
-        message: `${amountFmt} has been awarded to you. Reason: ${inserted.reason || 'See incentives page.'}`,
-        action_url: '/admin/my-incentives',
-        action_label: 'View My Incentives',
-        related_entity_type: 'incentive',
-        related_entity_id: inserted.id,
-        assigned_to_user_id: inserted.staff_id,
-        dedup_key: dedupKey,
-        metadata: {
-          amount: inserted.amount,
-          incentive_type: inserted.incentive_type,
-          reason: inserted.reason,
-          month: inserted.month,
-        },
-        is_read: false,
-        is_dismissed: false,
-      });
+      if (!error && inserted) {
+        const amountFmt = `₹${Number(inserted.amount).toLocaleString('en-IN')}`;
+        const typeLabel = (inserted.incentive_type || 'incentive')
+          .replace(/_/g, ' ')
+          .replace(/\b\w/g, (c: string) => c.toUpperCase());
+        const dedupKey = `incentive_awarded_${inserted.id}`;
 
-      flashNotif('📨 Incentive saved — staff member has been notified ✓');
+        await addNotification({
+          type: 'incentive_awarded',
+          category: 'staff',
+          priority: 1,
+          icon: 'workspace_premium',
+          color: 'green',
+          title: `🏆 You've Earned a ${typeLabel}!`,
+          message: `${amountFmt} has been awarded to you. Reason: ${inserted.reason || 'See incentives page.'}`,
+          action_url: '/admin/my-incentives',
+          action_label: 'View My Incentives',
+          related_entity_type: 'incentive',
+          related_entity_id: inserted.id,
+          assigned_to_user_id: inserted.staff_id,
+          dedup_key: dedupKey,
+          metadata: {
+            amount: inserted.amount,
+            incentive_type: inserted.incentive_type,
+            reason: inserted.reason,
+            month: inserted.month,
+          },
+          is_read: false,
+          is_dismissed: false,
+        });
+
+        flashNotif('📨 Incentive saved — staff member has been notified ✓');
+      }
     }
 
-    setShowIncForm(false); setIncForm(emptyInc); setSaving(false); fetchAll();
+    setShowIncForm(false); setEditingIncId(null); setIncForm(emptyInc); setSaving(false); fetchAll();
   };
 
   // ── Delete incentive ─────────────────────────────────────────────────────
@@ -168,61 +198,74 @@ export default function Incentives() {
     setDeleting(null); fetchAll();
   };
 
-  // ── Save announcement ────────────────────────────────────────────────────
+  // ── Save announcement (insert or update) ────────────────────────────────
   const saveAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!annForm.title || !annForm.body) return;
     setSaving(true);
 
-    const { data: inserted, error } = await supabase
-      .from('staff_announcements')
-      .insert({
-        title: annForm.title, body: annForm.body, priority: annForm.priority,
-        is_pinned: annForm.is_pinned, created_by: user?.id,
-        expires_at: annForm.expires_at || null,
-      })
-      .select()
-      .single();
+    if (editingAnnId) {
+      // ── UPDATE existing announcement ──
+      const { error } = await supabase
+        .from('staff_announcements')
+        .update({
+          title: annForm.title, body: annForm.body, priority: annForm.priority,
+          is_pinned: annForm.is_pinned, expires_at: annForm.expires_at || null,
+        })
+        .eq('id', editingAnnId);
 
-    if (!error && inserted) {
-      const dedupKey = `announcement_posted_${inserted.id}`;
-      let priority: 1 | 2 | 3 | 4 = 3;
-      let color: 'red' | 'amber' | 'green' | 'blue' | 'purple' | 'orange' = 'amber';
-      let titlePrefix = '📢';
+      if (!error) flashNotif('✏️ Announcement updated successfully ✓');
+    } else {
+      // ── INSERT new announcement ──
+      const { data: inserted, error } = await supabase
+        .from('staff_announcements')
+        .insert({
+          title: annForm.title, body: annForm.body, priority: annForm.priority,
+          is_pinned: annForm.is_pinned, created_by: user?.id,
+          expires_at: annForm.expires_at || null,
+        })
+        .select()
+        .single();
 
-      if (inserted.priority === 'urgent')      { priority = 1; color = 'red';    titlePrefix = '🚨'; }
-      else if (inserted.priority === 'celebration') { priority = 2; color = 'purple'; titlePrefix = '🎉'; }
+      if (!error && inserted) {
+        const dedupKey = `announcement_posted_${inserted.id}`;
+        let priority: 1 | 2 | 3 | 4 = 3;
+        let color: 'red' | 'amber' | 'green' | 'blue' | 'purple' | 'orange' = 'amber';
+        let titlePrefix = '📢';
 
-      // Fallback: insert broadcast notification directly
-      await addNotification({
-        type: `announcement_${inserted.priority ?? 'normal'}`,
-        category: 'staff',
-        priority,
-        icon: 'campaign',
-        color,
-        title: `${titlePrefix} ${inserted.title}`,
-        message: inserted.body
-          ? inserted.body.slice(0, 120) + (inserted.body.length > 120 ? '…' : '')
-          : 'A new announcement has been posted.',
-        action_url: '/admin/my-incentives',
-        action_label: 'View Announcements',
-        related_entity_type: 'announcement',
-        related_entity_id: inserted.id,
-        assigned_to_user_id: null, // broadcast
-        dedup_key: dedupKey,
-        metadata: {
-          announcement_id: inserted.id,
-          priority: inserted.priority,
-          is_pinned: inserted.is_pinned,
-        },
-        is_read: false,
-        is_dismissed: false,
-      });
+        if (inserted.priority === 'urgent')           { priority = 1; color = 'red';    titlePrefix = '🚨'; }
+        else if (inserted.priority === 'celebration') { priority = 2; color = 'purple'; titlePrefix = '🎉'; }
 
-      flashNotif(`📢 Announcement posted — all staff have been notified ✓`);
+        await addNotification({
+          type: `announcement_${inserted.priority ?? 'normal'}`,
+          category: 'staff',
+          priority,
+          icon: 'campaign',
+          color,
+          title: `${titlePrefix} ${inserted.title}`,
+          message: inserted.body
+            ? inserted.body.slice(0, 120) + (inserted.body.length > 120 ? '…' : '')
+            : 'A new announcement has been posted.',
+          action_url: '/admin/my-incentives',
+          action_label: 'View Announcements',
+          related_entity_type: 'announcement',
+          related_entity_id: inserted.id,
+          assigned_to_user_id: null,
+          dedup_key: dedupKey,
+          metadata: {
+            announcement_id: inserted.id,
+            priority: inserted.priority,
+            is_pinned: inserted.is_pinned,
+          },
+          is_read: false,
+          is_dismissed: false,
+        });
+
+        flashNotif('📢 Announcement posted — all staff have been notified ✓');
+      }
     }
 
-    setShowAnnForm(false); setAnnForm(emptyAnn); setSaving(false); fetchAll();
+    setShowAnnForm(false); setEditingAnnId(null); setAnnForm(emptyAnn); setSaving(false); fetchAll();
   };
 
   const deleteAnn = async (id: string) => {
@@ -257,13 +300,13 @@ export default function Incentives() {
         </div>
         <div className="flex gap-2">
           {tab === 'records' && (
-            <button onClick={() => setShowIncForm(true)}
+            <button onClick={openAddInc}
               className="h-10 px-4 bg-primary text-white font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-primary-light transition-colors shadow-sm">
               <span className="material-symbols-outlined text-lg">add</span>Add Incentive
             </button>
           )}
           {tab === 'announcements' && (
-            <button onClick={() => setShowAnnForm(true)}
+            <button onClick={openAddAnn}
               className="h-10 px-4 bg-primary text-white font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-primary-light transition-colors shadow-sm">
               <span className="material-symbols-outlined text-lg">campaign</span>New Announcement
             </button>
@@ -320,7 +363,9 @@ export default function Incentives() {
                     ) : filteredInc.map(inc => {
                       const ti = typeInfo(inc.incentive_type);
                       return (
-                        <tr key={inc.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
+                        <tr key={inc.id}
+                          onClick={() => setViewingInc(inc)}
+                          className="border-b border-slate-50 last:border-0 hover:bg-primary/5 transition-colors cursor-pointer group">
                           <td className="px-5 py-3.5">
                             <p className="text-sm font-semibold text-primary">{inc.staff?.full_name ?? '—'}</p>
                             <p className="text-[10px] text-slate-400">{inc.staff?.department ?? '—'}</p>
@@ -332,10 +377,16 @@ export default function Incentives() {
                           <td className="px-5 py-3.5 text-xs text-slate-500">{inc.month}</td>
                           <td className="px-5 py-3.5 text-right font-bold text-green-600">{fmt(inc.amount)}</td>
                           <td className="px-5 py-3.5 text-right">
-                            <button onClick={() => deleteIncentive(inc.id)} disabled={deleting===inc.id}
-                              className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50">
-                              <span className="material-symbols-outlined text-sm">delete</span>
-                            </button>
+                            <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                              <button onClick={() => openEditInc(inc)}
+                                className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit">
+                                <span className="material-symbols-outlined text-sm">edit</span>
+                              </button>
+                              <button onClick={() => deleteIncentive(inc.id)} disabled={deleting===inc.id}
+                                className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50" title="Delete">
+                                <span className="material-symbols-outlined text-sm">delete</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -394,10 +445,16 @@ export default function Incentives() {
                           {a.expires_at && <><span>·</span><span>Expires {new Date(a.expires_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span></>}
                         </div>
                       </div>
-                      <button onClick={() => deleteAnn(a.id)} disabled={deleting===a.id}
-                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0 disabled:opacity-50">
-                        <span className="material-symbols-outlined text-sm">delete</span>
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => openEditAnn(a)}
+                          className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit">
+                          <span className="material-symbols-outlined text-sm">edit</span>
+                        </button>
+                        <button onClick={() => deleteAnn(a.id)} disabled={deleting===a.id}
+                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50" title="Delete">
+                          <span className="material-symbols-outlined text-sm">delete</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -407,13 +464,124 @@ export default function Incentives() {
         </>
       )}
 
+      {/* ── Incentive Detail View Modal ── */}
+      {viewingInc && (() => {
+        const ti = typeInfo(viewingInc.incentive_type);
+        return (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setViewingInc(null)}>
+            <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="bg-gradient-to-r from-primary to-primary-light px-6 py-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="size-10 bg-white/20 rounded-xl flex items-center justify-center">
+                    <span className="material-symbols-outlined text-white text-xl">workspace_premium</span>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black text-white">Incentive Details</h2>
+                    <p className="text-white/70 text-xs">{new Date(viewingInc.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  </div>
+                </div>
+                <button onClick={() => setViewingInc(null)} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
+                  <span className="material-symbols-outlined text-white text-lg">close</span>
+                </button>
+              </div>
+
+              {/* Amount Hero */}
+              <div className="bg-green-50 border-b border-green-100 px-6 py-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-green-600 uppercase tracking-wide">Amount Awarded</p>
+                  <p className="text-3xl font-black text-green-700 mt-0.5">{fmt(viewingInc.amount)}</p>
+                </div>
+                <span className={`text-xs font-bold px-3 py-1.5 rounded-full uppercase ${ti.color}`}>{ti.label}</span>
+              </div>
+
+              {/* Fields */}
+              <div className="p-6 space-y-4">
+                {/* Staff */}
+                <div className="flex items-start gap-3">
+                  <div className="size-9 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-slate-500 text-base">person</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Staff Member</p>
+                    <p className="text-sm font-semibold text-primary mt-0.5">{viewingInc.staff?.full_name ?? '—'}</p>
+                    {viewingInc.staff?.department && <p className="text-xs text-slate-400">{viewingInc.staff.department}</p>}
+                  </div>
+                </div>
+
+                {/* Reason */}
+                <div className="flex items-start gap-3">
+                  <div className="size-9 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-slate-500 text-base">description</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Reason</p>
+                    <p className="text-sm text-slate-700 mt-0.5">{viewingInc.reason}</p>
+                  </div>
+                </div>
+
+                {/* Month */}
+                <div className="flex items-start gap-3">
+                  <div className="size-9 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-slate-500 text-base">calendar_month</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">For Month</p>
+                    <p className="text-sm text-slate-700 mt-0.5">{viewingInc.month}</p>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div className="flex items-start gap-3">
+                  <div className="size-9 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-slate-500 text-base">sticky_note_2</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Notes</p>
+                    {viewingInc.notes
+                      ? <p className="text-sm text-slate-700 mt-0.5 whitespace-pre-line">{viewingInc.notes}</p>
+                      : <p className="text-sm text-slate-400 italic mt-0.5">No notes added</p>
+                    }
+                  </div>
+                </div>
+
+                {/* Date */}
+                <div className="flex items-start gap-3">
+                  <div className="size-9 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-slate-500 text-base">schedule</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Date Awarded</p>
+                    <p className="text-sm text-slate-700 mt-0.5">{new Date(viewingInc.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="px-6 pb-6 flex gap-3">
+                <button
+                  onClick={() => { setViewingInc(null); openEditInc(viewingInc); }}
+                  className="flex-1 h-11 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-colors flex items-center justify-center gap-2 text-sm shadow-sm">
+                  <span className="material-symbols-outlined text-base">edit</span>Edit Incentive
+                </button>
+                <button
+                  onClick={() => { deleteIncentive(viewingInc.id); setViewingInc(null); }}
+                  className="h-11 px-4 bg-red-50 text-red-500 font-bold rounded-xl hover:bg-red-100 transition-colors flex items-center justify-center gap-2 text-sm border border-red-100">
+                  <span className="material-symbols-outlined text-base">delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Add Incentive Modal ── */}
       {showIncForm && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
             <div className="bg-gradient-to-r from-primary to-primary-light px-6 py-5 flex items-center justify-between">
-              <h2 className="text-lg font-black text-white">Add Incentive</h2>
-              <button onClick={() => setShowIncForm(false)} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
+              <h2 className="text-lg font-black text-white">{editingIncId ? '✏️ Edit Incentive' : 'Add Incentive'}</h2>
+              <button onClick={() => { setShowIncForm(false); setEditingIncId(null); }} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
                 <span className="material-symbols-outlined text-white text-lg">close</span>
               </button>
             </div>
@@ -457,7 +625,7 @@ export default function Incentives() {
               </div>
               <button type="submit" disabled={saving}
                 className="w-full h-12 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-70">
-                {saving ? <><span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Saving…</> : <><span className="material-symbols-outlined text-lg">workspace_premium</span>Add Incentive</>}
+                {saving ? <><span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Saving…</> : editingIncId ? <><span className="material-symbols-outlined text-lg">save</span>Save Changes</> : <><span className="material-symbols-outlined text-lg">workspace_premium</span>Add Incentive</>}
               </button>
             </form>
           </div>
@@ -469,8 +637,8 @@ export default function Incentives() {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
             <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-5 flex items-center justify-between">
-              <h2 className="text-lg font-black text-white">New Announcement</h2>
-              <button onClick={() => setShowAnnForm(false)} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
+              <h2 className="text-lg font-black text-white">{editingAnnId ? '✏️ Edit Announcement' : 'New Announcement'}</h2>
+              <button onClick={() => { setShowAnnForm(false); setEditingAnnId(null); }} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
                 <span className="material-symbols-outlined text-white text-lg">close</span>
               </button>
             </div>
@@ -508,7 +676,7 @@ export default function Incentives() {
               </label>
               <button type="submit" disabled={saving}
                 className="w-full h-12 bg-amber-500 text-white font-bold rounded-xl hover:bg-amber-600 transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-70">
-                {saving ? <><span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Posting…</> : <><span className="material-symbols-outlined text-lg">campaign</span>Post Announcement</>}
+                {saving ? <><span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Saving…</> : editingAnnId ? <><span className="material-symbols-outlined text-lg">save</span>Save Changes</> : <><span className="material-symbols-outlined text-lg">campaign</span>Post Announcement</>}
               </button>
             </form>
           </div>

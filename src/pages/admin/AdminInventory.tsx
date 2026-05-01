@@ -65,6 +65,8 @@ const AdminInventory = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [dealerFilter, setDealerFilter] = useState('all');
     const [dealers, setDealers] = useState<Dealer[]>([]);
+    const [dealerFilterOpen, setDealerFilterOpen] = useState(false);
+    const [dealerFilterSearch, setDealerFilterSearch] = useState('');
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
     const [shareCarId, setShareCarId] = useState<string | null>(null);
@@ -72,7 +74,14 @@ const AdminInventory = () => {
 
     useEffect(() => {
         supabase.from('dealers').select('id, dealer_code, name').then(({ data }) => {
-            if (data) setDealers(data as Dealer[]);
+            if (data) {
+                const sorted = (data as Dealer[]).sort((a, b) => {
+                    const numA = parseInt(a.dealer_code.replace(/\D/g, '')) || 0;
+                    const numB = parseInt(b.dealer_code.replace(/\D/g, '')) || 0;
+                    return numA - numB;
+                });
+                setDealers(sorted);
+            }
         });
     }, []);
 
@@ -196,18 +205,81 @@ const AdminInventory = () => {
                     ))}
                 </div>
                 <div className="flex gap-2">
-                    <select
-                        value={dealerFilter}
-                        onChange={e => setDealerFilter(e.target.value)}
-                        className="h-10 border border-slate-200 rounded-xl px-3 text-sm text-slate-600 bg-white outline-none"
-                    >
-                        <option value="all">All Sources</option>
-                        <option value="purchased">Purchased</option>
-                        <option value="consignment">Consignment</option>
-                        <optgroup label="Dealer Cars">
-                            {dealers.map(d => <option key={d.id} value={d.id}>{d.dealer_code} — {d.name}</option>)}
-                        </optgroup>
-                    </select>
+                    {/* Searchable Dealer Filter */}
+                    <div className="relative z-20" onBlur={e => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            setDealerFilterOpen(false);
+                        }
+                    }}>
+                        <button
+                            type="button"
+                            onClick={() => setDealerFilterOpen(p => !p)}
+                            className="h-10 border border-slate-200 rounded-xl px-3 text-sm text-slate-600 bg-white flex items-center justify-between gap-2 min-w-[160px] max-w-[220px] outline-none focus:ring-2 focus:ring-primary/10"
+                        >
+                            <span className="truncate">
+                                {dealerFilter === 'all' ? 'All Sources' :
+                                 dealerFilter === 'purchased' ? 'Purchased' :
+                                 dealerFilter === 'consignment' ? 'Consignment' :
+                                 dealers.find(d => d.id === dealerFilter) ? `${dealers.find(d => d.id === dealerFilter)?.dealer_code} — ${dealers.find(d => d.id === dealerFilter)?.name}` : 'All Sources'}
+                            </span>
+                            <span className="material-symbols-outlined text-[18px] text-slate-400">expand_more</span>
+                        </button>
+                        
+                        {dealerFilterOpen && (
+                            <div className="absolute top-full mt-1 right-0 sm:left-0 sm:right-auto w-64 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden flex flex-col">
+                                <div className="p-2 border-b border-slate-100">
+                                    <div className="relative">
+                                        <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[16px] pointer-events-none">search</span>
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            placeholder="Search dealers or sources..."
+                                            value={dealerFilterSearch}
+                                            onChange={e => setDealerFilterSearch(e.target.value)}
+                                            className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 text-xs outline-none focus:ring-2 focus:ring-primary/10"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="max-h-60 overflow-y-auto py-1">
+                                    {(() => {
+                                        const q = dealerFilterSearch.toLowerCase().trim();
+                                        const options = [
+                                            { id: 'all', label: 'All Sources', type: 'base' },
+                                            { id: 'purchased', label: 'Purchased', type: 'base' },
+                                            { id: 'consignment', label: 'Consignment', type: 'base' },
+                                            ...dealers.map(d => ({ id: d.id, label: `${d.dealer_code} — ${d.name}`, code: d.dealer_code, name: d.name, type: 'dealer' }))
+                                        ];
+                                        
+                                        const filtered = options.filter(o => 
+                                            !q || 
+                                            o.label.toLowerCase().includes(q) || 
+                                            (o.type === 'dealer' && (o.code?.toLowerCase().includes(q) || o.name?.toLowerCase().includes(q)))
+                                        );
+
+                                        if (filtered.length === 0) return <div className="px-3 py-2 text-xs text-slate-400">No results found</div>;
+                                        
+                                        return filtered.map(o => (
+                                            <button
+                                                key={o.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setDealerFilter(o.id);
+                                                    setDealerFilterOpen(false);
+                                                    setDealerFilterSearch('');
+                                                }}
+                                                className={`w-full text-left px-3 py-2.5 text-sm hover:bg-slate-50 transition-colors flex items-center justify-between ${
+                                                    dealerFilter === o.id ? 'bg-primary/5 text-primary font-semibold' : 'text-slate-700'
+                                                }`}
+                                            >
+                                                <span className="truncate">{o.label}</span>
+                                                {dealerFilter === o.id && <span className="material-symbols-outlined text-primary text-[16px]">check</span>}
+                                            </button>
+                                        ));
+                                    })()}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                     <div className="relative max-w-xs w-full">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-base">search</span>
                         <input

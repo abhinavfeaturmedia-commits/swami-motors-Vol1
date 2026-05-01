@@ -68,6 +68,7 @@ interface Lead {
     lost_reason: string | null;
     contacted_at: string | null;
     created_at: string;
+    lead_date: string | null;
     assigned_to: string | null;
     lead_quality?: string | null;
     budget?: string | null;
@@ -639,7 +640,7 @@ const LeadDetail = () => {
 
     const fullTimeline = [
         ...dynamicTimeline,
-        { icons: ['person_add'], title: 'LEAD GENERATED', desc: `Inquiry received via ${formatType(lead.type)}`, time: new Date(lead.created_at).toLocaleString('en-IN', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}), color: 'bg-slate-800' }
+        { icons: ['person_add'], title: 'LEAD GENERATED', desc: `Inquiry received via ${formatType(lead.type)}`, time: new Date(lead.lead_date ? lead.lead_date + 'T00:00:00' : lead.created_at).toLocaleString('en-IN', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}), color: 'bg-slate-800' }
     ];
 
     const availableCars = inventory.filter(c => c.status !== 'sold');
@@ -743,6 +744,16 @@ const LeadDetail = () => {
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Budget</label>
                             <input type="text" value={editForm.budget || ''} onChange={e => setEditForm({ ...editForm, budget: e.target.value })} className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" placeholder="e.g. 5-6 Lakhs" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Lead Date <span className="text-xs text-slate-400 font-normal">(optional — overrides system date)</span></label>
+                            <input
+                                type="date"
+                                value={(editForm as any).lead_date ?? lead.created_at.slice(0, 10)}
+                                onChange={e => setEditForm({ ...editForm, lead_date: e.target.value || null } as any)}
+                                className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1">Back-date walk-in leads or correct the recorded date.</p>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
@@ -853,8 +864,49 @@ const LeadDetail = () => {
                                         )}
                                     </div>
                                     <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500 mt-2">
-                                        <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[15px]">category</span> {formatType(lead.type)}</span>
-                                        <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[15px]">event</span> {new Date(lead.created_at).toLocaleDateString()}</span>
+                                        <span className="flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-[15px]">category</span> {formatType(lead.type)}
+                                        </span>
+                                        {/* ── Lead Date — inline editable by admin ── */}
+                                        {canEdit ? (
+                                            <span className="flex items-center gap-1 group cursor-pointer relative" title="Change lead date">
+                                                <span className="material-symbols-outlined text-[15px] text-slate-400">event</span>
+                                                <span className="text-sm text-slate-500 group-hover:text-primary transition-colors pointer-events-none select-none">
+                                                    {lead.lead_date
+                                                        ? new Date(lead.lead_date + 'T00:00:00').toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })
+                                                        : new Date(lead.created_at).toLocaleDateString()
+                                                    }
+                                                </span>
+                                                <span className="material-symbols-outlined text-[12px] text-slate-300 group-hover:text-primary transition-colors pointer-events-none">edit</span>
+                                                <input
+                                                    type="date"
+                                                    value={lead.lead_date ?? lead.created_at.slice(0, 10)}
+                                                    onChange={async e => {
+                                                        const newDate = e.target.value || null;
+                                                        const { error } = await supabase.from('leads').update({ lead_date: newDate }).eq('id', id);
+                                                        if (!error) {
+                                                            setLead(prev => prev ? { ...prev, lead_date: newDate } : null);
+                                                            setEditForm(prev => ({ ...prev, lead_date: newDate }));
+                                                            await supabase.from('lead_activities').insert({
+                                                                lead_id: id,
+                                                                activity_type: 'note',
+                                                                notes: `Lead date updated to ${newDate ? new Date(newDate + 'T00:00:00').toLocaleDateString('en-IN') : 'system default'}.`,
+                                                                created_by: profile?.id ?? null,
+                                                            });
+                                                        }
+                                                    }}
+                                                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                                />
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[15px]">event</span>
+                                                {lead.lead_date
+                                                    ? new Date(lead.lead_date + 'T00:00:00').toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })
+                                                    : new Date(lead.created_at).toLocaleDateString()
+                                                }
+                                            </span>
+                                        )}
                                         <span className="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-full text-xs font-semibold text-slate-600 border border-slate-200">Source: {lead.source || 'Website'}</span>
                                         {lead.assigned_profile ? (
                                             <span className="flex items-center gap-1 bg-blue-50 px-2.5 py-0.5 rounded-full text-xs font-bold text-blue-700 border border-blue-200">

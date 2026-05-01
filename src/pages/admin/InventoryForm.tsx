@@ -52,6 +52,9 @@ const InventoryForm = () => {
     const [ourMargin, setOurMargin] = useState('');
     const [dealerCommission, setDealerCommission] = useState('');
     const [dealers, setDealers] = useState<Dealer[]>([]);
+    const [dealerSearch, setDealerSearch] = useState('');       // text in the search box
+    const [dealerDropdownOpen, setDealerDropdownOpen] = useState(false); // whether list is visible
+    const dealerInputRef = useRef<HTMLInputElement>(null);
 
     // Fetch dealers for dropdown
     useEffect(() => {
@@ -59,6 +62,14 @@ const InventoryForm = () => {
             if (data) setDealers(data as Dealer[]);
         });
     }, []);
+
+    // Sync dealerSearch with dealerId for edit mode
+    useEffect(() => {
+        if (dealerId && dealers.length > 0 && !dealerSearch) {
+            const d = dealers.find(x => x.id === dealerId);
+            if (d) setDealerSearch(`${d.dealer_code} — ${d.name}`);
+        }
+    }, [dealerId, dealers, dealerSearch]);
 
     const [existingImages, setExistingImages] = useState<string[]>([]);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -483,8 +494,28 @@ const InventoryForm = () => {
             return;
         }
 
+        // Normalize Registration Number
+        const normalizedRegNo = form.registration_no?.trim().replace(/[\s\-]/g, '').toUpperCase() || null;
+
         setSaving(true);
         try {
+            // Check for Duplicate Registration Number
+            if (normalizedRegNo) {
+                let query = supabase.from('inventory').select('id, make, model').eq('registration_no', normalizedRegNo);
+                if (isEditMode && id) {
+                    query = query.neq('id', id);
+                }
+                const { data: duplicateData, error: dupError } = await query;
+                if (dupError) throw dupError;
+
+                if (duplicateData && duplicateData.length > 0) {
+                    const dup = duplicateData[0];
+                    setError(`Duplicate Alert: A vehicle with registration number ${normalizedRegNo} already exists in the inventory (${dup.make} ${dup.model}). Please verify the details.`);
+                    setSaving(false);
+                    return;
+                }
+            }
+
             const newImageUrls = await uploadImages();
             const allImages = [...existingImages, ...newImageUrls];
             const thumbnail = allImages.length > 0 ? allImages[0] : null;
@@ -501,7 +532,7 @@ const InventoryForm = () => {
                 mileage: form.mileage ? Number(form.mileage) : null,
                 color: form.color || null,
                 body_type: form.body_type || null,
-                registration_no: form.registration_no || null,
+                registration_no: normalizedRegNo,
                 ownership: Number(form.ownership),
                 condition: form.condition,
                 status: isDraft ? 'pending' : form.status,
@@ -770,16 +801,83 @@ const InventoryForm = () => {
                             </div>
                             <div>
                                 <label className="text-sm font-medium text-slate-700 mb-1.5 block">Select Dealer</label>
-                                <select
-                                    value={dealerId}
-                                    onChange={e => setDealerId(e.target.value)}
-                                    className="w-full h-11 bg-white border border-amber-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-amber-200"
-                                >
-                                    <option value="">— Select a dealer —</option>
-                                    {dealers.map(d => (
-                                        <option key={d.id} value={d.id}>{d.dealer_code} — {d.name}</option>
-                                    ))}
-                                </select>
+
+                                {/* ── Searchable dealer combobox ── */}
+                                <div className="relative" onBlur={e => {
+                                    // Close dropdown only when focus leaves the entire container
+                                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                        setDealerDropdownOpen(false);
+                                    }
+                                }}>
+                                    {/* Search / display input */}
+                                    <div className="relative">
+                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-amber-400 text-[18px] pointer-events-none">search</span>
+                                        <input
+                                            ref={dealerInputRef}
+                                            type="text"
+                                            placeholder="Search by dealer code or name…"
+                                            value={dealerSearch}
+                                            onFocus={() => setDealerDropdownOpen(true)}
+                                            onChange={e => {
+                                                setDealerSearch(e.target.value);
+                                                setDealerDropdownOpen(true);
+                                                // Clear selected dealer if user is modifying the text
+                                                if (dealerId) setDealerId('');
+                                            }}
+                                            className="w-full h-11 bg-white border border-amber-200 rounded-xl pl-9 pr-10 text-sm outline-none focus:ring-2 focus:ring-amber-200 placeholder-slate-400"
+                                        />
+                                        {/* Clear button */}
+                                        {dealerSearch && (
+                                            <button
+                                                type="button"
+                                                onClick={() => { setDealerSearch(''); setDealerId(''); dealerInputRef.current?.focus(); }}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                                tabIndex={-1}
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">close</span>
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Dropdown results */}
+                                    {dealerDropdownOpen && (
+                                        <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white border border-amber-100 rounded-xl shadow-lg max-h-52 overflow-y-auto">
+                                            {(() => {
+                                                const q = dealerSearch.toLowerCase().trim();
+                                                const filtered = dealers.filter(d =>
+                                                    !q ||
+                                                    d.dealer_code.toLowerCase().includes(q) ||
+                                                    d.name.toLowerCase().includes(q)
+                                                );
+                                                if (filtered.length === 0) return (
+                                                    <div className="px-4 py-3 text-sm text-slate-400 italic">
+                                                        No dealers match "{dealerSearch}".
+                                                        <a href="/admin/dealers" className="ml-1 underline font-semibold text-amber-600">Add one →</a>
+                                                    </div>
+                                                );
+                                                return filtered.map(d => (
+                                                    <button
+                                                        key={d.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setDealerId(d.id);
+                                                            setDealerSearch(`${d.dealer_code} — ${d.name}`);
+                                                            setDealerDropdownOpen(false);
+                                                        }}
+                                                        className={`w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 transition-colors flex items-center gap-3 ${
+                                                            dealerId === d.id ? 'bg-amber-50 font-semibold text-amber-800' : 'text-slate-700'
+                                                        }`}
+                                                    >
+                                                        <span className="font-mono text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold shrink-0">{d.dealer_code}</span>
+                                                        <span className="truncate">{d.name}</span>
+                                                        {dealerId === d.id && <span className="material-symbols-outlined text-amber-500 text-base ml-auto shrink-0">check_circle</span>}
+                                                    </button>
+                                                ));
+                                            })()}
+                                        </div>
+                                    )}
+                                </div>
+
                                 {dealers.length === 0 && (
                                     <p className="text-xs text-amber-600 mt-1">
                                         No active dealers found. <a href="/admin/dealers" className="underline font-semibold">Add a dealer first →</a>
@@ -845,7 +943,7 @@ const InventoryForm = () => {
                         <div>
                             <label className="text-sm font-medium text-slate-700 mb-1.5 block">Year</label>
                             <select value={form.year} onChange={e => set('year', Number(e.target.value))} className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm outline-none">
-                                {Array.from({ length: 15 }, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}
+                                {Array.from({ length: 51 }, (_, i) => 2030 - i).map(y => <option key={y} value={y}>{y}</option>)}
                             </select>
                         </div>
                         <div>

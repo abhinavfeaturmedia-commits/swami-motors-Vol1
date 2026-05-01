@@ -25,6 +25,7 @@ interface Lead {
     source: string;
     status: string;
     created_at: string;
+    lead_date: string | null;
     assigned_to: string | null;
     created_by: string | null;
     lead_quality?: string | null;
@@ -604,9 +605,12 @@ const AdminLeads = () => {
         const headers = ['Date', 'Name', 'Phone', 'Type', 'Status', 'Source', 'Assigned To'];
         const csvContent = [
             headers.join(','),
-            ...filteredAndSearchedLeads.map(l =>
-                `"${new Date(l.created_at).toLocaleDateString()}","${l.full_name}","${l.phone}","${l.type}","${l.status}","${l.source}","${getAssignedName(l.assigned_to)}"`
-            )
+            ...filteredAndSearchedLeads.map(l => {
+                const displayDate = l.lead_date
+                    ? new Date(l.lead_date + 'T00:00:00').toLocaleDateString()
+                    : new Date(l.created_at).toLocaleDateString();
+                return `"${displayDate}","${l.full_name}","${l.phone}","${l.type}","${l.status}","${l.source}","${getAssignedName(l.assigned_to)}"`;
+            })
         ].join('\n');
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -793,6 +797,25 @@ const AdminLeads = () => {
                 </div>
             </div>
 
+            {/* Staff Workload Dashboard */}
+            <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm">
+                <span className="material-symbols-outlined text-slate-400 text-sm">group</span>
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-2">Workload:</span>
+                {staffMembers.map(s => {
+                    const count = leads.filter(l => l.assigned_to === s.id).length;
+                    return (
+                        <div key={s.id} className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm cursor-pointer hover:border-primary transition-colors" onClick={() => { setActiveStaffFilter(s.id); setCurrentPage(1); setSelectedLeads([]); }} title={`Filter by ${s.full_name}`}>
+                            <span className="text-xs font-bold text-primary">{s.full_name || 'Unknown'}</span>
+                            <span className="text-[10px] font-black bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{count}</span>
+                        </div>
+                    );
+                })}
+                <div className="flex items-center gap-1.5 bg-white border border-red-100 rounded-lg px-2 py-1 shadow-sm cursor-pointer hover:border-red-300 transition-colors" onClick={() => { setActiveStaffFilter('Unassigned'); setCurrentPage(1); setSelectedLeads([]); }} title="Filter by Unassigned">
+                    <span className="text-xs font-bold text-red-600">Unassigned</span>
+                    <span className="text-[10px] font-black bg-red-50 text-red-600 px-1.5 py-0.5 rounded">{leads.filter(l => !l.assigned_to).length}</span>
+                </div>
+            </div>
+
             {/* Tabs & Bulk Actions */}
             <div className="flex flex-col gap-4 border-b border-slate-200 pb-2">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -918,10 +941,18 @@ const AdminLeads = () => {
                                             </td>
                                         )}
 
-                                        {/* Date */}
+                                        {/* Date — prefers admin-set lead_date, falls back to created_at */}
                                         <td className="px-5 py-4 text-sm text-slate-500 whitespace-nowrap">
-                                            {new Date(lead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}<br />
-                                            <span className="text-xs text-slate-400">{new Date(lead.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                                            {lead.lead_date
+                                                ? <>
+                                                    {new Date(lead.lead_date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}<br />
+                                                    <span className="text-xs text-slate-400">—</span>
+                                                  </>
+                                                : <>
+                                                    {new Date(lead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}<br />
+                                                    <span className="text-xs text-slate-400">{new Date(lead.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                  </>
+                                            }
                                         </td>
 
                                         {/* Customer */}

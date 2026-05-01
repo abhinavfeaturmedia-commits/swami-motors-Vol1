@@ -7,9 +7,8 @@ import { useAuth } from '../contexts/AuthContext';
 
 const TRUST_BADGES = [
     { icon: 'verified_user', title: '200-Point Check', desc: 'Certified Quality Standards' },
-    { icon: 'payments', title: 'Fixed Price', desc: 'No Haggling, Just Value' },
-    { icon: 'published_with_changes', title: '5-Day Return', desc: '100% Satisfaction Guarantee' },
-    { icon: 'gpp_good', title: '1-Year Warranty', desc: 'Comprehensive Peace of Mind' },
+    { icon: 'payments', title: 'Negotiable Price', desc: 'Best Value Deals' },
+    { icon: 'thumb_up', title: '100% Satisfaction Guarantee', desc: 'Comprehensive Peace of Mind' },
 ];
 
 interface Car {
@@ -197,7 +196,7 @@ const Home = () => {
             {/* Trust Badges */}
             <section className="py-14 bg-white border-b border-slate-100 w-full">
                 <div className="container-main">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                         {TRUST_BADGES.map(f => (
                             <div key={f.title} className="flex flex-col items-center text-center gap-3 group cursor-default">
                                 <div className="size-14 rounded-2xl bg-slate-50 flex items-center justify-center text-accent shadow-sm border border-slate-100 group-hover:bg-accent group-hover:text-primary transition-all duration-300">
