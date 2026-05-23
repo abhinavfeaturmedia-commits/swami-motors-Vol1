@@ -10,7 +10,7 @@ const formatCurrency = (val: number) => {
 };
 
 const PerformanceScorecard = () => {
-    const { leads, sales } = useData();
+    const { leads, sales, visits } = useData();
     const [period, setPeriod] = useState('This Month');
     const [profiles, setProfiles] = useState<any[]>([]);
 
@@ -26,6 +26,7 @@ const PerformanceScorecard = () => {
         const totalLeads = leads.length;
         const totalSalesVolume = sales.reduce((sum, s) => sum + Number(s.final_price), 0);
         const totalConversions = sales.length;
+        const globalApprovedVisits = visits.filter(v => v.status === 'approved').length;
 
         let rankedTeam = profiles.map(m => {
             // Find leads assigned to this user
@@ -36,6 +37,10 @@ const PerformanceScorecard = () => {
             // or we could accumulate the value of closed_won leads if they had a price.
             const memberRevenue = 0; 
 
+            // Visits metrics
+            const memberVisits = visits.filter(v => v.staff_id === m.id);
+            const memberApprovedVisits = memberVisits.filter(v => v.status === 'approved').length;
+
             return {
                 id: m.id,
                 name: m.full_name || 'Unnamed Team Member',
@@ -43,6 +48,8 @@ const PerformanceScorecard = () => {
                 avatar: (m.full_name || 'U').substring(0, 2).toUpperCase(),
                 leads: memberLeads.length,
                 conversions: memberConversions,
+                approvedVisits: memberApprovedVisits,
+                totalVisits: memberVisits.length,
                 revenueStr: formatCurrency(memberRevenue),
                 convRate: memberLeads.length > 0 ? Math.round((memberConversions / memberLeads.length) * 100) : 0,
                 rating: 0, // Placeholder
@@ -52,7 +59,7 @@ const PerformanceScorecard = () => {
 
         // Filter out profiles that are generic customers unless they have leads, meaning they act as a team member here.
         // Usually, you only want internal staff. 
-        rankedTeam = rankedTeam.filter(m => m.leads > 0 || m.role === 'admin');
+        rankedTeam = rankedTeam.filter(m => m.leads > 0 || m.role === 'admin' || m.totalVisits > 0);
 
         // Ensure real leaderboard sorting by conversions capability
         rankedTeam = rankedTeam.sort((a, b) => b.conversions - a.conversions);
@@ -61,9 +68,10 @@ const PerformanceScorecard = () => {
             team: rankedTeam.map((t, idx) => ({ ...t, rank: idx + 1 })),
             globalTotalLeads: totalLeads,
             globalTotalConversions: totalConversions,
-            globalTotalRevenue: formatCurrency(totalSalesVolume)
+            globalTotalRevenue: formatCurrency(totalSalesVolume),
+            globalApprovedVisits
         };
-    }, [leads, sales, period, profiles]);
+    }, [leads, sales, visits, period, profiles]);
 
     return (
         <div className="space-y-6">
@@ -81,12 +89,13 @@ const PerformanceScorecard = () => {
             </div>
 
             {/* Team Summary */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                 {[
                     { label: 'Active Team Size', value: kpis.team.length, icon: 'groups', color: 'bg-blue-500/10 text-blue-600' },
                     { label: 'Global Leads', value: kpis.globalTotalLeads, icon: 'person_search', color: 'bg-purple-500/10 text-purple-600' },
                     { label: 'Global Conversions', value: kpis.globalTotalConversions, icon: 'handshake', color: 'bg-green-500/10 text-green-600' },
                     { label: 'Global Revenue', value: kpis.globalTotalRevenue, icon: 'currency_rupee', color: 'bg-amber-500/10 text-amber-600' },
+                    { label: 'Approved Visits', value: kpis.globalApprovedVisits, icon: 'directions_walk', color: 'bg-emerald-500/10 text-emerald-600' },
                 ].map(s => (
                     <div key={s.label} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
                         <div className={`size-10 rounded-xl flex items-center justify-center ${s.color} mb-3`}><span className="material-symbols-outlined text-lg">{s.icon}</span></div>
@@ -113,6 +122,10 @@ const PerformanceScorecard = () => {
                                 <p className="text-lg font-black text-primary">{m.leads}</p>
                                 <p className="text-[9px] text-slate-400 font-medium">Leads</p>
                             </div>
+                            <div className="bg-slate-50 rounded-lg p-2 col-span-2 flex items-center justify-between px-3">
+                                <span className="text-[9px] text-slate-400 font-medium">Approved Visits</span>
+                                <span className="text-xs font-bold text-emerald-600">{m.approvedVisits} / {m.totalVisits}</span>
+                            </div>
                         </div>
                         <div className="mt-3 flex items-center justify-center gap-1 text-green-600">
                             <TrendingUp size={12} /><span className="text-xs font-bold">{m.trend}</span>
@@ -132,6 +145,7 @@ const PerformanceScorecard = () => {
                             <th className="text-left px-5 py-2.5 rounded-tl-xl">Rank</th>
                             <th className="text-left px-5 py-2.5">Team Member</th>
                             <th className="text-left px-5 py-2.5">Lead Alloc.</th>
+                            <th className="text-left px-5 py-2.5">Approved Visits</th>
                             <th className="text-left px-5 py-2.5">Closed Value</th>
                             <th className="text-left px-5 py-2.5">Conv. Win Rate</th>
                             <th className="text-left px-5 py-2.5">Revenue Slice</th>
@@ -140,7 +154,7 @@ const PerformanceScorecard = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {kpis.team.length === 0 && <tr><td colSpan={8} className="text-center p-8 text-slate-400">No active leads or sales.</td></tr>}
+                        {kpis.team.length === 0 && <tr><td colSpan={9} className="text-center p-8 text-slate-400">No active leads or sales.</td></tr>}
                         {kpis.team.map(m => (
                             <tr key={m.name} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
                                 <td className="px-5 py-3.5 border-r border-slate-50">
@@ -153,6 +167,7 @@ const PerformanceScorecard = () => {
                                     </div>
                                 </td>
                                 <td className="px-5 py-3.5 text-sm font-semibold text-primary">{m.leads}</td>
+                                <td className="px-5 py-3.5 text-sm font-semibold text-emerald-600 bg-emerald-50/20">{m.approvedVisits} / {m.totalVisits}</td>
                                 <td className="px-5 py-3.5 text-sm font-semibold text-primary">{m.conversions} Deals</td>
                                 <td className="px-5 py-3.5 text-sm text-slate-600 bg-blue-50/30">{m.convRate}%</td>
                                 <td className="px-5 py-3.5 text-sm font-bold text-green-700 bg-green-50/30">{m.revenueStr}</td>

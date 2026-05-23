@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Check } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const SPECS = [
     { icon: 'speed', label: 'Odometer', key: 'mileage', suffix: ' km' },
@@ -44,7 +45,109 @@ const CarDetails = () => {
     const [car, setCar] = useState<CarData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
+    
+    // Gallery States & Refs
     const [selectedImg, setSelectedImg] = useState(0);
+    const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+    const [lightboxZoom, setLightboxZoom] = useState(false);
+    const [zoomStyle, setZoomStyle] = useState<React.CSSProperties>({ transformOrigin: 'center' });
+    const [isHovered, setIsHovered] = useState(false);
+    const thumbnailRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+    // Lightbox Swipe State
+    const [touchStart, setTouchStart] = useState<number | null>(null);
+    const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
+    // Hover Zoom Handlers
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+        const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+        const x = ((e.clientX - left) / width) * 100;
+        const y = ((e.clientY - top) / height) * 100;
+        setZoomStyle({
+            transformOrigin: `${x}% ${y}%`,
+            transform: 'scale(1.8)',
+        });
+    };
+
+    const handleMouseLeave = () => {
+        setIsHovered(false);
+        setZoomStyle({
+            transformOrigin: 'center',
+            transform: 'scale(1)',
+        });
+    };
+
+    const handleMouseEnter = () => {
+        setIsHovered(true);
+    };
+
+    // Navigation controls
+    const nextImage = (e?: React.MouseEvent) => {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        if (!car || !car.images) return;
+        setSelectedImg(prev => (prev + 1) % car.images.length);
+    };
+
+    const prevImage = (e?: React.MouseEvent) => {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        if (!car || !car.images) return;
+        setSelectedImg(prev => (prev - 1 + car.images.length) % car.images.length);
+    };
+
+    // Keyboard navigation
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (isLightboxOpen) {
+                if (e.key === 'ArrowRight') nextImage();
+                if (e.key === 'ArrowLeft') prevImage();
+                if (e.key === 'Escape') {
+                    setIsLightboxOpen(false);
+                    setLightboxZoom(false);
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isLightboxOpen, car]);
+
+    // Active Thumbnail Auto-scroll
+    useEffect(() => {
+        if (thumbnailRefs.current[selectedImg]) {
+            thumbnailRefs.current[selectedImg]?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest',
+                inline: 'center',
+            });
+        }
+    }, [selectedImg]);
+
+    // Lightbox Swipe Handlers
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (lightboxZoom) return; // Disable swipe when zoomed in
+        setTouchStart(e.targetTouches[0].clientX);
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (lightboxZoom) return;
+        setTouchEnd(e.targetTouches[0].clientX);
+    };
+
+    const handleTouchEnd = () => {
+        if (lightboxZoom || !touchStart || !touchEnd) return;
+        const distance = touchStart - touchEnd;
+        const isSwipeLeft = distance > 50;
+        const isSwipeRight = distance < -50;
+        if (isSwipeLeft) nextImage();
+        if (isSwipeRight) prevImage();
+        setTouchStart(null);
+        setTouchEnd(null);
+    };
 
     useEffect(() => {
         const fetchCar = async () => {
@@ -93,10 +196,33 @@ const CarDetails = () => {
             <div className="grid lg:grid-cols-3 gap-8">
                 {/* Left: Images */}
                 <div className="lg:col-span-2 space-y-6">
-                    {/* Main Image */}
-                    <div className="relative rounded-2xl overflow-hidden bg-slate-100 aspect-[16/10]">
-                        <img src={mainImage} alt={`${car.year} ${car.make} ${car.model}`} className="w-full h-full object-cover" />
-                        <div className="absolute top-4 left-4 flex gap-2">
+                    {/* Main Image Container */}
+                    <div 
+                        className="relative rounded-2xl overflow-hidden bg-slate-100 aspect-[16/10] cursor-zoom-in group/main"
+                        onMouseMove={handleMouseMove}
+                        onMouseEnter={handleMouseEnter}
+                        onMouseLeave={handleMouseLeave}
+                        onClick={() => setIsLightboxOpen(true)}
+                    >
+                        {/* AnimatePresence for transitions */}
+                        <div className="w-full h-full overflow-hidden select-none">
+                            <AnimatePresence mode="wait">
+                                <motion.img
+                                    key={selectedImg}
+                                    src={mainImage}
+                                    alt={`${car.year} ${car.make} ${car.model}`}
+                                    style={isHovered ? zoomStyle : undefined}
+                                    className="w-full h-full object-cover transition-transform duration-100"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.25 }}
+                                />
+                            </AnimatePresence>
+                        </div>
+
+                        {/* Top Badges */}
+                        <div className="absolute top-4 left-4 flex gap-2 z-10 pointer-events-none">
                             {car.condition === 'Excellent' && (
                                 <span className="bg-primary text-white text-[10px] font-bold px-3 py-1.5 rounded-lg uppercase tracking-wider backdrop-blur-md">Certified</span>
                             )}
@@ -104,13 +230,49 @@ const CarDetails = () => {
                                 <span className="bg-amber-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg uppercase tracking-wider backdrop-blur-md">Reserved</span>
                             )}
                         </div>
+
+                        {/* Hover Overlay Zoom Indicator */}
+                        <div className="absolute top-4 right-4 bg-black/60 text-white p-2 rounded-xl backdrop-blur-sm opacity-0 group-hover/main:opacity-100 transition-opacity z-10 hover:bg-black/80 flex items-center gap-1.5 text-xs font-bold shadow-md">
+                            <Maximize2 size={14} />
+                            <span>Zoom</span>
+                        </div>
+
+                        {/* Floating Navigation Chevrons */}
+                        {thumbnails.length > 1 && (
+                            <>
+                                <button 
+                                    onClick={prevImage}
+                                    className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/95 text-primary hover:bg-white hover:scale-105 active:scale-95 transition-all p-2.5 rounded-full shadow-lg z-10 opacity-0 group-hover/main:opacity-100 sm:opacity-100 flex items-center justify-center border border-slate-100"
+                                    aria-label="Previous image"
+                                >
+                                    <ChevronLeft size={20} strokeWidth={2.5} />
+                                </button>
+                                <button 
+                                    onClick={nextImage}
+                                    className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/95 text-primary hover:bg-white hover:scale-105 active:scale-95 transition-all p-2.5 rounded-full shadow-lg z-10 opacity-0 group-hover/main:opacity-100 sm:opacity-100 flex items-center justify-center border border-slate-100"
+                                    aria-label="Next image"
+                                >
+                                    <ChevronRight size={20} strokeWidth={2.5} />
+                                </button>
+                            </>
+                        )}
+
+                        {/* Current Image Index Badge */}
+                        <div className="absolute bottom-4 right-4 bg-black/60 text-white text-xs font-bold px-3 py-1.5 rounded-full backdrop-blur-sm z-10 select-none tracking-wide">
+                            {selectedImg + 1} / {thumbnails.length}
+                        </div>
                     </div>
 
                     {/* Thumbnails */}
                     {thumbnails.length > 1 && (
-                        <div className="flex gap-3 overflow-x-auto pb-2">
+                        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
                             {thumbnails.map((img, i) => (
-                                <button key={i} onClick={() => setSelectedImg(i)} className={`shrink-0 w-24 h-16 sm:w-28 sm:h-20 rounded-xl overflow-hidden border-2 transition-all ${i === selectedImg ? 'border-accent shadow-md' : 'border-slate-200 opacity-60 hover:opacity-100'}`}>
+                                <button 
+                                    key={i} 
+                                    ref={el => { thumbnailRefs.current[i] = el; }}
+                                    onClick={() => setSelectedImg(i)} 
+                                    className={`shrink-0 w-24 h-16 sm:w-28 sm:h-20 rounded-xl overflow-hidden border-2 transition-all duration-300 ${i === selectedImg ? 'border-accent shadow-md scale-[0.98]' : 'border-slate-200 opacity-60 hover:opacity-100'}`}
+                                >
                                     <img src={getPrimaryImage([img])} alt="" className="w-full h-full object-cover" />
                                 </button>
                             ))}
@@ -263,6 +425,99 @@ const CarDetails = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Lightbox Modal Portal */}
+            <AnimatePresence>
+                {isLightboxOpen && (
+                    <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="fixed inset-0 bg-black/95 z-[100] flex flex-col justify-between p-4 md:p-6"
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
+                    >
+                        {/* Lightbox Header */}
+                        <div className="flex items-center justify-between text-white z-10 w-full">
+                            <span className="text-sm font-semibold tracking-wide select-none">
+                                {car.year} {car.make} {car.model} &bull; {selectedImg + 1} / {thumbnails.length}
+                            </span>
+                            <div className="flex items-center gap-4">
+                                <button 
+                                    onClick={() => setLightboxZoom(p => !p)} 
+                                    className="p-2 bg-white/10 hover:bg-white/20 transition-colors rounded-full"
+                                    title={lightboxZoom ? "Zoom Out" : "Zoom In"}
+                                >
+                                    {lightboxZoom ? <ZoomOut size={20} /> : <ZoomIn size={20} />}
+                                </button>
+                                <button 
+                                    onClick={() => { setIsLightboxOpen(false); setLightboxZoom(false); }} 
+                                    className="p-2 bg-white/10 hover:bg-white/20 transition-colors rounded-full"
+                                    title="Close Lightbox"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Lightbox Main Image */}
+                        <div className="flex-1 flex items-center justify-center relative overflow-hidden my-4 max-h-[75vh]">
+                            {/* Chevrons inside lightbox (only shown if not zoomed in) */}
+                            {!lightboxZoom && thumbnails.length > 1 && (
+                                <>
+                                    <button 
+                                        onClick={prevImage}
+                                        className="absolute left-2 md:left-6 bg-white/10 hover:bg-white/20 text-white transition-all p-3 rounded-full z-10 flex items-center justify-center border border-white/5 active:scale-95"
+                                    >
+                                        <ChevronLeft size={24} strokeWidth={2.5} />
+                                    </button>
+                                    <button 
+                                        onClick={nextImage}
+                                        className="absolute right-2 md:right-6 bg-white/10 hover:bg-white/20 text-white transition-all p-3 rounded-full z-10 flex items-center justify-center border border-white/5 active:scale-95"
+                                    >
+                                        <ChevronRight size={24} strokeWidth={2.5} />
+                                    </button>
+                                </>
+                            )}
+
+                            <AnimatePresence mode="wait">
+                                <motion.img
+                                    key={selectedImg}
+                                    src={mainImage}
+                                    alt=""
+                                    initial={{ scale: 0.95, opacity: 0 }}
+                                    animate={{ scale: lightboxZoom ? 2.0 : 1, opacity: 1 }}
+                                    exit={{ scale: 0.95, opacity: 0 }}
+                                    transition={{ type: 'spring', damping: 25, stiffness: 200, duration: 0.2 }}
+                                    onClick={() => setLightboxZoom(p => !p)}
+                                    className={`max-w-full max-h-full object-contain transition-all duration-300 ${
+                                        lightboxZoom ? 'cursor-zoom-out' : 'cursor-zoom-in'
+                                    }`}
+                                />
+                            </AnimatePresence>
+                        </div>
+
+                        {/* Lightbox Thumbnails */}
+                        {thumbnails.length > 1 && (
+                            <div className="flex gap-2.5 overflow-x-auto justify-center py-2 max-w-4xl mx-auto z-10 select-none scrollbar-thin">
+                                {thumbnails.map((img, i) => (
+                                    <button 
+                                        key={`light-${i}`} 
+                                        onClick={() => setSelectedImg(i)} 
+                                        className={`shrink-0 w-16 h-12 md:w-20 md:h-14 rounded-lg overflow-hidden border-2 transition-all ${
+                                            i === selectedImg ? 'border-accent shadow-lg scale-[0.98]' : 'border-white/20 opacity-50 hover:opacity-100'
+                                        }`}
+                                    >
+                                        <img src={getPrimaryImage([img])} alt="" className="w-full h-full object-cover" />
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

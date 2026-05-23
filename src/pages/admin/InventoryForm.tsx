@@ -5,7 +5,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import imageCompression from 'browser-image-compression';
 
-const MAKES = ['Maruti Suzuki', 'Hyundai', 'Tata', 'Honda', 'Toyota', 'Kia', 'MG', 'Mahindra', 'Volkswagen', 'Skoda', 'Renault', 'Nissan', 'Ford', 'Jeep', 'Mercedes-Benz', 'BMW', 'Audi', 'Other'];
+const MAKES = [
+    'Maruti Suzuki', 'Hyundai', 'Tata', 'Honda', 'Toyota', 'Kia', 'MG', 'Mahindra', 
+    'Volkswagen', 'Skoda', 'Renault', 'Nissan', 'Ford', 'Jeep', 'Mercedes-Benz', 
+    'BMW', 'Audi', 'Citroën', 'BYD', 'Volvo', 'Land Rover', 'Jaguar', 'Lexus', 
+    'Porsche', 'Mini', 'Force Motors', 'Isuzu', 'Datsun', 'Chevrolet', 'Fiat', 
+    'Mitsubishi', 'Lamborghini', 'Ferrari', 'Bentley', 'Rolls-Royce', 'Ashok Leyland', 'Other'
+];
 
 interface Dealer {
     id: string;
@@ -250,6 +256,29 @@ const InventoryForm = () => {
             'mercedes': 'Mercedes-Benz',
             'bmw': 'BMW',
             'audi': 'Audi',
+            'citroen': 'Citroën',
+            'citroën': 'Citroën',
+            'byd': 'BYD',
+            'volvo': 'Volvo',
+            'land rover': 'Land Rover',
+            'jaguar': 'Jaguar',
+            'lexus': 'Lexus',
+            'porsche': 'Porsche',
+            'mini': 'Mini',
+            'force': 'Force Motors',
+            'isuzu': 'Isuzu',
+            'datsun': 'Datsun',
+            'chevrolet': 'Chevrolet',
+            'chevy': 'Chevrolet',
+            'fiat': 'Fiat',
+            'mitsubishi': 'Mitsubishi',
+            'lamborghini': 'Lamborghini',
+            'ferrari': 'Ferrari',
+            'bentley': 'Bentley',
+            'rolls royce': 'Rolls-Royce',
+            'rolls-royce': 'Rolls-Royce',
+            'ashok leyland': 'Ashok Leyland',
+            'leyland': 'Ashok Leyland',
         };
         const sortedAliases = Object.keys(makeAliases).sort((a, b) => b.length - a.length);
         for (const alias of sortedAliases) {
@@ -278,10 +307,29 @@ const InventoryForm = () => {
             'Mercedes-Benz': ['GLE', 'GLS', 'GLC', 'C-Class', 'E-Class', 'S-Class', 'A-Class'],
             'BMW': ['X1', 'X3', 'X5', '3 Series', '5 Series', '7 Series'],
             'Audi': ['A4', 'A6', 'Q3', 'Q5', 'Q7'],
+            'Citroën': ['C3', 'eC3', 'C3 Aircross', 'C5 Aircross'],
+            'BYD': ['Atto 3', 'Seal', 'e6'],
+            'Volvo': ['XC40', 'XC60', 'XC90', 'S90', 'C40'],
+            'Land Rover': ['Defender', 'Range Rover', 'Discovery', 'Evoque', 'Velar'],
+            'Jaguar': ['F-Pace', 'I-Pace', 'XF'],
+            'Lexus': ['ES', 'RX', 'NX', 'LX'],
+            'Porsche': ['Cayenne', 'Macan', 'Panamera', '911', 'Taycan'],
+            'Mini': ['Cooper', 'Countryman'],
+            'Force Motors': ['Gurkha'],
+            'Isuzu': ['D-Max', 'V-Cross', 'MU-X'],
+            'Datsun': ['Go', 'Go+', 'Redi-Go'],
+            'Chevrolet': ['Beat', 'Cruze', 'Sail', 'Tavera', 'Spark', 'Captiva'],
+            'Fiat': ['Punto', 'Linea', 'Avventura', 'Palio'],
+            'Mitsubishi': ['Pajero', 'Lancer', 'Outlander', 'Montero'],
+            'Lamborghini': ['Urus', 'Huracan', 'Aventador'],
+            'Ferrari': ['Roma', '296 GTB', 'Portofino', 'F8 Tributo'],
+            'Bentley': ['Continental GT', 'Flying Spur', 'Bentayga'],
+            'Rolls-Royce': ['Ghost', 'Phantom', 'Cullinan'],
+            'Ashok Leyland': ['Dost', 'Stile', 'Bada Dost'],
         };
 
         const noiseWords = new Set([
-            'petrol', 'diesel', 'cng', 'electric', 'ev', 'hybrid', 'owner', 'ownership',
+            'petrol', 'diesel', 'cng', 'lpg', 'electric', 'ev', 'hybrid', 'owner', 'ownership',
             'price', 'km', 'kms', 'rs', 'inr', 'lakh', 'negotiable', 'nigotiable',
             'insurance', 'inssurance', 'driven', 'running', 'genuine', 'condition',
             'single', 'double', 'key', 'keys', 'contact', 'registration', 'model',
@@ -376,13 +424,18 @@ const InventoryForm = () => {
         }
 
         // ── 7. Fuel Type ──────────────────────────────────────────────────────
-        // "Petrol + company CNG" → CNG | "Pure petrol" → Petrol
+        // Handles combinations like: "Petrol + CNG", "Petrol + Electric", "Petrol + LPG"
         const hasCNG = /\bcng\b/i.test(fullText);
         const hasPetrol = /\bpetrol\b/i.test(fullText);
         const hasDiesel = /\bdiesel\b/i.test(fullText);
         const hasElectric = /\belectric\b|\bev\b/i.test(fullText);
         const hasHybrid = /\bhybrid\b/i.test(fullText);
-        if (hasCNG) data.fuel_type = 'CNG';
+        const hasLPG = /\blpg\b/i.test(fullText);
+
+        if (hasPetrol && hasCNG) data.fuel_type = 'Petrol + CNG';
+        else if (hasPetrol && hasElectric) data.fuel_type = 'Petrol + Electric';
+        else if (hasPetrol && hasLPG) data.fuel_type = 'Petrol + LPG';
+        else if (hasCNG) data.fuel_type = 'CNG';
         else if (hasDiesel) data.fuel_type = 'Diesel';
         else if (hasElectric) data.fuel_type = 'Electric';
         else if (hasHybrid) data.fuel_type = 'Hybrid';
@@ -986,7 +1039,7 @@ const InventoryForm = () => {
                         <div>
                             <label className="text-sm font-medium text-slate-700 mb-1.5 block">Fuel Type</label>
                             <select value={form.fuel_type} onChange={e => set('fuel_type', e.target.value)} className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm outline-none">
-                                {['Petrol', 'Diesel', 'CNG', 'Electric', 'Hybrid'].map(f => <option key={f}>{f}</option>)}
+                                {['Petrol', 'Diesel', 'CNG', 'Electric', 'Hybrid', 'Petrol + CNG', 'Petrol + Electric', 'Petrol + LPG'].map(f => <option key={f}>{f}</option>)}
                             </select>
                         </div>
                         <div>

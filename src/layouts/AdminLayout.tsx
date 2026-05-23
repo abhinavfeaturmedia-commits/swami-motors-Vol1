@@ -50,6 +50,7 @@ const NAV_GROUPS: NavGroup[] = [
         items: [
             { name: 'Customers', href: '/admin/customers', icon: 'contacts', module: 'crm' },
             { name: 'Follow-Ups', href: '/admin/follow-ups', icon: 'notifications_active', module: 'crm' },
+            { name: 'Visits', href: '/admin/visits', icon: 'directions_walk', module: 'crm' },
             { name: 'Lead Sources', href: '/admin/lead-sources', icon: 'hub', module: 'crm' },
         ],
     },

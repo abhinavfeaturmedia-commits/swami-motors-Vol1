@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   price           NUMERIC(12,2) NOT NULL,
   original_price  NUMERIC(12,2),
   mileage         INT,
-  fuel_type       TEXT CHECK (fuel_type IN ('Petrol', 'Diesel', 'Electric', 'Hybrid', 'CNG')),
+  fuel_type       TEXT CHECK (fuel_type IN ('Petrol', 'Diesel', 'Electric', 'Hybrid', 'CNG', 'Petrol + CNG', 'Petrol + Electric', 'Petrol + LPG')),
   transmission    TEXT CHECK (transmission IN ('Manual', 'Automatic', 'CVT')),
   color           TEXT,
   body_type       TEXT,

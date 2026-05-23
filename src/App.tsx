@@ -40,6 +40,7 @@ import PerformanceScorecard from './pages/admin/PerformanceScorecard';
 import Customers from './pages/admin/Customers';
 import FollowUps from './pages/admin/FollowUps';
 import LeadSources from './pages/admin/LeadSources';
+import Visits from './pages/admin/Visits';
 
 // Admin — Operations
 import VehicleInspection from './pages/admin/VehicleInspection';
@@ -94,7 +95,6 @@ const App: React.FC = () => {
                         <Route path="book-test-drive" element={<BookTestDrive />} />
                         <Route path="services" element={<ServiceBooking />} />
                         <Route path="about" element={<About />} />
-                        <Route path="*" element={<NotFound />} />
                     </Route>
 
                     {/* Admin Login — standalone, no sidebar */}
@@ -123,6 +123,7 @@ const App: React.FC = () => {
                         {/* CRM */}
                         <Route path="customers" element={<ModuleRoute module="crm"><Customers /></ModuleRoute>} />
                         <Route path="follow-ups" element={<ModuleRoute module="crm"><FollowUps /></ModuleRoute>} />
+                        <Route path="visits" element={<ModuleRoute module="crm"><Visits /></ModuleRoute>} />
                         <Route path="lead-sources" element={<ModuleRoute module="crm"><LeadSources /></ModuleRoute>} />
 
                         {/* Operations */}
@@ -154,6 +155,11 @@ const App: React.FC = () => {
                         {/* Incentives */}
                         <Route path="incentives" element={<ModuleRoute module="incentives"><Incentives /></ModuleRoute>} />
                         <Route path="my-incentives" element={<ModuleRoute module="incentives"><StaffIncentivesView /></ModuleRoute>} />
+                    </Route>
+
+                    {/* Fallcard Fallback Route */}
+                    <Route element={<PublicLayout />}>
+                        <Route path="*" element={<NotFound />} />
                     </Route>
                 </Routes>
             </BrowserRouter>

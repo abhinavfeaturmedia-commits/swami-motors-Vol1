@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { toWhatsAppUrl } from '../../lib/utils';
 
 // ─── Follow-Up Types ──────────────────────────────────────────────────────────
@@ -130,6 +131,7 @@ const LeadDetail = () => {
     const navigate = useNavigate();
     const { inventory, activities, refreshData } = useData();
     const { profile } = useAuth();
+    const { addNotification } = useNotifications();
     
     const [lead, setLead] = useState<Lead | null>(null);
     const [loading, setLoading] = useState(true);
@@ -139,6 +141,37 @@ const LeadDetail = () => {
     
     const [isEditing, setIsEditing] = useState(false);
     const [editForm, setEditForm] = useState<Partial<Lead>>({});
+
+    // ─── Visits State ──────────────────────────────────────────────────────────
+    interface Visit {
+        id: string;
+        lead_id: string | null;
+        customer_id: string | null;
+        staff_id: string;
+        visit_date: string;
+        purpose: string;
+        location: string | null;
+        notes: string | null;
+        outcome: 'successful' | 'unsuccessful' | 'pending';
+        status: 'pending_approval' | 'approved' | 'rejected';
+        approved_by: string | null;
+        approved_at: string | null;
+        admin_remarks: string | null;
+        created_at: string;
+        staff?: { full_name: string | null } | null;
+    }
+
+    const [visits, setVisits] = useState<Visit[]>([]);
+    const [visitsLoading, setVisitsLoading] = useState(false);
+    const [isLoggingVisit, setIsLoggingVisit] = useState(false);
+    const [visitForm, setVisitForm] = useState({
+        visit_date: new Date().toISOString().slice(0, 10),
+        purpose: 'Test Drive',
+        location: '',
+        outcome: 'successful' as 'successful' | 'unsuccessful',
+        notes: '',
+    });
+    const [visitSaving, setVisitSaving] = useState(false);
 
     // Conversion State
     const [isConverting, setIsConverting] = useState(false);
@@ -265,6 +298,94 @@ const LeadDetail = () => {
             converted: 'Converted',
         };
         return map[val] || val;
+    };
+
+    const fetchVisits = useCallback(async () => {
+        if (!id) return;
+        setVisitsLoading(true);
+        const { data, error } = await supabase
+            .from('visits')
+            .select('*, staff:profiles!staff_id(full_name)')
+            .eq('lead_id', id)
+            .order('visit_date', { ascending: false });
+        if (!error && data) setVisits(data as Visit[]);
+        setVisitsLoading(false);
+    }, [id]);
+
+    const handleLogVisit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (visitSaving) return;
+        setVisitSaving(true);
+
+        const payload = {
+            lead_id: id,
+            customer_id: null,
+            staff_id: profile?.id,
+            visit_date: visitForm.visit_date,
+            purpose: visitForm.purpose,
+            location: visitForm.location.trim() || null,
+            notes: visitForm.notes.trim() || null,
+            outcome: visitForm.outcome,
+            status: visitForm.outcome === 'successful' ? 'pending_approval' : 'approved',
+        };
+
+        try {
+            const { data, error } = await supabase.from('visits').insert(payload).select().single();
+            if (!error && data) {
+                // Log activity to lead timeline
+                await supabase.from('lead_activities').insert({
+                    lead_id: id,
+                    activity_type: 'note',
+                    notes: `Visit logged on ${new Date(visitForm.visit_date).toLocaleDateString('en-IN')}: ${visitForm.purpose} was logged as ${visitForm.outcome === 'successful' ? 'Successful (Awaiting admin approval)' : 'Unsuccessful'}.${visitForm.notes ? ' Notes: ' + visitForm.notes : ''}`,
+                    created_by: profile?.id ?? null,
+                });
+
+                // If outcome is successful, notify admins
+                if (visitForm.outcome === 'successful') {
+                    const targetName = lead?.full_name || 'Client';
+                    await addNotification({
+                        type: 'visit_logged',
+                        category: 'critical',
+                        priority: 2,
+                        icon: 'notifications_active',
+                        color: 'amber',
+                        title: `🔔 Visit Approval Required`,
+                        message: `${profile?.full_name || 'Staff'} logged a successful visit for ${targetName} (${visitForm.purpose}).`,
+                        action_url: `/admin/visits`,
+                        action_label: 'View Visits Queue',
+                        related_entity_type: 'visit',
+                        related_entity_id: data.id,
+                        assigned_to_user_id: null,
+                        dedup_key: `visit_approval_required_${data.id}`,
+                        metadata: {
+                            visit_id: data.id,
+                            staff_name: profile?.full_name || 'Staff',
+                            lead_name: targetName
+                        },
+                        is_read: false,
+                        is_dismissed: false
+                    });
+                }
+
+                setVisitForm({
+                    visit_date: new Date().toISOString().slice(0, 10),
+                    purpose: 'Test Drive',
+                    location: '',
+                    outcome: 'successful',
+                    notes: '',
+                });
+                setIsLoggingVisit(false);
+                fetchVisits();
+                refreshData();
+            } else {
+                throw error;
+            }
+        } catch (err: any) {
+            console.error('Failed to log visit:', err);
+            alert('Failed to log visit: ' + (err?.message || 'Please try again.'));
+        } finally {
+            setVisitSaving(false);
+        }
     };
 
     const outcomeColor = (val: string | null) => {
@@ -395,8 +516,9 @@ const LeadDetail = () => {
             fetchFollowUps();
             fetchCarInterests();
             fetchStaff();
+            fetchVisits();
         }
-    }, [id, fetchFollowUps, fetchCarInterests, fetchStaff]);
+    }, [id, fetchFollowUps, fetchCarInterests, fetchStaff, fetchVisits]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1584,6 +1706,180 @@ const LeadDetail = () => {
                                     </div>
                                 );
                             })()}
+                        </div>
+
+                        {/* ── Visits Log Panel ────────────────────────── */}
+                        <div className="bg-white border border-slate-100 rounded-2xl shadow-[var(--shadow-card)] overflow-hidden">
+                            {/* Header */}
+                            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/60">
+                                <div className="flex items-center gap-2">
+                                    <div className="size-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                                        <span className="material-symbols-outlined text-emerald-600 text-[18px]">directions_walk</span>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-primary text-sm leading-none">Customer Visits</h4>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">{visits.length} visit{visits.length !== 1 ? 's' : ''} logged</p>
+                                    </div>
+                                </div>
+                                {canEdit && (
+                                    <button
+                                        onClick={() => setIsLoggingVisit(v => !v)}
+                                        className={`flex items-center gap-1 h-8 px-3 rounded-lg text-xs font-bold transition-all ${
+                                            isLoggingVisit
+                                                ? 'bg-slate-200 text-slate-600'
+                                                : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-sm'
+                                        }`}
+                                    >
+                                        <span className="material-symbols-outlined text-sm">{isLoggingVisit ? 'close' : 'add'}</span>
+                                        {isLoggingVisit ? 'Cancel' : 'Log Visit'}
+                                    </button>
+                                )}
+                            </div>
+
+                            {isLoggingVisit && (
+                                <form onSubmit={handleLogVisit} className="p-4 border-b border-slate-100 bg-slate-50/30 space-y-3">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Visit Date</label>
+                                        <input
+                                            required
+                                            type="date"
+                                            value={visitForm.visit_date}
+                                            onChange={e => setVisitForm({ ...visitForm, visit_date: e.target.value })}
+                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs outline-none focus:border-emerald-400 bg-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Purpose</label>
+                                        <select
+                                            value={visitForm.purpose}
+                                            onChange={e => setVisitForm({ ...visitForm, purpose: e.target.value })}
+                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs outline-none focus:border-emerald-400 bg-white"
+                                        >
+                                            <option value="Test Drive">Test Drive</option>
+                                            <option value="Valuation">Valuation</option>
+                                            <option value="Document Collection">Document Collection</option>
+                                            <option value="Showroom Visit">Showroom Visit</option>
+                                            <option value="General Check-in">General Check-in</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Location</label>
+                                        <input
+                                            type="text"
+                                            placeholder="Showroom, Customer Home, etc."
+                                            value={visitForm.location}
+                                            onChange={e => setVisitForm({ ...visitForm, location: e.target.value })}
+                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs outline-none focus:border-emerald-400 bg-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Outcome</label>
+                                        <div className="flex gap-4 py-1">
+                                            <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="visit_outcome"
+                                                    checked={visitForm.outcome === 'successful'}
+                                                    onChange={() => setVisitForm({ ...visitForm, outcome: 'successful' })}
+                                                    className="accent-emerald-600"
+                                                />
+                                                Successful (Requires Approval)
+                                            </label>
+                                            <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="visit_outcome"
+                                                    checked={visitForm.outcome === 'unsuccessful'}
+                                                    onChange={() => setVisitForm({ ...visitForm, outcome: 'unsuccessful' })}
+                                                    className="accent-slate-600"
+                                                />
+                                                Unsuccessful
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Notes / Remarks</label>
+                                        <textarea
+                                            placeholder="Any specific feedback or details..."
+                                            value={visitForm.notes}
+                                            onChange={e => setVisitForm({ ...visitForm, notes: e.target.value })}
+                                            rows={2}
+                                            className="w-full border border-slate-200 rounded-lg p-3 text-xs outline-none focus:border-emerald-400 bg-white"
+                                        />
+                                    </div>
+                                    <button
+                                        type="submit"
+                                        disabled={visitSaving}
+                                        className="w-full h-9 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-500 transition shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                    >
+                                        {visitSaving ? (
+                                            <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Saving...</>
+                                        ) : (
+                                            <><span className="material-symbols-outlined text-sm">save</span> Log Visit</>
+                                        )}
+                                    </button>
+                                </form>
+                            )}
+
+                            {/* Visits History List */}
+                            <div className="divide-y divide-slate-50 max-h-[360px] overflow-y-auto">
+                                {visitsLoading ? (
+                                    <div className="py-6 text-center text-xs text-slate-400">Loading...</div>
+                                ) : visits.length === 0 ? (
+                                    <div className="py-8 text-center">
+                                        <span className="material-symbols-outlined text-3xl text-slate-200 block mb-1">directions_walk</span>
+                                        <p className="text-xs text-slate-400">No visits logged yet.</p>
+                                        <p className="text-[10px] text-slate-300 mt-0.5">Click "Log Visit" to record customer face-to-face interaction.</p>
+                                    </div>
+                                ) : visits.map(v => (
+                                    <div key={v.id} className="px-4 py-3 flex items-start gap-3 hover:bg-slate-50/60 transition-colors">
+                                        <div className={`size-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                                            v.outcome === 'unsuccessful' ? 'bg-slate-100 text-slate-400' :
+                                            v.status === 'approved' ? 'bg-green-100 text-green-600' :
+                                            v.status === 'rejected' ? 'bg-red-100 text-red-600' :
+                                            'bg-amber-100 text-amber-600'
+                                        }`}>
+                                            <span className="material-symbols-outlined text-[16px]">
+                                                {v.outcome === 'unsuccessful' ? 'close' :
+                                                 v.status === 'approved' ? 'check_circle' :
+                                                 v.status === 'rejected' ? 'cancel' : 'pending'}
+                                            </span>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                                                <span className="text-xs font-bold text-primary">{v.purpose}</span>
+                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                                    v.outcome === 'unsuccessful' ? 'bg-slate-100 text-slate-500' :
+                                                    v.status === 'approved' ? 'bg-green-100 text-green-700' :
+                                                    v.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                                    'bg-amber-100 text-amber-700'
+                                                }`}>
+                                                    {v.outcome === 'unsuccessful' ? 'Unsuccessful' :
+                                                     v.status === 'approved' ? 'Approved' :
+                                                     v.status === 'rejected' ? 'Rejected' : 'Pending Approval'}
+                                                </span>
+                                            </div>
+                                            {v.location && (
+                                                <p className="text-[10px] text-slate-400 flex items-center gap-0.5">
+                                                    <span className="material-symbols-outlined text-[10px]">location_on</span>
+                                                    {v.location}
+                                                </p>
+                                            )}
+                                            {v.notes && <p className="text-[11px] text-slate-500 mt-1">{v.notes}</p>}
+                                            {v.admin_remarks && (
+                                                <p className="text-[10px] text-slate-500 bg-slate-50 border border-slate-100 rounded px-2 py-1 mt-1">
+                                                    <span className="font-semibold text-primary">Admin: </span>{v.admin_remarks}
+                                                </p>
+                                            )}
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <span className="text-[10px] text-slate-400">
+                                                    By {v.staff?.full_name || 'Staff'} • {new Date(v.visit_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
                         {/* Add Task Module (kept for reminders) */}

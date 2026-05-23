@@ -243,7 +243,7 @@ const AdminInventory = () => {
                                 <div className="max-h-60 overflow-y-auto py-1">
                                     {(() => {
                                         const q = dealerFilterSearch.toLowerCase().trim();
-                                        const options = [
+                                        const options: Array<{ id: string; label: string; type: string; code?: string; name?: string }> = [
                                             { id: 'all', label: 'All Sources', type: 'base' },
                                             { id: 'purchased', label: 'Purchased', type: 'base' },
                                             { id: 'consignment', label: 'Consignment', type: 'base' },
