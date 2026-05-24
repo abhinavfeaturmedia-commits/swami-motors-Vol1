@@ -41,11 +41,29 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const refreshData = async () => {
         setLoading(true);
         try {
-            const safeFetch = async (query: any) => {
+            const safeFetchAll = async (queryFn: () => any) => {
                 try {
-                    const res = await query;
-                    return res;
-                } catch {
+                    let allData: any[] = [];
+                    let from = 0;
+                    const batchSize = 1000;
+                    let hasMore = true;
+                    
+                    while (hasMore) {
+                        const { data, error } = await queryFn().range(from, from + batchSize - 1);
+                        if (error) throw error;
+                        if (data && data.length > 0) {
+                            allData = [...allData, ...data];
+                            from += batchSize;
+                            if (data.length < batchSize) {
+                                hasMore = false;
+                            }
+                        } else {
+                            hasMore = false;
+                        }
+                    }
+                    return { data: allData };
+                } catch (error) {
+                    console.error("Error in safeFetchAll:", error);
                     return { data: [] };
                 }
             };
@@ -64,20 +82,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 { data: visitsData },
                 { data: settingsData }
             ] = await Promise.all([
-                safeFetch(supabase.from('leads').select('*').order('created_at', { ascending: false })),
-                safeFetch(supabase.from('customers').select('*').order('created_at', { ascending: false })),
-                safeFetch(supabase.from('inventory').select('*').order('created_at', { ascending: false })),
-                safeFetch(supabase.from('sales').select('*, customer:customers(*), car:inventory(*)').order('sale_date', { ascending: false })),
-                safeFetch(supabase.from('bookings').select('*, lead:leads(*), car:inventory(*)').order('booking_date', { ascending: false })),
-                safeFetch(supabase.from('lead_activities').select('*').order('created_at', { ascending: false })),
+                safeFetchAll(() => supabase.from('leads').select('*').order('created_at', { ascending: false })),
+                safeFetchAll(() => supabase.from('customers').select('*').order('created_at', { ascending: false })),
+                safeFetchAll(() => supabase.from('inventory').select('*').order('created_at', { ascending: false })),
+                safeFetchAll(() => supabase.from('sales').select('*, customer:customers(*), car:inventory(*)').order('sale_date', { ascending: false })),
+                safeFetchAll(() => supabase.from('bookings').select('*, lead:leads(*), car:inventory(*)').order('booking_date', { ascending: false })),
+                safeFetchAll(() => supabase.from('lead_activities').select('*').order('created_at', { ascending: false })),
                 
                 // Keep these failsafe in case the user hasn't run the migration yet, it won't crash the app globally
-                safeFetch(supabase.from('tasks').select('*, lead:leads(*)').order('due_date', { ascending: true })),
-                safeFetch(supabase.from('follow_ups').select('*, lead:leads(*)').order('next_followup_date', { ascending: true })),
-                safeFetch(supabase.from('vehicle_expenses').select('*, car:inventory(*)').order('expense_date', { ascending: false })),
-                safeFetch(supabase.from('inspections').select('*, car:inventory(*)').order('inspection_date', { ascending: false })),
-                safeFetch(supabase.from('visits').select('*, staff:profiles!staff_id(full_name), lead:leads(*), customer:customers(*)').order('created_at', { ascending: false })),
-                safeFetch(supabase.from('dealership_settings').select('*'))
+                safeFetchAll(() => supabase.from('tasks').select('*, lead:leads(*)').order('due_date', { ascending: true })),
+                safeFetchAll(() => supabase.from('follow_ups').select('*, lead:leads(*)').order('next_followup_date', { ascending: true })),
+                safeFetchAll(() => supabase.from('vehicle_expenses').select('*, car:inventory(*)').order('expense_date', { ascending: false })),
+                safeFetchAll(() => supabase.from('inspections').select('*, car:inventory(*)').order('inspection_date', { ascending: false })),
+                safeFetchAll(() => supabase.from('visits').select('*, staff:profiles!staff_id(full_name), lead:leads(*), customer:customers(*)').order('created_at', { ascending: false })),
+                safeFetchAll(() => supabase.from('dealership_settings').select('*'))
             ]);
 
             setLeads(leadsData || []);

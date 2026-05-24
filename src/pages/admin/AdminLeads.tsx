@@ -207,12 +207,30 @@ const AdminLeads = () => {
     const fetchLeads = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('leads')
-                .select('*')
-                .order('created_at', { ascending: false });
+            let allLeads: Lead[] = [];
+            let from = 0;
+            const batchSize = 1000;
+            let hasMore = true;
 
-            if (!error && data) setLeads(data as unknown as Lead[]);
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from('leads')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .range(from, from + batchSize - 1);
+
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    allLeads = [...allLeads, ...(data as unknown as Lead[])];
+                    from += batchSize;
+                    if (data.length < batchSize) {
+                        hasMore = false;
+                    }
+                } else {
+                    hasMore = false;
+                }
+            }
+            setLeads(allLeads);
         } catch (error) {
             console.error('Error fetching leads:', error);
         } finally {
