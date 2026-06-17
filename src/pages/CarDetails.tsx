@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut, Heart } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../contexts/AuthContext';
+import VideoPlayer from '../components/ui/VideoPlayer';
 
 const SPECS = [
     { icon: 'speed', label: 'Odometer', key: 'mileage', suffix: ' km' },
@@ -37,6 +39,13 @@ interface CarData {
     images: string[];
     features: string;
     status: string;
+    source?: string;
+    body_type?: string;
+    insurance?: string;
+    video_url?: string;
+    dealer?: {
+        dealer_code: string;
+    } | null;
 }
 
 const CarDetails = () => {
@@ -45,6 +54,10 @@ const CarDetails = () => {
     const [car, setCar] = useState<CarData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
+    
+    const { user } = useAuth();
+    const [similarCars, setSimilarCars] = useState<CarData[]>([]);
+    const [wishlist, setWishlist] = useState<string[]>([]);
     
     // Gallery States & Refs
     const [selectedImg, setSelectedImg] = useState(0);
@@ -149,14 +162,102 @@ const CarDetails = () => {
         setTouchEnd(null);
     };
 
+    // Scroll to top when vehicle ID changes
+    useEffect(() => {
+        window.scrollTo(0, 0);
+    }, [id]);
+
+    // Load wishlist
+    useEffect(() => {
+        const loadWishlist = async () => {
+            if (!user) {
+                setWishlist([]);
+                return;
+            }
+            const { data } = await supabase
+                .from('user_wishlist')
+                .select('inventory_id')
+                .eq('user_id', user.id);
+            setWishlist(data?.map(w => w.inventory_id) || []);
+        };
+        loadWishlist();
+    }, [user]);
+
+    const toggleWishlist = async (e: React.MouseEvent, carId: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (!user) {
+            alert('Please login to save cars to your wishlist.');
+            return;
+        }
+        
+        if (wishlist.includes(carId)) {
+            setWishlist(prev => prev.filter(wId => wId !== carId));
+            await supabase.from('user_wishlist').delete().match({ user_id: user.id, inventory_id: carId });
+        } else {
+            setWishlist(prev => [...prev, carId]);
+            await supabase.from('user_wishlist').insert({ user_id: user.id, inventory_id: carId });
+        }
+    };
+
+    const fetchSimilarCars = async (currentCar: CarData) => {
+        try {
+            const { data, error: err } = await supabase
+                .from('inventory')
+                .select('*, dealer:dealers(dealer_code)')
+                .in('status', ['available', 'reserved'])
+                .neq('id', currentCar.id);
+
+            if (err || !data) return;
+
+            const scored = data.map((other: any) => {
+                let score = 0;
+                if (other.make?.toLowerCase() === currentCar.make?.toLowerCase()) {
+                    score += 5;
+                }
+                if (other.body_type && currentCar.body_type && other.body_type.toLowerCase() === currentCar.body_type.toLowerCase()) {
+                    score += 4;
+                }
+                if (other.fuel_type?.toLowerCase() === currentCar.fuel_type?.toLowerCase()) {
+                    score += 2;
+                }
+                if (other.transmission?.toLowerCase() === currentCar.transmission?.toLowerCase()) {
+                    score += 2;
+                }
+                if (currentCar.price > 0) {
+                    const priceDiffRatio = Math.abs(other.price - currentCar.price) / currentCar.price;
+                    const priceScore = Math.max(0, 5 * (1 - priceDiffRatio));
+                    score += priceScore;
+                }
+                return { car: other as CarData, score };
+            });
+
+            const sorted = scored
+                .sort((a, b) => b.score - a.score)
+                .map(item => item.car)
+                .slice(0, 4);
+
+            setSimilarCars(sorted);
+        } catch (error) {
+            console.error('Error fetching similar cars:', error);
+        }
+    };
+
     useEffect(() => {
         const fetchCar = async () => {
             if (!id) return;
-            const { data, error: err } = await supabase.from('inventory').select('*').eq('id', id).single();
+            const { data, error: err } = await supabase
+                .from('inventory')
+                .select('*, dealer:dealers(dealer_code)')
+                .eq('id', id)
+                .single();
             if (err || !data) {
                 setError(true);
             } else {
-                setCar(data);
+                const currentCar = data as unknown as CarData;
+                setCar(currentCar);
+                fetchSimilarCars(currentCar);
             }
             setLoading(false);
         };
@@ -280,15 +381,37 @@ const CarDetails = () => {
                     )}
 
                     {/* Title */}
-                    <div>
-                        <h1 className="text-2xl lg:text-3xl font-black text-primary font-display">{car.year} {car.make} {car.model}</h1>
-                        <div className="flex items-center gap-2 mt-2 text-sm text-slate-500">
-                            <span>{car.fuel_type}</span>
-                            <span className="w-1 h-1 rounded-full bg-slate-300" />
-                            <span>{car.transmission}</span>
-                            <span className="w-1 h-1 rounded-full bg-slate-300" />
-                            <span>Kolhapur</span>
+                    <div className="flex justify-between items-start gap-4">
+                        <div>
+                            <h1 className="text-2xl lg:text-3xl font-black text-primary font-display">{car.year} {car.make} {car.model}</h1>
+                            <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-slate-500">
+                                <span>{car.fuel_type}</span>
+                                <span className="w-1 h-1 rounded-full bg-slate-300" />
+                                <span>{car.transmission}</span>
+                                <span className="w-1 h-1 rounded-full bg-slate-300" />
+                                <span>Kolhapur</span>
+                                {car.source === 'dealer' && car.dealer?.dealer_code && (
+                                    <>
+                                        <span className="w-1 h-1 rounded-full bg-slate-300" />
+                                        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-lg border border-amber-200 text-xs">
+                                            <span className="material-symbols-outlined text-[14px]">store</span>
+                                            {car.dealer.dealer_code}
+                                        </span>
+                                    </>
+                                )}
+                            </div>
                         </div>
+                        <button 
+                            className={`p-3 rounded-full border transition-all ${
+                                wishlist.includes(car.id) 
+                                    ? 'bg-red-50 border-red-200 text-red-500 shadow-sm scale-100 hover:scale-105 active:scale-95' 
+                                    : 'bg-white border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200 shadow-sm scale-100 hover:scale-105 active:scale-95'
+                            }`}
+                            onClick={(e) => toggleWishlist(e, car.id)}
+                            title={wishlist.includes(car.id) ? "Remove from Wishlist" : "Add to Wishlist"}
+                        >
+                            <Heart size={20} fill={wishlist.includes(car.id) ? 'currentColor' : 'none'} />
+                        </button>
                     </div>
 
                     {/* Specifications */}
@@ -316,6 +439,19 @@ const CarDetails = () => {
                             <h2 className="text-xl font-bold text-primary font-display mb-5">Key Features</h2>
                             <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-[var(--shadow-card)] font-medium text-sm text-slate-700 whitespace-pre-wrap">
                                 {car.features}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Video Walkthrough */}
+                    {car.video_url && (
+                        <div>
+                            <h2 className="text-xl font-bold text-primary font-display mb-5 flex items-center gap-2">
+                                <span className="material-symbols-outlined text-accent text-2xl">play_circle</span>
+                                Video Tour
+                            </h2>
+                            <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-[var(--shadow-card)]">
+                                <VideoPlayer url={car.video_url} />
                             </div>
                         </div>
                     )}
@@ -410,6 +546,11 @@ const CarDetails = () => {
                                 </p>
                             </div>
                         </div>
+                        {car.source === 'dealer' && car.dealer?.dealer_code && (
+                            <div className="mt-3 pt-3 border-t border-slate-100 flex justify-end items-center text-xs">
+                                <span className="font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-md">{car.dealer.dealer_code}</span>
+                            </div>
+                        )}
                     </div>
 
                     {/* Need Help */}
@@ -425,6 +566,70 @@ const CarDetails = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Similar Cars Section */}
+            {similarCars.length > 0 && (
+                <section className="mt-16 pt-12 border-t border-slate-100">
+                    <h2 className="text-2xl font-black text-primary font-display mb-2">Similar Vehicles</h2>
+                    <p className="text-slate-500 mb-8">You might also be interested in these vehicles in our live inventory.</p>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {similarCars.map((sCar) => {
+                            const isSaved = wishlist.includes(sCar.id);
+                            return (
+                                <article key={sCar.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all duration-300 group flex flex-col relative">
+                                    <Link to={`/car/${sCar.id}`} className="flex flex-col flex-1">
+                                        <div className="relative aspect-[16/11] overflow-hidden bg-slate-100">
+                                            <img alt={`${sCar.make} ${sCar.model}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src={getPrimaryImage(sCar.images)} />
+                                            {sCar.condition === 'Excellent' && (
+                                                <div className="absolute top-3 left-3 bg-primary text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider">
+                                                    Certified
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="p-4 flex flex-col flex-1">
+                                            <h3 className="text-sm font-bold text-primary font-display mb-2 truncate" title={`${sCar.year} ${sCar.make} ${sCar.model}`}>
+                                                {sCar.year} {sCar.make} {sCar.model}
+                                            </h3>
+
+                                            {/* Specs row */}
+                                            <div className="flex items-center gap-3 mb-2 text-[11px] text-slate-500">
+                                                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">settings</span>{sCar.transmission}</span>
+                                                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">local_gas_station</span>{sCar.fuel_type}</span>
+                                            </div>
+
+                                            {/* Secondary info */}
+                                            <div className="flex items-center gap-3 text-[11px] text-slate-400 mb-3">
+                                                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">speed</span>{(sCar.mileage || 0).toLocaleString()} km</span>
+                                            </div>
+                                        </div>
+                                    </Link>
+
+                                    <button 
+                                        className={`absolute top-3 right-3 p-2 bg-white/90 rounded-full transition-colors shadow-sm backdrop-blur-sm z-10 ${isSaved ? 'text-red-500' : 'text-slate-400 hover:text-red-500'}`}
+                                        onClick={(e) => toggleWishlist(e, sCar.id)}
+                                        title={isSaved ? "Remove from Wishlist" : "Add to Wishlist"}
+                                    >
+                                        <Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />
+                                    </button>
+
+                                    <div className="p-4 pt-0 mt-auto">
+                                        <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                                            <div>
+                                                <span className="text-[9px] text-slate-400 font-bold uppercase">Price</span>
+                                                <p className="text-lg font-black text-primary font-display">₹ {formatPriceLakh(sCar.price)} L</p>
+                                            </div>
+                                            <Link to={`/car/${sCar.id}`} className="inline-flex items-center gap-1 bg-accent/10 hover:bg-accent text-accent hover:text-primary px-3.5 py-2 rounded-lg text-xs font-bold transition-all">
+                                                View <span className="material-symbols-outlined text-sm">arrow_outward</span>
+                                            </Link>
+                                        </div>
+                                    </div>
+                                </article>
+                            );
+                        })}
+                    </div>
+                </section>
+            )}
 
             {/* Lightbox Modal Portal */}
             <AnimatePresence>

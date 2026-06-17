@@ -13,6 +13,8 @@ export interface DataContextType {
     expenses: any[];
     inspections: any[];
     visits: any[];
+    clubMembers: any[];
+    clubTransactions: any[];
     settings: Record<string, any>;
     loading: boolean;
     refreshData: () => Promise<void>;
@@ -34,6 +36,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [expenses, setExpenses] = useState<any[]>([]);
     const [inspections, setInspections] = useState<any[]>([]);
     const [visits, setVisits] = useState<any[]>([]);
+    const [clubMembers, setClubMembers] = useState<any[]>([]);
+    const [clubTransactions, setClubTransactions] = useState<any[]>([]);
     const [settings, setSettings] = useState<Record<string, any>>({});
     
     const [loading, setLoading] = useState(true);
@@ -80,7 +84,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 { data: expensesData },
                 { data: inspectionsData },
                 { data: visitsData },
-                { data: settingsData }
+                { data: settingsData },
+                { data: clubMembersData },
+                { data: clubTransactionsData }
             ] = await Promise.all([
                 safeFetchAll(() => supabase.from('leads').select('*').order('created_at', { ascending: false })),
                 safeFetchAll(() => supabase.from('customers').select('*').order('created_at', { ascending: false })),
@@ -95,7 +101,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 safeFetchAll(() => supabase.from('vehicle_expenses').select('*, car:inventory(*)').order('expense_date', { ascending: false })),
                 safeFetchAll(() => supabase.from('inspections').select('*, car:inventory(*)').order('inspection_date', { ascending: false })),
                 safeFetchAll(() => supabase.from('visits').select('*, staff:profiles!staff_id(full_name), lead:leads(*), customer:customers(*)').order('created_at', { ascending: false })),
-                safeFetchAll(() => supabase.from('dealership_settings').select('*'))
+                safeFetchAll(() => supabase.from('dealership_settings').select('*')),
+                safeFetchAll(() => supabase.from('club_members').select('*, customer:customers(*)').order('created_at', { ascending: false })),
+                safeFetchAll(() => supabase.from('club_service_exchanges').select('*, added_by_profile:profiles!added_by(full_name)').order('transaction_date', { ascending: false }))
             ]);
 
             setLeads(leadsData || []);
@@ -110,6 +118,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setExpenses(expensesData || []);
             setInspections(inspectionsData || []);
             setVisits(visitsData || []);
+            setClubMembers(clubMembersData || []);
+            setClubTransactions(clubTransactionsData || []);
             
             // Format settings from array of K/V to standard object
             // Supports both column naming conventions (setting_key/setting_value from v2, key/value from v1)
@@ -135,7 +145,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, []);
 
     return (
-        <DataContext.Provider value={{ leads, customers, inventory, sales, bookings, activities, tasks, followUps, expenses, inspections, visits, settings, loading, refreshData }}>
+        <DataContext.Provider value={{ leads, customers, inventory, sales, bookings, activities, tasks, followUps, expenses, inspections, visits, clubMembers, clubTransactions, settings, loading, refreshData }}>
             {children}
         </DataContext.Provider>
     );

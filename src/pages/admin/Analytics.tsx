@@ -26,16 +26,44 @@ const Analytics = () => {
                 if (period === 'This Quarter') startDate = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
 
                 // ── Sales ──────────────────────────────────────────────────────
-                const { data: salesData } = await supabase
-                    .from('sales')
-                    .select('final_price, profit, sale_type, sale_date, sold_by, car:inventory(make, model)')
-                    .gte('sale_date', startDate.toISOString());
+                let salesData: any[] = [];
+                let salesFrom = 0;
+                let hasMoreSales = true;
+                while (hasMoreSales) {
+                    const { data, error } = await supabase
+                        .from('sales')
+                        .select('final_price, profit, sale_type, sale_date, sold_by, car:inventory(make, model)')
+                        .gte('sale_date', startDate.toISOString())
+                        .range(salesFrom, salesFrom + 999);
+                    if (error) throw error;
+                    if (data && data.length > 0) {
+                        salesData = [...salesData, ...data];
+                        salesFrom += 1000;
+                        if (data.length < 1000) hasMoreSales = false;
+                    } else {
+                        hasMoreSales = false;
+                    }
+                }
 
                 // ── Leads ──────────────────────────────────────────────────────
-                const { data: leadsData } = await supabase
-                    .from('leads')
-                    .select('status, source, created_at')
-                    .gte('created_at', startDate.toISOString());
+                let leadsData: any[] = [];
+                let leadsFrom = 0;
+                let hasMoreLeads = true;
+                while (hasMoreLeads) {
+                    const { data, error } = await supabase
+                        .from('leads')
+                        .select('status, source, created_at')
+                        .gte('created_at', startDate.toISOString())
+                        .range(leadsFrom, leadsFrom + 999);
+                    if (error) throw error;
+                    if (data && data.length > 0) {
+                        leadsData = [...leadsData, ...data];
+                        leadsFrom += 1000;
+                        if (data.length < 1000) hasMoreLeads = false;
+                    } else {
+                        hasMoreLeads = false;
+                    }
+                }
 
                 // ── Profiles (for staff names) ─────────────────────────────────
                 const { data: profilesData } = await supabase

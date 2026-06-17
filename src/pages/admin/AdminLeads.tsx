@@ -1351,7 +1351,12 @@ const AdminLeads = () => {
                                         <option value="Instagram">Instagram</option>
                                         <option value="Referral">Referral</option>
                                         <option value="OLX">OLX</option>
+                                        <option value="CarTrade">CarTrade</option>
+                                        <option value="Car Waale">Car Waale</option>
                                         <option value="Google Ads">Google Ads</option>
+                                        <option value="GBN Club">GBN Club</option>
+                                        <option value="Saturday Club">Saturday Club</option>
+                                        <option value="BNI Club">BNI Club</option>
                                         <option value="Other">Other</option>
                                     </select>
                                 </div>

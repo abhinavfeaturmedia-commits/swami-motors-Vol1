@@ -39,8 +39,9 @@ import PerformanceScorecard from './pages/admin/PerformanceScorecard';
 // Admin — CRM
 import Customers from './pages/admin/Customers';
 import FollowUps from './pages/admin/FollowUps';
-import LeadSources from './pages/admin/LeadSources';
 import Visits from './pages/admin/Visits';
+import LeadSources from './pages/admin/LeadSources';
+import ClubMembers from './pages/admin/ClubMembers';
 
 // Admin — Operations
 import VehicleInspection from './pages/admin/VehicleInspection';
@@ -125,6 +126,7 @@ const App: React.FC = () => {
                         <Route path="follow-ups" element={<ModuleRoute module="crm"><FollowUps /></ModuleRoute>} />
                         <Route path="visits" element={<ModuleRoute module="crm"><Visits /></ModuleRoute>} />
                         <Route path="lead-sources" element={<ModuleRoute module="crm"><LeadSources /></ModuleRoute>} />
+                        <Route path="club-members" element={<ModuleRoute module="crm"><ClubMembers /></ModuleRoute>} />
 
                         {/* Operations */}
                         <Route path="inspections" element={<ModuleRoute module="operations"><VehicleInspection /></ModuleRoute>} />

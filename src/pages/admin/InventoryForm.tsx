@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import imageCompression from 'browser-image-compression';
+import VideoPlayer from '../../components/ui/VideoPlayer';
 
 const MAKES = [
     'Maruti Suzuki', 'Hyundai', 'Tata', 'Honda', 'Toyota', 'Kia', 'MG', 'Mahindra', 
@@ -36,6 +37,8 @@ const InventoryForm = () => {
         fuel_type: 'Petrol', transmission: 'Manual',
         mileage: '', color: '', body_type: '', registration_no: '',
         ownership: '1', condition: 'used', status: 'available',
+        insurance: '',
+        video_url: '',
         description: '',
     });
 
@@ -115,6 +118,8 @@ const InventoryForm = () => {
                 ownership: data.ownership ? String(data.ownership) : '1',
                 condition: data.condition || 'used',
                 status: data.status || 'available',
+                insurance: data.insurance || '',
+                video_url: data.video_url || '',
                 description: data.description || '',
             });
             // Populate source fields
@@ -493,6 +498,27 @@ const InventoryForm = () => {
         else if (/\bcvt\b/i.test(fullText)) data.transmission = 'CVT';
         else if (/\bmanual\b/i.test(fullText)) data.transmission = 'Manual';
 
+        // ── 11. Insurance ─────────────────────────────────────────────────────
+        const insPatterns = [
+            /ins(?:urance)?\s*[:\-]?\s*(valid|comprehensive|third party|zero dep|expired|nil dep|3rd party[^\n]*|[^\n,;·|]*\d{4})/i,
+            /(comprehensive|third party|zero dep|nil dep|3rd party)\s*ins(?:urance)?/i,
+        ];
+        for (const pat of insPatterns) {
+            const m = fullText.match(pat);
+            if (m) {
+                let val = (m[1] || m[0]).trim();
+                val = val.charAt(0).toUpperCase() + val.slice(1);
+                data.insurance = val;
+                break;
+            }
+        }
+
+        // ── 12. Video Walkthrough URL ─────────────────────────────────────────
+        const videoMatch = fullText.match(/https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be|instagram\.com|facebook\.com|fb\.watch)\/[^\s]+/i);
+        if (videoMatch) {
+            data.video_url = videoMatch[0];
+        }
+
         setForm(data);
         setAutoFillText('');
     };
@@ -589,6 +615,8 @@ const InventoryForm = () => {
                 ownership: Number(form.ownership),
                 condition: form.condition,
                 status: isDraft ? 'pending' : form.status,
+                insurance: form.insurance || null,
+                video_url: form.video_url || null,
                 description: form.description || null,
                 images: allImages.length > 0 ? allImages : null,
                 thumbnail,
@@ -1027,6 +1055,10 @@ const InventoryForm = () => {
                                 {['1', '2', '3', '4'].map(o => <option key={o} value={o}>{o === '1' ? '1st Owner' : o === '2' ? '2nd Owner' : o === '3' ? '3rd Owner' : '4th+ Owner'}</option>)}
                             </select>
                         </div>
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 mb-1.5 block">Insurance</label>
+                            <input type="text" value={form.insurance} onChange={e => set('insurance', e.target.value)} placeholder="e.g. Valid, Comprehensive until Dec 2026, etc." className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" />
+                        </div>
                     </div>
                 </div>
 
@@ -1075,6 +1107,30 @@ const InventoryForm = () => {
                     <div className="mt-5">
                         <label className="text-sm font-medium text-slate-700 mb-1.5 block">Description</label>
                         <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={3} placeholder="Highlight key features, service history, accident-free status, etc." className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/10 resize-y" />
+                    </div>
+                    <div className="mt-5 pt-5 border-t border-slate-100 space-y-4">
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 mb-1.5 block">Walkthrough Video URL</label>
+                            <input 
+                                type="text" 
+                                value={form.video_url} 
+                                onChange={e => set('video_url', e.target.value)} 
+                                placeholder="Paste YouTube, Instagram Reel, or Facebook video URL" 
+                                className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10" 
+                            />
+                            <p className="text-xs text-slate-400 mt-1">Accepts YouTube watch/shorts links, Instagram Reels/Posts, or Facebook video URLs.</p>
+                        </div>
+                        {form.video_url && (
+                            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                                    <span className="material-symbols-outlined text-sm text-accent">play_circle</span>
+                                    Live Video Preview
+                                </p>
+                                <div className="max-w-xl mx-auto">
+                                    <VideoPlayer url={form.video_url} />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 

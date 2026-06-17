@@ -59,16 +59,27 @@ const AdminDashboard = () => {
                     .reduce((a: number, s: any) => a + (Number(s.consignment_fee_collected) || 0), 0);
 
                 // Leads
-                const { data: leadsData } = await supabase.from('leads').select('*').order('created_at', { ascending: false });
-                let active = 0;
-                (leadsData || []).forEach((l: any) => {
-                    if (['new', 'contacted', 'negotiation'].includes(l.status)) active++;
-                });
-                const newLeads = (leadsData || []).filter((l: any) => l.status === 'new');
+                const { count: activeCount } = await supabase
+                    .from('leads')
+                    .select('*', { count: 'exact', head: true })
+                    .in('status', ['new', 'contacted', 'negotiation']);
 
-                setStats({ availableStock: available, activeLeads: active, carsSold: sold, netIncomeThisMonth, consignmentActive, consignmentFeesMonth, dealerCars, expiringConsignments: expiring.length });
-                setRecentLeads((leadsData || []).slice(0, 5));
-                setActionRequired(newLeads);
+                const { data: recentLeadsData } = await supabase
+                    .from('leads')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                const { data: newLeadsData } = await supabase
+                    .from('leads')
+                    .select('*')
+                    .eq('status', 'new')
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                setStats({ availableStock: available, activeLeads: activeCount || 0, carsSold: sold, netIncomeThisMonth, consignmentActive, consignmentFeesMonth, dealerCars, expiringConsignments: expiring.length });
+                setRecentLeads(recentLeadsData || []);
+                setActionRequired(newLeadsData || []);
                 setExpiringList(expiring.slice(0, 3));
             } catch (e) { console.error(e); }
             finally { setLoading(false); }

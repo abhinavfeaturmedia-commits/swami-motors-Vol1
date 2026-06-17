@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS inventory (
   registration_no TEXT UNIQUE,
   ownership       INT DEFAULT 1,
   condition       TEXT DEFAULT 'used' CHECK (condition IN ('new', 'used', 'certified')),
+  insurance       TEXT,
+  video_url       TEXT,
   status          TEXT DEFAULT 'available' CHECK (status IN ('available', 'sold', 'reserved', 'pending')),
   description     TEXT,
   features        TEXT[],
