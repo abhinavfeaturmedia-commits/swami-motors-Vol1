@@ -20,6 +20,36 @@ const Commissions = () => {
         fetchProfiles();
     }, []);
 
+    const [attendanceMap, setAttendanceMap] = React.useState<Record<string, number>>({});
+
+    React.useEffect(() => {
+        const fetchAttendance = async () => {
+            const now = new Date();
+            const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+            const to   = now.toISOString().split('T')[0];
+            const { data } = await supabase
+                .from('attendance_records')
+                .select('user_id, status')
+                .gte('date', from)
+                .lte('date', to);
+            if (data) {
+                const map: Record<string, { present: number; total: number }> = {};
+                data.forEach((r: any) => {
+                    if (!map[r.user_id]) map[r.user_id] = { present: 0, total: 0 };
+                    map[r.user_id].total++;
+                    if (['present', 'late'].includes(r.status)) map[r.user_id].present++;
+                    if (r.status === 'half_day') map[r.user_id].present += 0.5;
+                });
+                const pctMap: Record<string, number> = {};
+                Object.entries(map).forEach(([uid, v]) => {
+                    pctMap[uid] = v.total > 0 ? Math.round((v.present / v.total) * 100) : 0;
+                });
+                setAttendanceMap(pctMap);
+            }
+        };
+        fetchAttendance();
+    }, []);
+
     const commissionData = useMemo(() => {
         const baseRate = 0.015; // 1.5% fixed standard commission in V1
 
@@ -47,6 +77,7 @@ const Commissions = () => {
             totalEarnedPool += earned;
 
             return {
+                id: member.id,
                 name: member.full_name || 'Unknown',
                 avatar: member.avatar_url ? 'P' : member.full_name?.charAt(0).toUpperCase(),
                 role: member.role === 'admin' ? 'Administrator' : 'Sales Executive',
@@ -55,7 +86,8 @@ const Commissions = () => {
                 earnedStr: formatCurrency(Math.round(earned)),
                 paidStr: formatCurrency(Math.round(paid)),
                 pendingStr: formatCurrency(Math.round(pending)),
-                status: pending > 0 ? 'Partial' : 'Paid'
+                status: pending > 0 ? 'Partial' : 'Paid',
+                attendancePct: attendanceMap[member.id] ?? null,
             };
         });
 
@@ -68,7 +100,7 @@ const Commissions = () => {
             totalPaidStr: formatCurrency(0), 
             totalPendingStr: formatCurrency(Math.round(totalEarnedPool))
         };
-    }, [sales, profiles]);
+    }, [sales, profiles, attendanceMap]);
 
     return (
         <div className="space-y-6">
@@ -110,6 +142,7 @@ const Commissions = () => {
                             <th className="text-left px-5 py-3">Gross Earned</th>
                             <th className="text-left px-5 py-3">Disbursed</th>
                             <th className="text-left px-5 py-3">Pending</th>
+                            <th className="text-left px-5 py-3">Attendance</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -127,6 +160,16 @@ const Commissions = () => {
                                 <td className="px-5 py-3.5 text-sm font-bold text-primary">{c.earnedStr}</td>
                                 <td className="px-5 py-3.5 text-sm text-green-600">{c.paidStr}</td>
                                 <td className="px-5 py-3.5 text-sm text-amber-600 font-medium">{c.pendingStr}</td>
+                                <td className="px-5 py-3.5">
+                                    {c.attendancePct !== null && (
+                                        c.attendancePct < 75
+                                            ? <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-lg">
+                                                <span className="material-symbols-outlined text-xs">warning</span>
+                                                {c.attendancePct}% Att. — Not Eligible
+                                              </span>
+                                            : <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-lg">{c.attendancePct}% ✓</span>
+                                    )}
+                                </td>
                             </tr>
                         ))}
                     </tbody>

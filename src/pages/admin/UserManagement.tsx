@@ -36,7 +36,8 @@ const MODULES = [
     { key: 'dealers',    label: 'Dealers',             icon: 'store',               desc: 'Dealer partner management' },
     { key: 'audit_logs', label: 'Audit Logs',          icon: 'history',             desc: 'Activity & security logs' },
     { key: 'settings',   label: 'Settings',            icon: 'settings',            desc: 'Dealership configuration & feedback' },
-    { key: 'incentives', label: 'Incentives & Rankings', icon: 'workspace_premium',  desc: 'View incentives, leaderboard & announcements' },
+    { key: 'incentives',  label: 'Incentives & Rankings', icon: 'workspace_premium', desc: 'View incentives, leaderboard & announcements' },
+    { key: 'attendance',  label: 'Attendance',            icon: 'fingerprint',       desc: 'View own attendance, apply for leave' },
 ];
 
 const DEPARTMENTS = ['Sales', 'Operations', 'Finance', 'CRM', 'Management', 'IT', 'Other'];

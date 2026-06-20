@@ -73,6 +73,9 @@ import DealerManagement from './pages/admin/DealerManagement';
 import Incentives from './pages/admin/Incentives';
 import StaffIncentivesView from './pages/admin/StaffIncentivesView';
 
+// Admin — Attendance
+import Attendance from './pages/admin/Attendance';
+
 const App: React.FC = () => {
     return (
         <AuthProvider>
@@ -157,6 +160,9 @@ const App: React.FC = () => {
                         {/* Incentives */}
                         <Route path="incentives" element={<ModuleRoute module="incentives"><Incentives /></ModuleRoute>} />
                         <Route path="my-incentives" element={<ModuleRoute module="incentives"><StaffIncentivesView /></ModuleRoute>} />
+
+                        {/* Attendance */}
+                        <Route path="attendance" element={<ModuleRoute module="attendance"><Attendance /></ModuleRoute>} />
                     </Route>
 
                     {/* Fallcard Fallback Route */}

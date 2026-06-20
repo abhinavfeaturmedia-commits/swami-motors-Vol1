@@ -13,6 +13,7 @@ const PerformanceScorecard = () => {
     const { leads, sales, visits } = useData();
     const [period, setPeriod] = useState('This Month');
     const [profiles, setProfiles] = useState<any[]>([]);
+    const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
 
     useEffect(() => {
         const fetchProfiles = async () => {
@@ -20,6 +21,22 @@ const PerformanceScorecard = () => {
             if (data) setProfiles(data);
         };
         fetchProfiles();
+    }, []);
+
+    useEffect(() => {
+        const fetchAttendance = async () => {
+            const now = new Date();
+            const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+            const to   = now.toISOString().split('T')[0];
+            const { data } = await supabase
+                .from('attendance_records')
+                .select('user_id, status, date')
+                .gte('date', from)
+                .lte('date', to)
+                .in('status', ['present', 'late', 'half_day', 'on_leave', 'absent']);
+            if (data) setAttendanceRecords(data);
+        };
+        fetchAttendance();
     }, []);
 
     const kpis = useMemo(() => {
@@ -41,6 +58,13 @@ const PerformanceScorecard = () => {
             const memberVisits = visits.filter(v => v.staff_id === m.id);
             const memberApprovedVisits = memberVisits.filter(v => v.status === 'approved').length;
 
+            // Attendance stats for this member
+            const memberAttendance = attendanceRecords.filter(a => a.user_id === m.id);
+            const totalDays = memberAttendance.length;
+            const presentDays = memberAttendance.filter(a => ['present', 'late'].includes(a.status)).length
+                + memberAttendance.filter(a => a.status === 'half_day').length * 0.5;
+            const attendancePct = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
+
             return {
                 id: m.id,
                 name: m.full_name || 'Unnamed Team Member',
@@ -52,8 +76,9 @@ const PerformanceScorecard = () => {
                 totalVisits: memberVisits.length,
                 revenueStr: formatCurrency(memberRevenue),
                 convRate: memberLeads.length > 0 ? Math.round((memberConversions / memberLeads.length) * 100) : 0,
-                rating: 0, // Placeholder
-                trend: `0%` // Placeholder
+                rating: 0,
+                trend: `0%`,
+                attendancePct,
             };
         });
 
@@ -71,7 +96,7 @@ const PerformanceScorecard = () => {
             globalTotalRevenue: formatCurrency(totalSalesVolume),
             globalApprovedVisits
         };
-    }, [leads, sales, visits, period, profiles]);
+    }, [leads, sales, visits, period, profiles, attendanceRecords]);
 
     return (
         <div className="space-y-6">
@@ -126,6 +151,10 @@ const PerformanceScorecard = () => {
                                 <span className="text-[9px] text-slate-400 font-medium">Approved Visits</span>
                                 <span className="text-xs font-bold text-emerald-600">{m.approvedVisits} / {m.totalVisits}</span>
                             </div>
+                            <div className="bg-slate-50 rounded-lg p-2 col-span-2 flex items-center justify-between px-3">
+                                <span className="text-[9px] text-slate-400 font-medium">Attendance</span>
+                                <span className={`text-xs font-bold ${m.attendancePct >= 90 ? 'text-green-600' : m.attendancePct >= 75 ? 'text-amber-500' : 'text-red-500'}`}>{m.attendancePct}%</span>
+                            </div>
                         </div>
                         <div className="mt-3 flex items-center justify-center gap-1 text-green-600">
                             <TrendingUp size={12} /><span className="text-xs font-bold">{m.trend}</span>
@@ -149,6 +178,7 @@ const PerformanceScorecard = () => {
                             <th className="text-left px-5 py-2.5">Closed Value</th>
                             <th className="text-left px-5 py-2.5">Conv. Win Rate</th>
                             <th className="text-left px-5 py-2.5">Revenue Slice</th>
+                            <th className="text-left px-5 py-2.5">Attendance %</th>
                             <th className="text-left px-5 py-2.5">Quality Rating</th>
                             <th className="text-left px-5 py-2.5">Velocity</th>
                         </tr>
@@ -171,6 +201,14 @@ const PerformanceScorecard = () => {
                                 <td className="px-5 py-3.5 text-sm font-semibold text-primary">{m.conversions} Deals</td>
                                 <td className="px-5 py-3.5 text-sm text-slate-600 bg-blue-50/30">{m.convRate}%</td>
                                 <td className="px-5 py-3.5 text-sm font-bold text-green-700 bg-green-50/30">{m.revenueStr}</td>
+                                <td className="px-5 py-3.5">
+                                    <div className="flex items-center gap-2">
+                                        <div className="h-1.5 w-14 bg-slate-100 rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full ${m.attendancePct >= 90 ? 'bg-green-500' : m.attendancePct >= 75 ? 'bg-amber-400' : 'bg-red-500'}`} style={{ width: `${m.attendancePct}%` }} />
+                                        </div>
+                                        <span className={`text-xs font-bold ${m.attendancePct >= 90 ? 'text-green-600' : m.attendancePct >= 75 ? 'text-amber-500' : 'text-red-500'}`}>{m.attendancePct}%</span>
+                                    </div>
+                                </td>
                                 <td className="px-5 py-3.5">
                                     <div className="flex items-center gap-1">
                                         <span className="material-symbols-outlined text-amber-400 text-sm">star</span>

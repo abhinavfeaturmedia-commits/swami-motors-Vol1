@@ -5,9 +5,11 @@ import clsx from 'clsx';
 import { useAuth } from '../contexts/AuthContext';
 import { DataProvider, useData } from '../contexts/DataContext';
 import { NotificationProvider, useNotifications } from '../contexts/NotificationContext';
+import { AttendanceProvider } from '../contexts/AttendanceContext';
 import { supabase } from '../lib/supabase';
 import GlobalSearch from '../components/admin/GlobalSearch';
 import SmartToastEngine from '../components/admin/SmartToastEngine';
+import AttendanceClockWidget from '../components/admin/AttendanceClockWidget';
 
 interface NavItem {
     name: string;
@@ -90,6 +92,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Admin',
         items: [
             { name: 'Users', href: '/admin/users', icon: 'manage_accounts', module: 'users' },
+            { name: 'Attendance', href: '/admin/attendance', icon: 'fingerprint', module: 'attendance' },
             { name: 'Audit Logs', href: '/admin/audit-logs', icon: 'history', module: 'audit_logs' },
             { name: 'Feedback', href: '/admin/feedback', icon: 'reviews', module: 'settings' },
             { name: 'Settings', href: '/admin/settings', icon: 'settings', module: 'settings' },
@@ -352,6 +355,7 @@ const AdminLayout: React.FC = () => {
     return (
         <DataProvider>
             <NotificationProvider>
+            <AttendanceProvider>
             <div className="min-h-screen w-full bg-slate-50 flex font-body">
             {/* Sidebar Overlay */}
             {sidebarOpen && (
@@ -472,6 +476,7 @@ const AdminLayout: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2">
                         <AnnouncementBanner />
+                        <AttendanceClockWidget />
                         <Link
                             to="/"
                             title="Go to Website"
@@ -510,6 +515,7 @@ const AdminLayout: React.FC = () => {
                 </main>
             </div>
             </div>
+            </AttendanceProvider>
             </NotificationProvider>
         </DataProvider>
     );
