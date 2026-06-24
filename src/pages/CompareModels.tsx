@@ -126,10 +126,22 @@ const CompareModels = () => {
                             </div>
                             <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-[var(--shadow-card)]">
                                 {section.rows.map((row, i) => (
-                                    <div key={row.key} className={`grid grid-cols-3 ${i > 0 ? 'border-t border-slate-50' : ''}`}>
-                                        <div className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold text-primary flex items-center bg-slate-50/50">{getVal(leftCar, row.key)}</div>
-                                        <div className="px-2 sm:px-6 py-3 sm:py-4 text-[10px] sm:text-xs font-bold text-slate-400 text-center uppercase tracking-wide flex items-center justify-center bg-white border-x border-slate-50">{row.label}</div>
-                                        <div className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold text-primary flex items-center justify-end bg-slate-50/50">{getVal(rightCar, row.key)}</div>
+                                    <div key={row.key} className={`flex flex-col sm:grid sm:grid-cols-3 ${i > 0 ? 'border-t border-slate-50' : ''}`}>
+                                        {/* Label on top on mobile viewports */}
+                                        <div className="sm:hidden px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide bg-slate-100/50 border-b border-slate-100 flex items-center justify-center">
+                                            {row.label}
+                                        </div>
+                                        <div className="flex sm:contents">
+                                            <div className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold text-primary flex items-center justify-center sm:justify-start bg-slate-50/20 sm:bg-slate-50/50">
+                                                {getVal(leftCar, row.key)}
+                                            </div>
+                                            <div className="hidden sm:flex px-2 sm:px-6 py-3 sm:py-4 text-[10px] sm:text-xs font-bold text-slate-400 text-center uppercase tracking-wide items-center justify-center bg-white border-x border-slate-50">
+                                                {row.label}
+                                            </div>
+                                            <div className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold text-primary flex items-center justify-center sm:justify-end bg-slate-50/20 sm:bg-slate-50/50 border-l sm:border-l-0 border-slate-100">
+                                                {getVal(rightCar, row.key)}
+                                            </div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

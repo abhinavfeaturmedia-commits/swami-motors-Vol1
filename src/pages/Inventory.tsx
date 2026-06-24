@@ -4,6 +4,7 @@ import { X, Heart } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Car {
     id: string;
@@ -36,6 +37,7 @@ const Inventory = () => {
     const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
     const [selectedYears, setSelectedYears] = useState<string[]>([]);
     const [selectedBudget, setSelectedBudget] = useState<string>('');
+    const [searchQuery, setSearchQuery] = useState('');
 
     // Wishlist state
     const [wishlist, setWishlist] = useState<string[]>([]);
@@ -51,15 +53,6 @@ const Inventory = () => {
             setWishlist(data?.map(w => w.inventory_id) || []);
         };
         loadWishlist();
-
-        // Parse search params into local state exactly ONCE on mount
-        const initialBudget = searchParams.get('budget');
-        const initialMake = searchParams.get('make');
-        const initialYear = searchParams.get('year');
-        
-        if (initialBudget) setSelectedBudget(initialBudget);
-        if (initialMake) setSelectedBrands([initialMake]);
-        if (initialYear) setSelectedYears([initialYear]);
 
         const fetchInventory = async () => {
             setLoading(true);
@@ -78,8 +71,22 @@ const Inventory = () => {
             setLoading(false);
         };
         fetchInventory();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // Only run once
+    }, [user]);
+
+    // Synchronize URL search parameters with component state
+    useEffect(() => {
+        const searchVal = searchParams.get('search') || '';
+        setSearchQuery(searchVal);
+        
+        const budgetVal = searchParams.get('budget') || '';
+        setSelectedBudget(budgetVal);
+        
+        const makeVal = searchParams.get('make');
+        setSelectedBrands(makeVal ? [makeVal] : []);
+        
+        const yearVal = searchParams.get('year');
+        setSelectedYears(yearVal ? [yearVal] : []);
+    }, [searchParams]);
 
     const toggleWishlist = async (e: React.MouseEvent, id: string) => {
         e.preventDefault();
@@ -123,6 +130,19 @@ const Inventory = () => {
 
     // Apply filtering and sorting
     let displayCars = cars.filter(car => {
+        // Keyword text search filter
+        if (searchQuery) {
+            const query = searchQuery.toLowerCase();
+            const matchesMake = car.make?.toLowerCase().includes(query);
+            const matchesModel = car.model?.toLowerCase().includes(query);
+            const matchesYear = String(car.year).includes(query);
+            const matchesFuel = car.fuel_type?.toLowerCase().includes(query);
+            const matchesTrans = car.transmission?.toLowerCase().includes(query);
+            if (!matchesMake && !matchesModel && !matchesYear && !matchesFuel && !matchesTrans) {
+                return false;
+            }
+        }
+
         // Brand filter
         if (selectedBrands.length > 0 && !selectedBrands.includes(car.make)) return false;
         
@@ -148,6 +168,71 @@ const Inventory = () => {
         displayCars.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
 
+    const renderFiltersContent = () => (
+        <>
+            {/* Budget Range */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
+                <h4 className="font-semibold text-primary text-sm mb-3">
+                    Budget Range
+                </h4>
+                <div className="space-y-2.5 text-sm text-slate-700">
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="radio" name="budget" checked={selectedBudget === ''} onChange={() => setSelectedBudget('')} className="accent-primary" /> Any Budget
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="radio" name="budget" checked={selectedBudget === 'under5'} onChange={() => setSelectedBudget('under5')} className="accent-primary" /> Under ₹5 Lakh
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="radio" name="budget" checked={selectedBudget === '5to10'} onChange={() => setSelectedBudget('5to10')} className="accent-primary" /> ₹5 Lakh - ₹10 Lakh
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="radio" name="budget" checked={selectedBudget === '10to20'} onChange={() => setSelectedBudget('10to20')} className="accent-primary" /> ₹10 Lakh - ₹20 Lakh
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="radio" name="budget" checked={selectedBudget === '20plus'} onChange={() => setSelectedBudget('20plus')} className="accent-primary" /> ₹20 Lakh+
+                    </label>
+                </div>
+            </div>
+
+            {/* Make & Model */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
+                <h4 className="font-semibold text-primary text-sm mb-3 flex items-center justify-between">
+                    Make & Model
+                </h4>
+                <div className="space-y-2.5 max-h-48 overflow-y-auto pr-2">
+                    {brandCounts.length === 0 && <p className="text-sm text-slate-400">Loading brands...</p>}
+                    {brandCounts.map(b => (
+                        <label key={b.name} className="flex items-center gap-3 cursor-pointer group">
+                            <div className={`size-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${selectedBrands.includes(b.name) ? 'bg-primary border-primary' : 'border-slate-300 group-hover:border-primary'}`}>
+                                {selectedBrands.includes(b.name) && <span className="material-symbols-outlined text-white text-sm">check</span>}
+                            </div>
+                            <span className="text-sm text-slate-700 flex-1 truncate">{b.name} <span className="text-xs text-slate-400 ml-1">({b.count})</span></span>
+                            <input type="checkbox" className="hidden" checked={selectedBrands.includes(b.name)} onChange={() => toggleBrand(b.name)} />
+                        </label>
+                    ))}
+                </div>
+            </div>
+
+            {/* Year */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
+                <h4 className="font-semibold text-primary text-sm mb-3 flex items-center justify-between">
+                    Model Year
+                </h4>
+                <div className="space-y-2.5 max-h-40 overflow-y-auto pr-2">
+                    {availableYears.map(year => (
+                        <label key={year} className="flex items-center gap-3 cursor-pointer group">
+                            <div className={`size-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${selectedYears.includes(year) ? 'bg-primary border-primary' : 'border-slate-300 group-hover:border-primary'}`}>
+                                {selectedYears.includes(year) && <span className="material-symbols-outlined text-white text-sm">check</span>}
+                            </div>
+                            <span className="text-sm text-slate-700 flex-1">{year}</span>
+                            <input type="checkbox" className="hidden" checked={selectedYears.includes(year)} onChange={() => toggleYear(year)} />
+                        </label>
+                    ))}
+                </div>
+            </div>
+        </>
+    );
+
     return (
         <div className="container-main py-4 sm:py-8">
             <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
@@ -163,95 +248,171 @@ const Inventory = () => {
                     <span className="text-xs text-slate-400 font-medium">{displayCars.length} Cars Found</span>
                 </div>
 
-                {/* Filters Sidebar */}
-                <aside className={`lg:w-[16.25rem] shrink-0 ${showFilters ? 'block fixed inset-0 z-[70] bg-white p-6 overflow-y-auto' : 'hidden lg:block'}`}>
-                    <div className="lg:sticky lg:top-[5.5rem]">
-                        <div className="flex items-center justify-between mb-6">
+                {/* Desktop Filters Sidebar */}
+                <aside className="hidden lg:block lg:w-[16.25rem] shrink-0">
+                    <div className="lg:sticky lg:top-[5.5rem] space-y-4">
+                        <div className="flex items-center justify-between mb-2">
                             <h3 className="font-bold text-primary font-display text-lg">Filters</h3>
-                            <div className="flex items-center gap-3">
-                                <button onClick={() => { setSelectedBrands([]); setSelectedYears([]); setSelectedBudget(''); }} className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">Clear All</button>
-                                <button onClick={() => setShowFilters(false)} className="lg:hidden p-1 text-slate-400 hover:text-primary">
-                                    <X size={20} />
-                                </button>
-                            </div>
+                            <button onClick={() => { setSelectedBrands([]); setSelectedYears([]); setSelectedBudget(''); }} className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">Clear All</button>
                         </div>
-                        
-                        <div className="space-y-4 pb-20 lg:pb-0">
-                            {/* Budget Range */}
-                            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
-                                <h4 className="font-semibold text-primary text-sm mb-3 flex items-center justify-between">
-                                    Budget
-                                </h4>
-                                <div className="space-y-2.5 text-sm text-slate-700">
-                                    <label className="flex items-center gap-3 cursor-pointer group">
-                                        <input type="radio" name="budget" checked={selectedBudget === ''} onChange={() => setSelectedBudget('')} className="accent-primary" /> Any Budget
-                                    </label>
-                                    <label className="flex items-center gap-3 cursor-pointer group">
-                                        <input type="radio" name="budget" checked={selectedBudget === 'under5'} onChange={() => setSelectedBudget('under5')} className="accent-primary" /> Under ₹5 Lakh
-                                    </label>
-                                    <label className="flex items-center gap-3 cursor-pointer group">
-                                        <input type="radio" name="budget" checked={selectedBudget === '5to10'} onChange={() => setSelectedBudget('5to10')} className="accent-primary" /> ₹5 Lakh - ₹10 Lakh
-                                    </label>
-                                    <label className="flex items-center gap-3 cursor-pointer group">
-                                        <input type="radio" name="budget" checked={selectedBudget === '10to20'} onChange={() => setSelectedBudget('10to20')} className="accent-primary" /> ₹10 Lakh - ₹20 Lakh
-                                    </label>
-                                    <label className="flex items-center gap-3 cursor-pointer group">
-                                        <input type="radio" name="budget" checked={selectedBudget === '20plus'} onChange={() => setSelectedBudget('20plus')} className="accent-primary" /> ₹20 Lakh+
-                                    </label>
-                                </div>
-                            </div>
-
-                            {/* Make & Model */}
-                            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
-                                <h4 className="font-semibold text-primary text-sm mb-3 flex items-center justify-between">
-                                    Make & Model
-                                    <span className="material-symbols-outlined text-slate-400 text-lg">expand_less</span>
-                                </h4>
-                                <div className="space-y-2.5 max-h-48 overflow-y-auto pr-2">
-                                    {brandCounts.length === 0 && <p className="text-sm text-slate-400">Loading brands...</p>}
-                                    {brandCounts.map(b => (
-                                        <label key={b.name} className="flex items-center gap-3 cursor-pointer group">
-                                            <div className={`size-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${selectedBrands.includes(b.name) ? 'bg-primary border-primary' : 'border-slate-300 group-hover:border-primary'}`}>
-                                                {selectedBrands.includes(b.name) && <span className="material-symbols-outlined text-white text-sm">check</span>}
-                                            </div>
-                                            <span className="text-sm text-slate-700 flex-1 truncate">{b.name} <span className="text-xs text-slate-400 ml-1">({b.count})</span></span>
-                                            <input type="checkbox" className="hidden" checked={selectedBrands.includes(b.name)} onChange={() => toggleBrand(b.name)} />
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Year */}
-                            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
-                                <h4 className="font-semibold text-primary text-sm mb-3 flex items-center justify-between">
-                                    Model Year
-                                </h4>
-                                <div className="space-y-2.5 max-h-40 overflow-y-auto pr-2">
-                                    {availableYears.map(year => (
-                                        <label key={year} className="flex items-center gap-3 cursor-pointer group">
-                                            <div className={`size-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${selectedYears.includes(year) ? 'bg-primary border-primary' : 'border-slate-300 group-hover:border-primary'}`}>
-                                                {selectedYears.includes(year) && <span className="material-symbols-outlined text-white text-sm">check</span>}
-                                            </div>
-                                            <span className="text-sm text-slate-700 flex-1">{year}</span>
-                                            <input type="checkbox" className="hidden" checked={selectedYears.includes(year)} onChange={() => toggleYear(year)} />
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <button onClick={() => setShowFilters(false)} className="w-full h-12 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-colors shadow-sm text-sm lg:hidden mt-4">
-                                Apply & View Results
-                            </button>
-                        </div>
+                        {renderFiltersContent()}
                     </div>
                 </aside>
 
+                {/* Mobile Filters Slide-up Drawer Overlay */}
+                <AnimatePresence>
+                    {showFilters && (
+                        <>
+                            {/* Backdrop overlay */}
+                            <motion.div 
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 0.5 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setShowFilters(false)}
+                                className="lg:hidden fixed inset-0 bg-black z-[60]"
+                            />
+                            {/* Bottom sheet */}
+                            <motion.div 
+                                initial={{ y: '100%' }}
+                                animate={{ y: 0 }}
+                                exit={{ y: '100%' }}
+                                transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+                                className="lg:hidden fixed inset-x-0 bottom-0 top-[15%] z-[70] bg-white rounded-t-3xl p-6 overflow-y-auto shadow-2xl flex flex-col"
+                            >
+                                <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+                                    <h3 className="font-bold text-primary font-display text-lg">Filters</h3>
+                                    <div className="flex items-center gap-4">
+                                        <button onClick={() => { setSelectedBrands([]); setSelectedYears([]); setSelectedBudget(''); }} className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">Clear All</button>
+                                        <button onClick={() => setShowFilters(false)} className="p-1.5 bg-slate-50 text-slate-400 hover:text-primary rounded-full flex items-center justify-center">
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="space-y-5 flex-1 pb-16">
+                                    {renderFiltersContent()}
+                                </div>
+                                <div className="sticky bottom-0 bg-white pt-4 pb-2 border-t border-slate-100 mt-auto">
+                                    <button onClick={() => setShowFilters(false)} className="w-full h-12 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-all shadow-md text-sm">
+                                        Apply & View {displayCars.length} Results
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </>
+                    )}
+                </AnimatePresence>
+
                 {/* Main Content */}
                 <div className="flex-1 min-w-0">
-                    <div className="mb-6">
-                        <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-primary font-display mb-1.5 leading-tight uppercase tracking-tight">Used Car Inventory</h1>
-                        <p className="text-xs sm:text-sm text-slate-500 max-w-lg">Certified pre-owned vehicles in Kolhapur with 120+ points check.</p>
+                    <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div>
+                            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-primary font-display mb-1.5 leading-tight uppercase tracking-tight">Used Car Inventory</h1>
+                            <p className="text-xs sm:text-sm text-slate-500 max-w-lg">Certified pre-owned vehicles in Kolhapur with 120+ points check.</p>
+                        </div>
+
+                        {/* Search Input Bar */}
+                        <div className="relative flex-1 max-w-md w-full">
+                            <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => {
+                                    setSearchQuery(e.target.value);
+                                    const params = new URLSearchParams(window.location.search);
+                                    if (e.target.value) {
+                                        params.set('search', e.target.value);
+                                    } else {
+                                        params.delete('search');
+                                    }
+                                    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+                                }}
+                                className="w-full h-11 bg-white border border-slate-200 rounded-2xl pl-11 pr-10 text-sm outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 shadow-sm transition-all"
+                                placeholder="Search by model, brand, transmission..."
+                            />
+                            {searchQuery && (
+                                <button 
+                                    onClick={() => {
+                                        setSearchQuery('');
+                                        const params = new URLSearchParams(window.location.search);
+                                        params.delete('search');
+                                        window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+                                    }}
+                                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary flex items-center"
+                                    aria-label="Clear Search"
+                                >
+                                    <span className="material-symbols-outlined text-lg">close</span>
+                                </button>
+                            )}
+                        </div>
                     </div>
+
+                    {/* Active Filters Pills */}
+                    {(selectedBrands.length > 0 || selectedYears.length > 0 || selectedBudget || searchQuery) && (
+                        <div className="flex flex-wrap gap-2 mb-6 items-center">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mr-1">Active Filters:</span>
+                            
+                            {searchQuery && (
+                                <span className="inline-flex items-center gap-1.5 bg-primary text-white text-[11px] font-semibold px-3 py-1.5 rounded-xl shadow-sm">
+                                    Search: "{searchQuery}"
+                                    <button 
+                                        onClick={() => {
+                                            setSearchQuery('');
+                                            const params = new URLSearchParams(window.location.search);
+                                            params.delete('search');
+                                            window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+                                        }}
+                                        className="hover:bg-white/20 rounded p-0.5"
+                                    >
+                                        <X size={10} />
+                                    </button>
+                                </span>
+                            )}
+                            
+                            {selectedBudget && (
+                                <span className="inline-flex items-center gap-1.5 bg-accent/25 text-primary text-[11px] font-semibold px-3 py-1.5 rounded-xl border border-accent/20">
+                                    Budget: {selectedBudget === 'under5' ? 'Under ₹5L' : selectedBudget === '5to10' ? '₹5L - ₹10L' : selectedBudget === '10to20' ? '₹10L - ₹20L' : '₹20L+'}
+                                    <button onClick={() => setSelectedBudget('')} className="hover:bg-black/10 rounded p-0.5">
+                                        <X size={10} />
+                                    </button>
+                                </span>
+                            )}
+                            
+                            {selectedBrands.map(b => (
+                                <span key={b} className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-700 text-[11px] font-semibold px-3 py-1.5 rounded-xl border border-slate-200">
+                                    {b}
+                                    <button onClick={() => toggleBrand(b)} className="hover:bg-slate-200 rounded p-0.5">
+                                        <X size={10} />
+                                    </button>
+                                </span>
+                            ))}
+                            
+                            {selectedYears.map(y => (
+                                <span key={y} className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-700 text-[11px] font-semibold px-3 py-1.5 rounded-xl border border-slate-200">
+                                    {y}
+                                    <button onClick={() => toggleYear(y)} className="hover:bg-slate-200 rounded p-0.5">
+                                        <X size={10} />
+                                    </button>
+                                </span>
+                            ))}
+                            
+                            <button 
+                                onClick={() => {
+                                    setSelectedBrands([]);
+                                    setSelectedYears([]);
+                                    setSelectedBudget('');
+                                    setSearchQuery('');
+                                    const params = new URLSearchParams(window.location.search);
+                                    params.delete('search');
+                                    params.delete('make');
+                                    params.delete('budget');
+                                    params.delete('year');
+                                    window.history.replaceState({}, '', window.location.pathname);
+                                }}
+                                className="text-xs font-bold text-red-500 hover:text-red-700 hover:underline px-2 py-1"
+                            >
+                                Clear All
+                            </button>
+                        </div>
+                    )}
 
                     {/* Controls */}
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between mb-6 gap-3 sm:gap-4">

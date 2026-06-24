@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import ShareCarModal from '../../components/ShareCarModal';
 import HighlightText from '../../components/ui/HighlightText';
+import DownloadPhotosModal from '../../components/admin/DownloadPhotosModal';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface Car {
@@ -70,6 +71,7 @@ const AdminInventory = () => {
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
     const [shareCarId, setShareCarId] = useState<string | null>(null);
+    const [downloadCarId, setDownloadCarId] = useState<string | null>(null);
     const [shareCounts, setShareCounts] = useState<Record<string, number>>({});
 
     useEffect(() => {
@@ -404,6 +406,13 @@ const AdminInventory = () => {
                                                     <span className="material-symbols-outlined text-slate-400 text-lg">edit</span>
                                                 </Link>
                                             )}
+                                            <button
+                                                onClick={() => setDownloadCarId(car.id)}
+                                                className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                                                title="Download Photos"
+                                            >
+                                                <span className="material-symbols-outlined text-slate-400 text-lg">download</span>
+                                            </button>
                                             <Link to={`/car/${car.id}`} target="_blank" className="p-1.5 hover:bg-slate-100 rounded-lg" title="View on website">
                                                 <span className="material-symbols-outlined text-slate-400 text-lg">open_in_new</span>
                                             </Link>
@@ -440,6 +449,18 @@ const AdminInventory = () => {
                             setShareCarId(null);
                             fetchShareCounts();
                         }}
+                    />
+                ) : null;
+            })()}
+
+            {/* Download Modal */}
+            {downloadCarId && (() => {
+                const car = cars.find(c => c.id === downloadCarId);
+                return car ? (
+                    <DownloadPhotosModal
+                        car={car}
+                        isOpen={true}
+                        onClose={() => setDownloadCarId(null)}
                     />
                 ) : null;
             })()}

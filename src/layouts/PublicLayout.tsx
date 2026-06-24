@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Heart, User, Menu, X, Phone, Mail, MapPin, Facebook, Instagram, Twitter, Youtube } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const PublicLayout: React.FC = () => {
     const location = useLocation();
+    const navigate = useNavigate();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+    const [searchVal, setSearchVal] = useState('');
 
     const navLinks = [
         { name: 'Home', path: '/' },
@@ -34,7 +38,7 @@ const PublicLayout: React.FC = () => {
                             </div>
                             <div className="block min-w-0 flex-1">
                                 <h1 className="text-primary text-sm sm:text-lg font-bold leading-tight tracking-tight font-display truncate">
-                                    <span className="xs:hidden">Shree Swami Samarth Motors</span>
+                                    <span className="xs:hidden">SS Motors</span>
                                     <span className="hidden xs:inline">Shree Swami Samarth Motors</span>
                                 </h1>
                             </div>
@@ -58,13 +62,23 @@ const PublicLayout: React.FC = () => {
 
                         {/* Actions */}
                         <div className="flex items-center gap-1.5 sm:gap-3">
-                            <div className="hidden md:flex items-center gap-2 bg-slate-50 rounded-xl px-4 h-10 border border-slate-100 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/30 transition-all min-w-[10rem] lg:min-w-[12.5rem]">
+                            <form 
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    if (searchVal.trim()) {
+                                        navigate(`/inventory?search=${encodeURIComponent(searchVal.trim())}`);
+                                    }
+                                }}
+                                className="hidden md:flex items-center gap-2 bg-slate-50 rounded-xl px-4 h-10 border border-slate-100 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/30 transition-all min-w-[10rem] lg:min-w-[12.5rem]"
+                            >
                                 <Search size={16} className="text-slate-400 shrink-0" />
                                 <input
+                                    value={searchVal}
+                                    onChange={(e) => setSearchVal(e.target.value)}
                                     className="bg-transparent border-none text-sm text-primary placeholder:text-slate-400 w-full outline-none"
                                     placeholder="Search..."
                                 />
-                            </div>
+                            </form>
 
                             <button className="hidden lg:flex size-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 hover:text-primary transition-colors">
                                 <Heart size={20} />
@@ -77,13 +91,28 @@ const PublicLayout: React.FC = () => {
                                 <User size={16} />
                                 Login
                             </Link>
+                            
+                            {/* Mobile Actions */}
+                            <button 
+                                onClick={() => {
+                                    setMobileSearchOpen(!mobileSearchOpen);
+                                    setMobileMenuOpen(false);
+                                }}
+                                className="sm:hidden flex size-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition-colors"
+                                aria-label="Search"
+                            >
+                                <Search size={18} />
+                            </button>
                             <Link to="/auth" className="sm:hidden flex size-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition-colors">
                                 <User size={18} />
                             </Link>
 
                             {/* Mobile menu button */}
                             <button
-                                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                                onClick={() => {
+                                    setMobileMenuOpen(!mobileMenuOpen);
+                                    setMobileSearchOpen(false);
+                                }}
                                 className="lg:hidden flex size-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition-colors"
                             >
                                 {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -91,36 +120,88 @@ const PublicLayout: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Mobile Menu */}
-                    {mobileMenuOpen && (
-                        <div className="lg:hidden fixed inset-x-0 top-16 bottom-0 z-[60] bg-white overflow-y-auto pt-4 pb-8 flex flex-col">
-                            <nav className="flex flex-col gap-1 px-4">
-                                {navLinks.map(link => (
-                                    <Link
-                                        key={link.path}
-                                        to={link.path}
-                                        onClick={() => setMobileMenuOpen(false)}
-                                        className={`px-4 py-3.5 rounded-xl text-sm font-semibold transition-colors ${isActive(link.path)
-                                            ? 'text-primary bg-slate-50 border-l-4 border-accent'
-                                            : 'text-slate-600 hover:text-primary hover:bg-slate-50'
-                                            }`}
+                    {/* Mobile Search Bar Drawer */}
+                    <AnimatePresence>
+                        {mobileSearchOpen && (
+                            <motion.div 
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="sm:hidden overflow-hidden bg-slate-50 border-t border-slate-100"
+                            >
+                                <div className="px-4 py-3">
+                                    <form 
+                                        onSubmit={(e) => {
+                                            e.preventDefault();
+                                            if (searchVal.trim()) {
+                                                navigate(`/inventory?search=${encodeURIComponent(searchVal.trim())}`);
+                                                setMobileSearchOpen(false);
+                                            }
+                                        }}
+                                        className="flex items-center gap-2 bg-white rounded-xl px-4 h-10 border border-slate-200 shadow-sm"
                                     >
-                                        {link.name}
+                                        <Search size={16} className="text-slate-400 shrink-0" />
+                                        <input
+                                            value={searchVal}
+                                            onChange={(e) => setSearchVal(e.target.value)}
+                                            autoFocus
+                                            className="bg-transparent border-none text-sm text-primary placeholder:text-slate-400 w-full outline-none"
+                                            placeholder="Search by model, make, year..."
+                                        />
+                                        {searchVal && (
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setSearchVal('')} 
+                                                className="text-slate-400 hover:text-primary flex items-center"
+                                            >
+                                                <X size={16} />
+                                            </button>
+                                        )}
+                                    </form>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Mobile Menu */}
+                    <AnimatePresence>
+                        {mobileMenuOpen && (
+                            <motion.div 
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="lg:hidden overflow-hidden fixed inset-x-0 top-16 bottom-0 z-[60] bg-white pt-4 pb-8 flex flex-col border-t border-slate-100"
+                            >
+                                <nav className="flex flex-col gap-1 px-4">
+                                    {navLinks.map(link => (
+                                        <Link
+                                            key={link.path}
+                                            to={link.path}
+                                            onClick={() => setMobileMenuOpen(false)}
+                                            className={`px-4 py-3.5 rounded-xl text-sm font-semibold transition-colors ${isActive(link.path)
+                                                ? 'text-primary bg-slate-50 border-l-4 border-accent'
+                                                : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                                                }`}
+                                        >
+                                            {link.name}
+                                        </Link>
+                                    ))}
+                                </nav>
+                                <div className="mt-auto pt-4 border-t border-slate-100 flex flex-col gap-3 px-6 pb-8">
+                                    <Link to="/admin/login" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 py-2 text-sm font-medium text-slate-500 hover:text-primary transition-colors">
+                                        <span className="material-symbols-outlined text-base">admin_panel_settings</span>
+                                        Staff Login
                                     </Link>
-                                ))}
-                            </nav>
-                            <div className="mt-auto pt-4 border-t border-slate-100 flex flex-col gap-3 px-6">
-                                <Link to="/admin/login" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 py-2 text-sm font-medium text-slate-500 hover:text-primary transition-colors">
-                                    <span className="material-symbols-outlined text-base">admin_panel_settings</span>
-                                    Staff Login
-                                </Link>
-                                <Link to="/auth" onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-center gap-2 h-12 rounded-xl bg-primary text-white text-base font-bold hover:bg-primary-light transition-colors shadow-lg">
-                                    <User size={18} />
-                                    Sign In / Register
-                                </Link>
-                            </div>
-                        </div>
-                    )}
+                                    <Link to="/auth" onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-center gap-2 h-12 rounded-xl bg-primary text-white text-base font-bold hover:bg-primary-light transition-colors shadow-lg">
+                                        <User size={18} />
+                                        Sign In / Register
+                                    </Link>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
             </header>
 

@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut, Heart } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut, Heart, Download } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import DownloadPhotosModal from '../components/admin/DownloadPhotosModal';
 import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -42,6 +43,8 @@ interface CarData {
     source?: string;
     body_type?: string;
     insurance?: string;
+    ownership?: string; // Optional field for vehicle details
+    engine?: string;    // Optional field for engine specification
     video_url?: string;
     dealer?: {
         dealer_code: string;
@@ -55,7 +58,79 @@ const CarDetails = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     
-    const { user } = useAuth();
+    const { user, profile, isAdmin, isStaff, hasPermission } = useAuth();
+    const isStaffOrAdmin = isAdmin || isStaff;
+    const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+    const [downloadingSingle, setDownloadingSingle] = useState(false);
+
+    const downloadSinglePhoto = async (img: string, index: number) => {
+        if (!img || !car || downloadingSingle) return;
+        setDownloadingSingle(true);
+        try {
+            const isFullUrl = img.startsWith('http');
+            const imgUrl = isFullUrl ? img : `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/car-images/${img}`;
+            const fileExt = imgUrl.split('.').pop()?.split('?')[0] || 'jpg';
+            const fileName = `${car.make}_${car.model}_photo_${index + 1}.${fileExt}`.replace(/\s+/g, '_');
+
+            let blob: Blob;
+            if (!isFullUrl) {
+                const { data, error } = await supabase.storage.from('car-images').download(img);
+                if (error) throw error;
+                if (!data) throw new Error('No data');
+                blob = data;
+            } else {
+                const resp = await fetch(imgUrl);
+                if (!resp.ok) throw new Error('Fetch failed');
+                blob = await resp.blob();
+            }
+
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(blobUrl);
+        } catch (error) {
+            console.error('Error downloading image:', error);
+            const imgUrl = img.startsWith('http') ? img : `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/car-images/${img}`;
+            window.open(imgUrl, '_blank');
+        } finally {
+            setDownloadingSingle(false);
+        }
+    };
+
+    const getFeaturesList = (): string[] => {
+        if (!car) return [];
+        const list: string[] = [];
+        
+        // 1. Add specifications as features
+        if (car.year) list.push(`Model Year: ${car.year}`);
+        if (car.fuel_type) list.push(`Fuel Type: ${car.fuel_type}`);
+        if (car.transmission) list.push(`Transmission: ${car.transmission}`);
+        if (car.mileage) list.push(`Odometer: ${car.mileage.toLocaleString('en-IN')} km`);
+        if (car.ownership) {
+            const ownershipStr = typeof car.ownership === 'number' 
+                ? `${car.ownership} Owner` 
+                : car.ownership;
+            list.push(`Ownership: ${ownershipStr}`);
+        }
+        if (car.condition) list.push(`Condition: ${car.condition}`);
+        if (car.insurance) list.push(`Insurance: ${car.insurance}`);
+        
+        // 2. Add explicit features from the database
+        if (car.features) {
+            const explicit = car.features
+                .split(/[,\n]+/)
+                .map(f => f.trim())
+                .filter(Boolean);
+            list.push(...explicit);
+        }
+        
+        return Array.from(new Set(list));
+    };
+
     const [similarCars, setSimilarCars] = useState<CarData[]>([]);
     const [wishlist, setWishlist] = useState<string[]>([]);
     
@@ -65,6 +140,7 @@ const CarDetails = () => {
     const [lightboxZoom, setLightboxZoom] = useState(false);
     const [zoomStyle, setZoomStyle] = useState<React.CSSProperties>({ transformOrigin: 'center' });
     const [isHovered, setIsHovered] = useState(false);
+    const [mobileTab, setMobileTab] = useState<'overview' | 'features' | 'inspection' | 'video'>('overview');
     const thumbnailRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
     // Lightbox Swipe State
@@ -284,7 +360,7 @@ const CarDetails = () => {
     const thumbnails = car.images && car.images.length > 0 ? car.images : [];
 
     return (
-        <div className="container-main py-6">
+        <div className="container-main py-6 pb-24 lg:pb-6">
             {/* Breadcrumb */}
             <nav className="flex items-center gap-2 text-sm text-slate-500 mb-6">
                 <Link to="/" className="hover:text-primary transition-colors">Home</Link>
@@ -294,7 +370,8 @@ const CarDetails = () => {
                 <span className="text-primary font-medium">{car.make}: {car.model}</span>
             </nav>
 
-            <div className="grid lg:grid-cols-3 gap-8">
+            {/* Desktop Layout */}
+            <div className="hidden lg:grid grid-cols-3 gap-8">
                 {/* Left: Images */}
                 <div className="lg:col-span-2 space-y-6">
                     {/* Main Image Container */}
@@ -304,6 +381,9 @@ const CarDetails = () => {
                         onMouseEnter={handleMouseEnter}
                         onMouseLeave={handleMouseLeave}
                         onClick={() => setIsLightboxOpen(true)}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
                     >
                         {/* AnimatePresence for transitions */}
                         <div className="w-full h-full overflow-hidden select-none">
@@ -417,13 +497,13 @@ const CarDetails = () => {
                     {/* Specifications */}
                     <div>
                         <h2 className="text-xl font-bold text-primary font-display mb-5">Car Specifications</h2>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                             {SPECS.map(spec => {
                                 let val = (car as any)[spec.key];
                                 if (val === undefined || val === null || val === '') val = spec.default;
                                 if (spec.key === 'mileage' && val) val = val.toLocaleString();
                                 return (
-                                    <div key={spec.key} className="bg-white border border-slate-100 rounded-2xl p-4 shadow-[var(--shadow-card)]">
+                                    <div key={spec.key} className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-4 shadow-[var(--shadow-card)]">
                                         <span className="material-symbols-outlined text-xl text-accent mb-2 block">{spec.icon}</span>
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">{spec.label}</p>
                                         <p className="text-sm font-bold text-primary">{String(val)}{spec.suffix || ''}</p>
@@ -434,14 +514,23 @@ const CarDetails = () => {
                     </div>
 
                     {/* Features List */}
-                    {car.features && (
-                        <div>
-                            <h2 className="text-xl font-bold text-primary font-display mb-5">Key Features</h2>
-                            <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-[var(--shadow-card)] font-medium text-sm text-slate-700 whitespace-pre-wrap">
-                                {car.features}
+                    {(() => {
+                        const feats = getFeaturesList();
+                        if (feats.length === 0) return null;
+                        return (
+                            <div>
+                                <h2 className="text-xl font-bold text-primary font-display mb-5">Key Features & Specifications</h2>
+                                <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-[var(--shadow-card)] flex flex-wrap gap-2.5">
+                                    {feats.map((feat, idx) => (
+                                        <span key={idx} className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-100 text-slate-700 text-xs font-semibold px-4 py-2.5 rounded-xl shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all duration-200">
+                                            <span className="material-symbols-outlined text-green-500 text-base font-bold">check</span>
+                                            {feat}
+                                        </span>
+                                    ))}
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        );
+                    })()}
 
                     {/* Video Walkthrough */}
                     {car.video_url && (
@@ -530,6 +619,33 @@ const CarDetails = () => {
                             <span className="material-symbols-outlined text-sm text-success">verified</span>
                             100% Satisfaction Guarantee
                         </div>
+
+                        {isStaffOrAdmin && (
+                            <div className="border-t border-slate-100 mt-4 pt-4">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-sm text-accent">admin_panel_settings</span>
+                                    Staff Options
+                                </p>
+                                <div className="space-y-2">
+                                    <button 
+                                        onClick={() => setIsDownloadModalOpen(true)}
+                                        className="w-full h-10 flex items-center justify-center gap-2 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-colors text-xs shadow-sm cursor-pointer"
+                                    >
+                                        <span className="material-symbols-outlined text-base">download</span>
+                                        Download Photos (ZIP / Single)
+                                    </button>
+                                    {hasPermission('inventory', 'manage') && (
+                                        <Link 
+                                            to={`/admin/inventory/${car.id}/edit`}
+                                            className="w-full h-10 flex items-center justify-center gap-2 border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-colors text-xs"
+                                        >
+                                            <span className="material-symbols-outlined text-base">edit</span>
+                                            Edit Vehicle Inventory
+                                        </Link>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Dealer Card */}
@@ -564,6 +680,288 @@ const CarDetails = () => {
                             <span className="material-symbols-outlined text-sm">call</span> Call +91 98232 37975
                         </a>
                     </div>
+                </div>
+            </div>
+
+            {/* Mobile Layout */}
+            <div className="lg:hidden flex flex-col space-y-6">
+                {/* Mobile Image Gallery (Swipeable) */}
+                <div 
+                    className="relative overflow-hidden bg-slate-100 aspect-[16/10] sm:rounded-2xl shadow-md -mx-4 sm:mx-0"
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    onClick={() => setIsLightboxOpen(true)}
+                >
+                    <div className="w-full h-full overflow-hidden select-none">
+                        <AnimatePresence mode="wait">
+                            <motion.img
+                                key={selectedImg}
+                                src={mainImage}
+                                alt={`${car.year} ${car.make} ${car.model}`}
+                                className="w-full h-full object-cover"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.2 }}
+                            />
+                        </AnimatePresence>
+                    </div>
+
+                    {/* Floating Top Badges */}
+                    <div className="absolute top-4 left-4 flex gap-1.5 pointer-events-none">
+                        {car.condition === 'Excellent' && (
+                            <span className="bg-primary text-white text-[9px] font-extrabold px-2.5 py-1 rounded-lg uppercase tracking-wider backdrop-blur-md shadow-sm">Certified</span>
+                        )}
+                        {car.status === 'reserved' && (
+                            <span className="bg-amber-500 text-white text-[9px] font-extrabold px-2.5 py-1 rounded-lg uppercase tracking-wider backdrop-blur-md shadow-sm">Reserved</span>
+                        )}
+                    </div>
+
+                    {/* Floating Image Count Pill */}
+                    <div className="absolute bottom-4 right-4 bg-black/60 text-white text-[10px] font-bold px-2.5 py-1 rounded-full backdrop-blur-md shadow-sm tracking-wider">
+                        {selectedImg + 1} / {thumbnails.length}
+                    </div>
+                </div>
+
+                {/* Mobile Thumbnails Track */}
+                {thumbnails.length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto pb-1 px-4 -mx-4 scrollbar-none snap-x snap-mandatory">
+                        {thumbnails.map((img, i) => (
+                            <button 
+                                key={`mob-thumb-${i}`} 
+                                onClick={() => setSelectedImg(i)} 
+                                className={`shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-all duration-200 snap-start ${i === selectedImg ? 'border-accent shadow-sm scale-[0.98]' : 'border-slate-200 opacity-60'}`}
+                            >
+                                <img src={getPrimaryImage([img])} alt="" className="w-full h-full object-cover" />
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                {/* Floating Header Card */}
+                <div className={`bg-white rounded-3xl border border-slate-100/60 p-5 shadow-lg mx-4 relative z-10 ${thumbnails.length > 1 ? 'mt-4' : '-mt-12'}`}>
+                    <div className="flex justify-between items-start gap-3">
+                        <div>
+                            <h1 className="text-xl font-black text-primary font-display tracking-tight leading-tight">{car.year} {car.make} {car.model}</h1>
+                            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                                <span>{car.fuel_type}</span>
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-200" />
+                                <span>{car.transmission}</span>
+                                {car.source === 'dealer' && car.dealer?.dealer_code && (
+                                    <>
+                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-200" />
+                                        <span className="font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded text-[10px]">
+                                            {car.dealer.dealer_code}
+                                        </span>
+                                    </>
+                                )}
+                            </p>
+                        </div>
+                        
+                        {/* Wishlist button */}
+                        <button 
+                            className={`p-2.5 rounded-full border transition-all ${
+                                wishlist.includes(car.id) 
+                                    ? 'bg-red-50 border-red-200 text-red-500 shadow-sm scale-100 active:scale-95' 
+                                    : 'bg-slate-50 border-slate-200 text-slate-400 active:scale-95'
+                            }`}
+                            onClick={(e) => toggleWishlist(e, car.id)}
+                        >
+                            <Heart size={16} fill={wishlist.includes(car.id) ? 'currentColor' : 'none'} />
+                        </button>
+                    </div>
+                    
+                    <div className="flex items-baseline justify-between mt-4 pt-4 border-t border-slate-50">
+                        <div>
+                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Total Price</span>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)}</span>
+                                <span className="text-sm font-black text-primary font-display">Lakh</span>
+                            </div>
+                        </div>
+                        
+                        <span className="bg-accent-light text-accent text-[9px] font-extrabold px-2.5 py-1 rounded-lg uppercase tracking-wider">Negotiable</span>
+                    </div>
+                </div>
+
+                {/* Mobile Staff Controls */}
+                {isStaffOrAdmin && (
+                    <div className="bg-white border border-slate-100/60 rounded-3xl p-5 shadow-lg mx-4">
+                        <h3 className="text-xs font-bold text-primary font-display pb-2 border-b border-slate-50 mb-3 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-sm text-accent">admin_panel_settings</span>
+                            Staff Options
+                        </h3>
+                        <div className="flex gap-2">
+                            <button 
+                                onClick={() => setIsDownloadModalOpen(true)}
+                                className="flex-1 h-11 flex items-center justify-center gap-1.5 bg-primary text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-base">download</span>
+                                Download Photos
+                            </button>
+                            {hasPermission('inventory', 'manage') && (
+                                <Link 
+                                    to={`/admin/inventory/${car.id}/edit`}
+                                    className="flex-1 h-11 flex items-center justify-center gap-1.5 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs"
+                                >
+                                    <span className="material-symbols-outlined text-base">edit</span>
+                                    Edit Car
+                                </Link>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Horizontal Specs Track */}
+                <div className="flex overflow-x-auto gap-3 pb-2 px-4 -mx-4 scrollbar-none snap-x snap-mandatory">
+                    {[
+                        { icon: 'speed', label: 'Odometer', val: `${car.mileage.toLocaleString()} km` },
+                        { icon: 'local_gas_station', label: 'Fuel Type', val: car.fuel_type },
+                        { icon: 'tune', label: 'Transmission', val: car.transmission },
+                        { icon: 'calendar_month', label: 'Model Year', val: String(car.year) },
+                    ].map((spec, i) => (
+                        <div key={i} className="min-w-[45%] bg-white border border-slate-100 rounded-2xl p-4 shadow-sm snap-start flex items-center gap-3">
+                            <div className="size-9 bg-slate-50 rounded-xl flex items-center justify-center text-accent shrink-0">
+                                <span className="material-symbols-outlined text-lg">{spec.icon}</span>
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">{spec.label}</p>
+                                <p className="text-xs font-bold text-primary truncate max-w-[6rem]">{spec.val}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Tab Selector */}
+                <div className="px-4">
+                    <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200/50">
+                        {(['overview', 'features', 'inspection', 'video'] as const).map(tab => (
+                            <button
+                                key={tab}
+                                onClick={() => setMobileTab(tab)}
+                                className={`flex-1 py-2.5 text-[11px] font-extrabold rounded-xl capitalize transition-all ${
+                                    mobileTab === tab 
+                                        ? 'bg-white text-primary shadow-sm font-black' 
+                                        : 'text-slate-500 hover:text-primary'
+                                }`}
+                            >
+                                {tab === 'video' ? 'Video Tour' : tab}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Tab Content Panes */}
+                <div className="space-y-4">
+                    {mobileTab === 'overview' && (
+                        <div className="px-4 space-y-4">
+                            {/* Sub Specs List */}
+                            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
+                                <h3 className="text-sm font-bold text-primary font-display pb-3 border-b border-slate-50">Overview & Details</h3>
+                                <div className="grid grid-cols-2 gap-y-4 gap-x-2 text-xs">
+                                    {[
+                                        { icon: 'person', label: 'Ownership', val: car.ownership || '1st Owner' },
+                                        { icon: 'engineering', label: 'Engine', val: car.engine || 'N/A' },
+                                        { icon: 'verified_user', label: 'Insurance', val: car.insurance || 'Valid' },
+                                        { icon: 'directions_car', label: 'Condition', val: car.condition || 'Good' },
+                                    ].map((item, i) => (
+                                        <div key={i} className="flex items-center gap-2.5">
+                                            <span className="material-symbols-outlined text-slate-400 text-lg">{item.icon}</span>
+                                            <div>
+                                                <p className="text-[9px] text-slate-400 font-bold uppercase">{item.label}</p>
+                                                <p className="font-bold text-primary">{item.val}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Dealer Card */}
+                            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm flex items-center gap-4">
+                                <div className="size-11 bg-primary rounded-xl flex items-center justify-center text-white shrink-0">
+                                    <span className="material-symbols-outlined text-lg">storefront</span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-primary">Shree Swami Samarth Motors</p>
+                                    <p className="text-[10px] text-slate-400 flex items-start gap-1 mt-0.5">
+                                        <span className="material-symbols-outlined text-xs text-accent shrink-0 mt-0.5">location_on</span>
+                                        <span className="truncate">Kasaba Bawada, Kolhapur, Maharashtra 416006</span>
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Support Widget */}
+                            <div className="bg-slate-50 border border-slate-100/60 rounded-3xl p-5 flex items-start gap-4">
+                                <div className="size-10 bg-accent-light rounded-xl flex items-center justify-center text-accent shrink-0">
+                                    <span className="material-symbols-outlined text-xl">support_agent</span>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-bold text-primary">Need Expert Advice?</p>
+                                    <p className="text-[10px] text-slate-500 mt-1 mb-3">Talk to our car experts to get more details about this car.</p>
+                                    <a href="tel:+919823237975" className="inline-flex items-center gap-1.5 text-xs font-bold text-accent hover:underline">
+                                        <span className="material-symbols-outlined text-sm">call</span> Call +91 98232 37975
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {mobileTab === 'features' && (() => {
+                        const feats = getFeaturesList();
+                        return (
+                            <div className="px-4">
+                                <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
+                                    <h3 className="text-sm font-bold text-primary font-display pb-3 border-b border-slate-50">Equipped Features & Specs</h3>
+                                    <div className="flex flex-wrap gap-2">
+                                        {feats.map((feat, idx) => (
+                                            <span key={idx} className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-100 text-slate-700 text-xs font-semibold px-3 py-2 rounded-xl shadow-sm hover:scale-[1.01] transition-all">
+                                                <span className="material-symbols-outlined text-green-500 text-sm font-bold">check</span>
+                                                {feat}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {mobileTab === 'inspection' && (
+                        <div className="px-4">
+                            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-50">
+                                    <h3 className="text-sm font-bold text-primary font-display">150-Point Inspection</h3>
+                                    <span className="text-[10px] bg-green-50 text-green-600 border border-green-200 px-2 py-0.5 rounded-lg font-bold">Passed</span>
+                                </div>
+                                <div className="space-y-2.5">
+                                    {INSPECTION.map(item => (
+                                        <div key={item.label} className="flex items-center gap-3 p-3 bg-slate-50/50 rounded-2xl">
+                                            <div className="size-6 rounded-full bg-success-light flex items-center justify-center text-success shrink-0 font-bold">
+                                                <Check size={12} strokeWidth={3} />
+                                            </div>
+                                            <span className="text-xs font-semibold text-slate-700">{item.label}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {mobileTab === 'video' && (
+                        <div className="px-4">
+                            {car.video_url ? (
+                                <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
+                                    <h3 className="text-sm font-bold text-primary font-display pb-3 border-b border-slate-50">Video Walkthrough</h3>
+                                    <VideoPlayer url={car.video_url} />
+                                </div>
+                            ) : (
+                                <div className="bg-white border border-slate-100 rounded-3xl p-8 text-center text-slate-400 text-xs shadow-sm flex flex-col items-center">
+                                    <span className="material-symbols-outlined text-3xl text-slate-300 mb-2">play_circle</span>
+                                    <p>No video tour uploaded for this vehicle.</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -650,6 +1048,16 @@ const CarDetails = () => {
                                 {car.year} {car.make} {car.model} &bull; {selectedImg + 1} / {thumbnails.length}
                             </span>
                             <div className="flex items-center gap-4">
+                                {isStaffOrAdmin && (
+                                    <button 
+                                        onClick={() => downloadSinglePhoto(thumbnails[selectedImg], selectedImg)}
+                                        className="p-2 bg-white/10 hover:bg-white/20 transition-colors rounded-full flex items-center justify-center"
+                                        disabled={downloadingSingle}
+                                        title="Download Photo"
+                                    >
+                                        <Download size={20} />
+                                    </button>
+                                )}
                                 <button 
                                     onClick={() => setLightboxZoom(p => !p)} 
                                     className="p-2 bg-white/10 hover:bg-white/20 transition-colors rounded-full"
@@ -723,6 +1131,52 @@ const CarDetails = () => {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* Sticky Bottom CTA Bar for Mobile */}
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-t border-white/20 shadow-[0_-10px_30px_rgba(15,23,41,0.08)] px-4 py-3 flex items-center justify-between">
+                <div className="flex flex-col">
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider leading-none mb-1">Total Price</span>
+                    <div className="flex items-baseline gap-0.5">
+                        <span className="text-xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)}</span>
+                        <span className="text-xs font-black text-primary font-display">L</span>
+                    </div>
+                </div>
+                <div className="flex gap-2 flex-1 max-w-[72%] justify-end">
+                    <Link 
+                        to={`/book-test-drive?car=${car.id}`} 
+                        className="flex-1 h-11 flex items-center justify-center gap-1.5 bg-accent text-primary font-black rounded-xl text-[11px] shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+                    >
+                        <span className="material-symbols-outlined text-[15px] font-bold">directions_car</span>
+                        Book Drive
+                    </Link>
+                    <a 
+                        href={`https://wa.me/919823237975?text=I'm interested in the ${car.year} ${car.make} ${car.model} (ID: ${car.id})`} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="flex-1 h-11 flex items-center justify-center gap-1.5 bg-[#25D366] text-white font-black rounded-xl text-[11px] shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+                    >
+                        <span className="material-symbols-outlined text-[15px] font-bold">forum</span>
+                        WhatsApp
+                    </a>
+                </div>
+            </div>
+
+            {/* Download Photos Modal */}
+            {isDownloadModalOpen && (
+                <DownloadPhotosModal
+                    car={{
+                        id: car.id,
+                        make: car.make,
+                        model: car.model,
+                        variant: car.ownership || null,
+                        year: car.year,
+                        images: car.images,
+                        thumbnail: car.images?.[0] || null
+                    }}
+                    isOpen={isDownloadModalOpen}
+                    onClose={() => setIsDownloadModalOpen(false)}
+                />
+            )}
         </div>
     );
 };

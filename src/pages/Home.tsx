@@ -101,10 +101,20 @@ const Home = () => {
         <div className="w-full flex flex-col">
             {/* Hero Section — split layout */}
             <section className="relative overflow-hidden w-full bg-primary">
-                <div className="container-main">
+                {/* Premium Background image with gradient overlay */}
+                <div className="absolute inset-0 z-0 select-none pointer-events-none">
+                    <img
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuA1XK2L7EpsFR7K_eosnwu-nObzshJ1Ty2a8myYaJLGxNfVRumnjS7qbstQgmr0orhubbj2qWZONaSEPe_N7kcPM_1QfK25z_ISQyqhepk7R2dKxgZkvCaLxu1sknYBEuc8ql5XtjjvTxpkgGtcvcz9YskEEhJWegVcLP20ML2BowuulsKcxPJys4ux6Vi6vSqWwbUnsgtemZ2KMzcaeJsz8ZDBvA8U6qYDVmNQ5ksSaho1Svizzl2FUtSrad_4n_fgXjaKl4oo-CEH"
+                        alt=""
+                        className="w-full h-full object-cover opacity-20 sm:opacity-25"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-tr from-primary via-primary/95 to-primary/80" />
+                </div>
+
+                <div className="relative z-10 container-main">
                     <div className="grid lg:grid-cols-2 gap-8 items-center min-h-[32.5rem] py-12 lg:py-20">
                         {/* Left — copy + search */}
-                        <div className="relative z-10">
+                        <div>
                             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/15 border border-accent/30 text-accent text-[11px] font-bold uppercase tracking-widest mb-6">
                                 <span className="material-symbols-outlined text-sm">auto_awesome</span>
                                 Effortless Luxury Discovery
@@ -194,12 +204,12 @@ const Home = () => {
             </section>
 
             {/* Trust Badges */}
-            <section className="py-14 bg-white border-b border-slate-100 w-full">
+            <section className="py-10 bg-white border-b border-slate-100 w-full">
                 <div className="container-main">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div className="flex sm:grid sm:grid-cols-3 gap-6 overflow-x-auto pb-4 sm:pb-0 scrollbar-none px-4 -mx-4 sm:px-0 sm:mx-0 snap-x snap-mandatory">
                         {TRUST_BADGES.map(f => (
-                            <div key={f.title} className="flex flex-col items-center text-center gap-3 group cursor-default">
-                                <div className="size-14 rounded-2xl bg-slate-50 flex items-center justify-center text-accent shadow-sm border border-slate-100 group-hover:bg-accent group-hover:text-primary transition-all duration-300">
+                            <div key={f.title} className="flex flex-col items-center text-center gap-3 group cursor-default min-w-[75%] sm:min-w-0 snap-center bg-slate-50/50 sm:bg-transparent p-5 sm:p-0 rounded-2xl border border-slate-100 sm:border-0 shadow-sm sm:shadow-none">
+                                <div className="size-14 rounded-2xl bg-white sm:bg-slate-50 flex items-center justify-center text-accent shadow-sm border border-slate-100 group-hover:bg-accent group-hover:text-primary transition-all duration-300">
                                     <span className="material-symbols-outlined text-2xl">{f.icon}</span>
                                 </div>
                                 <div>
@@ -226,21 +236,21 @@ const Home = () => {
                         </Link>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                    <div className="flex sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-5 overflow-x-auto pb-6 sm:pb-0 scrollbar-none px-4 -mx-4 sm:px-0 sm:mx-0 snap-x snap-mandatory">
                         {loading ? (
-                            <div className="col-span-1 sm:col-span-2 lg:col-span-4 text-center py-10 text-slate-400">Loading newest arrivals...</div>
+                            <div className="col-span-1 sm:col-span-2 lg:col-span-4 text-center py-10 text-slate-400 w-full">Loading newest arrivals...</div>
                         ) : error ? (
-                            <div className="col-span-1 sm:col-span-2 lg:col-span-4 text-center py-10">
+                            <div className="col-span-1 sm:col-span-2 lg:col-span-4 text-center py-10 w-full">
                                 <span className="material-symbols-outlined text-red-400 text-4xl mb-2">error</span>
                                 <p className="text-slate-500 font-medium">Failed to load inventory.</p>
                                 <button onClick={() => window.location.reload()} className="mt-3 px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-semibold hover:bg-red-100">Try Again</button>
                             </div>
                         ) : cars.length === 0 ? (
-                            <div className="col-span-1 sm:col-span-2 lg:col-span-4 text-center py-10 text-slate-400">No vehicles have been added recently.</div>
+                            <div className="col-span-1 sm:col-span-2 lg:col-span-4 text-center py-10 text-slate-400 w-full">No vehicles have been added recently.</div>
                         ) : cars.map((car) => {
                             const isSaved = wishlist.includes(car.id);
                             return (
-                                <article key={car.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all duration-300 group flex flex-col relative">
+                                <article key={car.id} className="min-w-[85%] sm:min-w-0 snap-center bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all duration-300 group flex flex-col relative">
                                     <Link to={`/car/${car.id}`} className="flex flex-col flex-1">
                                         <div className="relative aspect-[16/11] overflow-hidden bg-slate-100">
                                             <img alt={`${car.make} ${car.model}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src={getPrimaryImage(car.images)} />
