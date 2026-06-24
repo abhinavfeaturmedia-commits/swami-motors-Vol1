@@ -43,7 +43,13 @@ const fmtMins = (m: number) => {
     return h > 0 ? `${h}h ${min}m` : `${min}m`;
 };
 
-const todayISO = () => new Date().toISOString().split('T')[0];
+const todayISO = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 
 const getInitials = (name: string | null) =>
     (name ?? 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -164,7 +170,12 @@ const Attendance: React.FC = () => {
     }, [rptFrom, rptTo, rptStaff]);
 
     useEffect(() => { fetchAll(); }, [fetchAll]);
-    useEffect(() => { if (tab === 'roster') fetchTodayRoster(); }, [tab, fetchTodayRoster]);
+    useEffect(() => {
+        if (tab !== 'roster') return;
+        fetchTodayRoster();
+        const id = setInterval(fetchTodayRoster, 30000); // refresh every 30 seconds
+        return () => clearInterval(id);
+    }, [tab, fetchTodayRoster]);
     useEffect(() => { if (tab === 'my-attendance') fetchMyRecords(); }, [tab, calMonth, calYear, fetchMyRecords]);
     useEffect(() => { if (tab === 'leaves') fetchLeaves(); }, [tab, fetchLeaves]);
     useEffect(() => { if (tab === 'reports') fetchReports(); }, [tab, rptFrom, rptTo, rptStaff, fetchReports]);
@@ -269,7 +280,7 @@ const Attendance: React.FC = () => {
         for (let i = 0; i < firstDay; i++) cells.push(null);
         for (let d = 1; d <= daysInMonth; d++) {
             const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-            const dow = new Date(dateStr).getDay();
+            const dow = new Date(calYear, calMonth, d).getDay();
             const record = myRecords.find(r => r.date === dateStr) ?? null;
             cells.push({ day: d, record, isToday: dateStr === todayISO(), isWeekend: dow === 0 || dow === 6 });
         }
@@ -447,8 +458,21 @@ const Attendance: React.FC = () => {
                                     <tbody>
                                         {staffProfiles.map(sp => {
                                             const rec = allRecords.find(r => r.user_id === sp.id);
-                                            const cfg = rec ? (STATUS_CONFIG[rec.status] ?? STATUS_CONFIG['absent']) : STATUS_CONFIG['absent'];
-                                            const status = rec?.status ?? 'absent';
+                                            
+                                            // Determine default status if no record exists
+                                            let defaultStatus = 'absent';
+                                            const today = new Date();
+                                            
+                                            // Check if today is a holiday
+                                            const todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+                                            const isHoliday = holidays.some(h => h.date === todayStr);
+                                            
+                                            if (isHoliday) {
+                                                defaultStatus = 'holiday';
+                                            }
+                                            
+                                            const status = rec?.status ?? defaultStatus;
+                                            const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG['absent'];
                                             return (
                                                 <tr key={sp.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 transition-colors">
                                                     <td className="px-4 py-3">
@@ -539,15 +563,13 @@ const Attendance: React.FC = () => {
                                         if (!cell) return <div key={`empty-${i}`} className="min-h-[72px] border-b border-r border-slate-50 last:border-r-0" />;
                                         const cfg = cell.record
                                             ? STATUS_CONFIG[cell.record.status] ?? STATUS_CONFIG['absent']
-                                            : cell.isWeekend
-                                            ? STATUS_CONFIG['weekend']
                                             : null;
                                         return (
                                             <div key={cell.day}
                                                 className={`min-h-[72px] border-b border-r border-slate-50 last:border-r-0 p-2 flex flex-col ${
                                                     cell.isToday ? 'bg-primary/5 ring-1 ring-primary/20 ring-inset' : ''
                                                 }`}>
-                                                <span className={`text-xs font-bold ${cell.isToday ? 'text-primary' : 'text-slate-600'} ${cell.isWeekend ? 'text-slate-300' : ''}`}>
+                                                <span className={`text-xs font-bold ${cell.isToday ? 'text-primary' : 'text-slate-600'}`}>
                                                     {cell.day}
                                                 </span>
                                                 {cfg && (

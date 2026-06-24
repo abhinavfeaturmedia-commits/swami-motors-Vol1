@@ -14,7 +14,7 @@ const Commissions = () => {
     React.useEffect(() => {
         // Fetch real team members from profiles
         const fetchProfiles = async () => {
-            const { data } = await supabase.from('profiles').select('id, full_name, role, avatar_url').eq('is_active', true);
+            const { data } = await supabase.from('profiles').select('id, full_name, role, avatar_url, created_at').eq('is_active', true);
             if (data) setProfiles(data);
         };
         fetchProfiles();
@@ -25,30 +25,79 @@ const Commissions = () => {
     React.useEffect(() => {
         const fetchAttendance = async () => {
             const now = new Date();
-            const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-            const to   = now.toISOString().split('T')[0];
-            const { data } = await supabase
-                .from('attendance_records')
-                .select('user_id, status')
-                .gte('date', from)
-                .lte('date', to);
-            if (data) {
-                const map: Record<string, { present: number; total: number }> = {};
-                data.forEach((r: any) => {
-                    if (!map[r.user_id]) map[r.user_id] = { present: 0, total: 0 };
-                    map[r.user_id].total++;
-                    if (['present', 'late'].includes(r.status)) map[r.user_id].present++;
-                    if (r.status === 'half_day') map[r.user_id].present += 0.5;
-                });
-                const pctMap: Record<string, number> = {};
-                Object.entries(map).forEach(([uid, v]) => {
-                    pctMap[uid] = v.total > 0 ? Math.round((v.present / v.total) * 100) : 0;
-                });
-                setAttendanceMap(pctMap);
-            }
+            const year = now.getFullYear();
+            const month = now.getMonth();
+            const fromDateObj = new Date(year, month, 1);
+            const toDateObj = now;
+
+            const from = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+            const to   = `${year}-${String(month + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+            // Fetch holidays and attendance records in parallel
+            const [holidaysRes, attendanceRes] = await Promise.all([
+                supabase.from('attendance_holidays').select('date').gte('date', from).lte('date', to),
+                supabase.from('attendance_records').select('user_id, status, date').gte('date', from).lte('date', to)
+            ]);
+
+            const holidayDates = (holidaysRes.data ?? []).map((h: any) => h.date);
+            const attendanceData = attendanceRes.data ?? [];
+
+            // Helper to count working days (including weekends) excluding holidays between two Date objects
+            const getWorkingDaysCount = (start: Date, end: Date, holidayList: string[]) => {
+                let count = 0;
+                const cur = new Date(start);
+                cur.setHours(0, 0, 0, 0);
+                const endLimit = new Date(end);
+                endLimit.setHours(0, 0, 0, 0);
+                const holidaySet = new Set(holidayList);
+
+                while (cur <= endLimit) {
+                    const dateStr = cur.getFullYear() + '-' +
+                                    String(cur.getMonth() + 1).padStart(2, '0') + '-' +
+                                    String(cur.getDate()).padStart(2, '0');
+                    if (!holidaySet.has(dateStr)) {
+                        count++;
+                    }
+                    cur.setDate(cur.getDate() + 1);
+                }
+                return count;
+            };
+
+            // Map each user_id to their total present days
+            const userPresentMap: Record<string, number> = {};
+            attendanceData.forEach((r: any) => {
+                if (!userPresentMap[r.user_id]) userPresentMap[r.user_id] = 0;
+                if (['present', 'late', 'on_leave'].includes(r.status)) {
+                    userPresentMap[r.user_id] += 1;
+                } else if (r.status === 'half_day') {
+                    userPresentMap[r.user_id] += 0.5;
+                }
+            });
+
+            // Calculate attendance percentage using actual working days for each user
+            const pctMap: Record<string, number> = {};
+            profiles.forEach((profile: any) => {
+                let userStart = new Date(fromDateObj);
+                if (profile.created_at) {
+                    const profileCreated = new Date(profile.created_at);
+                    if (profileCreated > userStart) {
+                        userStart = profileCreated;
+                    }
+                }
+
+                const workingDays = getWorkingDaysCount(userStart, toDateObj, holidayDates);
+                const present = userPresentMap[profile.id] ?? 0;
+
+                pctMap[profile.id] = workingDays > 0 ? Math.min(100, Math.round((present / workingDays) * 100)) : 100;
+            });
+
+            setAttendanceMap(pctMap);
         };
-        fetchAttendance();
-    }, []);
+
+        if (profiles.length > 0) {
+            fetchAttendance();
+        }
+    }, [profiles]);
 
     const commissionData = useMemo(() => {
         const baseRate = 0.015; // 1.5% fixed standard commission in V1

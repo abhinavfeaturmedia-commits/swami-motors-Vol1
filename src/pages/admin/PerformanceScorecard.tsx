@@ -14,6 +14,7 @@ const PerformanceScorecard = () => {
     const [period, setPeriod] = useState('This Month');
     const [profiles, setProfiles] = useState<any[]>([]);
     const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
+    const [holidays, setHolidays] = useState<string[]>([]);
 
     useEffect(() => {
         const fetchProfiles = async () => {
@@ -26,15 +27,22 @@ const PerformanceScorecard = () => {
     useEffect(() => {
         const fetchAttendance = async () => {
             const now = new Date();
-            const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-            const to   = now.toISOString().split('T')[0];
-            const { data } = await supabase
-                .from('attendance_records')
-                .select('user_id, status, date')
-                .gte('date', from)
-                .lte('date', to)
-                .in('status', ['present', 'late', 'half_day', 'on_leave', 'absent']);
-            if (data) setAttendanceRecords(data);
+            const year = now.getFullYear();
+            const month = now.getMonth();
+            const from = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+            const to   = `${year}-${String(month + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            
+            const [holidaysRes, attendanceRes] = await Promise.all([
+                supabase.from('attendance_holidays').select('date').gte('date', from).lte('date', to),
+                supabase.from('attendance_records')
+                    .select('user_id, status, date')
+                    .gte('date', from)
+                    .lte('date', to)
+                    .in('status', ['present', 'late', 'half_day', 'on_leave', 'absent'])
+            ]);
+            
+            if (holidaysRes.data) setHolidays(holidaysRes.data.map((h: any) => h.date));
+            if (attendanceRes.data) setAttendanceRecords(attendanceRes.data);
         };
         fetchAttendance();
     }, []);
@@ -44,6 +52,32 @@ const PerformanceScorecard = () => {
         const totalSalesVolume = sales.reduce((sum, s) => sum + Number(s.final_price), 0);
         const totalConversions = sales.length;
         const globalApprovedVisits = visits.filter(v => v.status === 'approved').length;
+
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth();
+        const fromDateObj = new Date(year, month, 1);
+        const toDateObj = now;
+
+        const getWorkingDaysCount = (start: Date, end: Date, holidayList: string[]) => {
+            let count = 0;
+            const cur = new Date(start);
+            cur.setHours(0, 0, 0, 0);
+            const endLimit = new Date(end);
+            endLimit.setHours(0, 0, 0, 0);
+            const holidaySet = new Set(holidayList);
+
+            while (cur <= endLimit) {
+                const dateStr = cur.getFullYear() + '-' +
+                                String(cur.getMonth() + 1).padStart(2, '0') + '-' +
+                                String(cur.getDate()).padStart(2, '0');
+                if (!holidaySet.has(dateStr)) {
+                    count++;
+                }
+                cur.setDate(cur.getDate() + 1);
+            }
+            return count;
+        };
 
         let rankedTeam = profiles.map(m => {
             // Find leads assigned to this user
@@ -60,10 +94,20 @@ const PerformanceScorecard = () => {
 
             // Attendance stats for this member
             const memberAttendance = attendanceRecords.filter(a => a.user_id === m.id);
-            const totalDays = memberAttendance.length;
-            const presentDays = memberAttendance.filter(a => ['present', 'late'].includes(a.status)).length
+            const presentDays = memberAttendance.filter(a => ['present', 'late', 'on_leave'].includes(a.status)).length
                 + memberAttendance.filter(a => a.status === 'half_day').length * 0.5;
-            const attendancePct = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
+
+            // Determine user start date based on account creation date
+            let userStart = new Date(fromDateObj);
+            if (m.created_at) {
+                const createdDate = new Date(m.created_at);
+                if (createdDate > userStart) {
+                    userStart = createdDate;
+                }
+            }
+
+            const workingDays = getWorkingDaysCount(userStart, toDateObj, holidays);
+            const attendancePct = workingDays > 0 ? Math.min(100, Math.round((presentDays / workingDays) * 100)) : 100;
 
             return {
                 id: m.id,
@@ -96,7 +140,7 @@ const PerformanceScorecard = () => {
             globalTotalRevenue: formatCurrency(totalSalesVolume),
             globalApprovedVisits
         };
-    }, [leads, sales, visits, period, profiles, attendanceRecords]);
+    }, [leads, sales, visits, period, profiles, attendanceRecords, holidays]);
 
     return (
         <div className="space-y-6">
