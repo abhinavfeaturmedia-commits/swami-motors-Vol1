@@ -945,7 +945,7 @@ const AdminLeads = () => {
                                     <tr
                                         key={lead.id}
                                         className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/50 cursor-pointer transition-colors ${selectedLeads.includes(lead.id) ? 'bg-primary/5' : ''}`}
-                                        onClick={() => navigate(`/admin/leads/${lead.id}`)}
+                                        onClick={() => navigate(`/admin/leads/${lead.id}${searchQuery.trim() ? `?search=${encodeURIComponent(searchQuery.trim())}` : ''}`)}
                                     >
                                         {/* Checkbox — admin only */}
                                         {isAdmin && (
@@ -1002,21 +1002,115 @@ const AdminLeads = () => {
 
                                         {/* Details */}
                                         <td className="px-5 py-4">
-                                            <p className="text-sm text-primary font-medium line-clamp-1">
-                                                {lead.type === 'sell_car' && `${lead.car_make || ''} ${lead.car_model || ''}`}
-                                                {lead.type === 'contact' && (lead.message ? lead.message : '—')}
-                                                {lead.type === 'test_drive' && 'Test Drive Booking'}
-                                                {lead.type === 'insurance' && 'Insurance Inquiry'}
-                                                {lead.type === 'finance' && 'Finance Inquiry'}
-                                                {lead.type === 'car_service' && 'Car Services Request'}
-                                            </p>
-                                            <p className="text-xs text-slate-400 truncate max-w-[180px]">From: {lead.source}</p>
-                                            {(interestCounts[lead.id] ?? 0) > 0 && (
-                                                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 mt-1">
-                                                    <span className="material-symbols-outlined text-[10px]">directions_car</span>
-                                                    {interestCounts[lead.id]} interested
-                                                </span>
-                                            )}
+                                            <div className="flex flex-col gap-1 max-w-[280px]">
+                                                {/* Core Details based on Type */}
+                                                <div>
+                                                    {lead.type === 'sell_car' && (
+                                                        <p className="text-sm text-primary font-semibold">
+                                                            Sell: <HighlightText text={lead.car_make} highlight={searchQuery} />{' '}
+                                                            <HighlightText text={lead.car_model} highlight={searchQuery} />
+                                                            {lead.car_year && <span className="text-xs text-slate-500 ml-1">({lead.car_year})</span>}
+                                                        </p>
+                                                    )}
+                                                    {lead.type === 'contact' && (
+                                                        <p className="text-sm text-primary font-medium line-clamp-2">
+                                                            {lead.message ? <HighlightText text={lead.message} highlight={searchQuery} /> : '—'}
+                                                        </p>
+                                                    )}
+                                                    {lead.type === 'test_drive' && <p className="text-sm text-primary font-semibold">Test Drive Booking</p>}
+                                                    {lead.type === 'insurance' && <p className="text-sm text-primary font-semibold">Insurance Inquiry</p>}
+                                                    {lead.type === 'finance' && <p className="text-sm text-primary font-semibold">Finance Inquiry</p>}
+                                                    {lead.type === 'car_service' && <p className="text-sm text-primary font-semibold">Car Services Request</p>}
+                                                </div>
+
+                                                {/* Inquiry Message/Context for non-contact leads if present */}
+                                                {lead.type !== 'contact' && lead.message && (
+                                                    <p className="text-xs text-slate-500 line-clamp-2">
+                                                        <span className="font-bold text-slate-600">Msg: </span>
+                                                        <HighlightText text={lead.message} highlight={searchQuery} />
+                                                    </p>
+                                                )}
+
+                                                {/* Source */}
+                                                <p className="text-[10px] text-slate-400">
+                                                    From: <HighlightText text={lead.source} highlight={searchQuery} />
+                                                </p>
+
+                                                {/* Extra Matches based on search query */}
+                                                {searchQuery.trim() && (
+                                                    <div className="text-[11px] space-y-1 mt-1 border-t border-slate-100 pt-1">
+                                                        {/* Email Match */}
+                                                        {lead.email && lead.email.toLowerCase().includes(searchQuery.toLowerCase()) && (
+                                                            <div className="text-slate-500 truncate">
+                                                                <span className="font-semibold">Email:</span> <HighlightText text={lead.email} highlight={searchQuery} />
+                                                            </div>
+                                                        )}
+
+                                                        {/* Budget Match */}
+                                                        {lead.budget && lead.budget.toLowerCase().includes(searchQuery.toLowerCase()) && (
+                                                            <div className="text-slate-500">
+                                                                <span className="font-semibold">Budget:</span> <HighlightText text={lead.budget} highlight={searchQuery} />
+                                                            </div>
+                                                        )}
+
+                                                        {/* Notes Match */}
+                                                        {lead.notes && lead.notes.toLowerCase().includes(searchQuery.toLowerCase()) && (
+                                                            <div className="text-slate-600 bg-amber-50/50 border border-amber-100/50 rounded px-1.5 py-0.5 mt-0.5">
+                                                                <span className="font-bold text-amber-800">Note:</span> <HighlightText text={lead.notes} highlight={searchQuery} />
+                                                            </div>
+                                                        )}
+
+                                                        {/* Internal Notes Match */}
+                                                        {lead.internal_notes && lead.internal_notes.toLowerCase().includes(searchQuery.toLowerCase()) && (
+                                                            <div className="text-slate-600 bg-red-50/50 border border-red-100/50 rounded px-1.5 py-0.5 mt-0.5">
+                                                                <span className="font-bold text-red-800">Internal Note:</span> <HighlightText text={lead.internal_notes} highlight={searchQuery} />
+                                                            </div>
+                                                        )}
+
+                                                        {/* Car Interest Match */}
+                                                        {(leadCarMap[lead.id] || [])
+                                                            .filter(car => 
+                                                                car.make.includes(searchQuery.toLowerCase()) ||
+                                                                car.model.includes(searchQuery.toLowerCase()) ||
+                                                                car.registration_no.includes(searchQuery.toLowerCase()) ||
+                                                                `${car.make} ${car.model}`.includes(searchQuery.toLowerCase()) ||
+                                                                (car.notes || '').includes(searchQuery.toLowerCase())
+                                                            )
+                                                            .map((car, idx) => (
+                                                                <div key={idx} className="text-slate-600 bg-blue-50/50 border border-blue-100/50 rounded px-1.5 py-0.5 mt-0.5">
+                                                                    <span className="font-bold text-blue-800">Car Interest:</span>{' '}
+                                                                    <HighlightText text={`${car.make.toUpperCase()} ${car.model.toUpperCase()}`} highlight={searchQuery} />
+                                                                    {car.registration_no && ` (${car.registration_no.toUpperCase()})`}
+                                                                    {car.notes && (
+                                                                        <div className="text-[10px] text-slate-500 italic mt-0.5">
+                                                                            Note: <HighlightText text={car.notes} highlight={searchQuery} />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            ))
+                                                        }
+
+                                                        {/* Follow-Ups Match */}
+                                                        {(leadFollowUpMap[lead.id] || [])
+                                                            .filter(fu => fu.notes.includes(searchQuery.toLowerCase()))
+                                                            .map((fu, idx) => (
+                                                                <div key={idx} className="text-slate-600 bg-emerald-50/50 border border-emerald-100/50 rounded px-1.5 py-0.5 mt-0.5">
+                                                                    <span className="font-bold text-emerald-800">Follow-up:</span>{' '}
+                                                                    <HighlightText text={fu.notes} highlight={searchQuery} />
+                                                                </div>
+                                                            ))
+                                                        }
+                                                    </div>
+                                                )}
+
+                                                {/* Interested Cars Count Badge */}
+                                                {(interestCounts[lead.id] ?? 0) > 0 && (
+                                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 mt-1 self-start">
+                                                        <span className="material-symbols-outlined text-[10px]">directions_car</span>
+                                                        {interestCounts[lead.id]} interested
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
 
                                         {/* Assigned To — admin can reassign inline */}

@@ -53,6 +53,8 @@ const ownershipLabel = (n: number | null) => {
 const ShareCarModal: React.FC<Props> = ({ car, onClose }) => {
     const { user, profile } = useAuth();
 
+    const allImages = car.images ?? (car.thumbnail ? [car.thumbnail] : []);
+
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
     const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -65,7 +67,22 @@ const ShareCarModal: React.FC<Props> = ({ car, onClose }) => {
     const [downloading, setDownloading] = useState(false);
     const [photosDownloaded, setPhotosDownloaded] = useState(false);
     const [photoIndex, setPhotoIndex] = useState(0);
-    const [sendStep, setSendStep] = useState<'idle' | 'opening'>('idle');
+    const [sendStep, setSendStep] = useState<'idle' | 'opening' | 'sharing'>('idle');
+    const [canShareFiles, setCanShareFiles] = useState(false);
+    const [prefetchedFiles, setPrefetchedFiles] = useState<File[]>([]);
+    const [prefetching, setPrefetching] = useState(false);
+    const [copyingPhoto, setCopyingPhoto] = useState(false);
+    const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
+    const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+        setToast({ msg, type });
+        setTimeout(() => setToast(null), 3000);
+    };
+
+    const isIOSDevice = typeof navigator !== 'undefined' && (
+        /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    );
 
     // Fetch existing customers for quick-fill
     useEffect(() => {
@@ -77,6 +94,67 @@ const ShareCarModal: React.FC<Props> = ({ car, onClose }) => {
                 if (data) setExistingCustomers(data as ExistingCustomer[]);
             });
     }, []);
+
+    // Utility to fetch image as a File object bypassing browser cache issues (CORS bug)
+    const fetchImageAsFile = async (imageUrl: string, filename: string): Promise<File> => {
+        const cacheBusterUrl = imageUrl.includes('?') 
+            ? `${imageUrl}&cb=${Date.now()}` 
+            : `${imageUrl}?cb=${Date.now()}`;
+        
+        const resp = await fetch(cacheBusterUrl, { cache: 'no-cache' });
+        if (!resp.ok) {
+            throw new Error(`Failed to fetch image: status ${resp.status}`);
+        }
+        
+        const blob = await resp.blob();
+        
+        // Ensure a valid image MIME type is set
+        let mimeType = blob.type;
+        let ext = 'jpg';
+        if (mimeType.includes('png')) {
+            ext = 'png';
+            mimeType = 'image/png';
+        } else {
+            mimeType = 'image/jpeg';
+        }
+        
+        return new File([blob], `${filename}.${ext}`, { type: mimeType });
+    };
+
+    // Check share capability and prefetch images in background
+    useEffect(() => {
+        if (navigator.canShare) {
+            const dummyFile = new File([''], 'test.png', { type: 'image/png' });
+            try {
+                setCanShareFiles(navigator.canShare({ files: [dummyFile] }));
+            } catch (e) {
+                console.warn('Browser does not support file sharing check:', e);
+            }
+        }
+
+        const prefetch = async () => {
+            if (allImages.length === 0) return;
+            setPrefetching(true);
+            const files: File[] = [];
+            const carSlug = `${car.year}-${car.make}-${car.model}`.replace(/\s+/g, '-').toLowerCase();
+            
+            // Limit to first 3 images for native share to prevent large payloads and share timeouts
+            const imagesToShare = allImages.slice(0, 3);
+            
+            for (let i = 0; i < imagesToShare.length; i++) {
+                try {
+                    const file = await fetchImageAsFile(imagesToShare[i], `${carSlug}-photo-${i + 1}`);
+                    files.push(file);
+                } catch (e) {
+                    console.warn('Failed to prefetch image for web share:', imagesToShare[i], e);
+                }
+            }
+            setPrefetchedFiles(files);
+            setPrefetching(false);
+        };
+
+        prefetch();
+    }, [car]);
 
     // Auto-fill when existing customer selected from dropdown
     const handleCustomerSelect = (cust: ExistingCustomer) => {
@@ -104,13 +182,11 @@ const ShareCarModal: React.FC<Props> = ({ car, onClose }) => {
         const carSlug = `${car.year}-${car.make}-${car.model}`.replace(/\s+/g, '-').toLowerCase();
         for (let i = 0; i < images.length; i++) {
             try {
-                const resp = await fetch(images[i]);
-                const blob = await resp.blob();
-                const ext = blob.type.includes('png') ? 'png' : 'jpg';
-                const blobUrl = URL.createObjectURL(blob);
+                const file = await fetchImageAsFile(images[i], `${carSlug}-photo-${i + 1}`);
+                const blobUrl = URL.createObjectURL(file);
                 const a = document.createElement('a');
                 a.href = blobUrl;
-                a.download = `${carSlug}-photo-${i + 1}.${ext}`;
+                a.download = file.name;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -232,11 +308,146 @@ Feel free to call or WhatsApp us anytime.`;
         setTimeout(onClose, 1500);
     };
 
-    const allImages = car.images ?? (car.thumbnail ? [car.thumbnail] : []);
+    const handleCopyPhoto = async () => {
+        if (!currentImage) return;
+        setCopyingPhoto(true);
+        try {
+            // Fetch the image
+            const response = await fetch(currentImage);
+            const blob = await response.blob();
+            
+            // Draw to a canvas to convert it to a PNG (Clipboard API requires PNG in many browsers)
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.src = URL.createObjectURL(blob);
+            
+            await new Promise<void>((resolve, reject) => {
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        reject(new Error('Failed to get 2d context'));
+                        return;
+                    }
+                    ctx.drawImage(img, 0, 0);
+                    canvas.toBlob(async (pngBlob) => {
+                        if (!pngBlob) {
+                            reject(new Error('Failed to convert to PNG blob'));
+                            return;
+                        }
+                        try {
+                            const item = new ClipboardItem({ 'image/png': pngBlob });
+                            await navigator.clipboard.write([item]);
+                            resolve();
+                        } catch (e) {
+                            reject(e);
+                        }
+                    }, 'image/png');
+                };
+                img.onerror = () => reject(new Error('Failed to load image for canvas drawing'));
+            });
+            
+            showToast('Current photo copied! Press Ctrl+V in WhatsApp.', 'success');
+        } catch (e: any) {
+            console.error('Failed to copy photo:', e);
+            setError('Could not copy photo: ' + (e.message || 'CORS or browser block.'));
+        } finally {
+            setCopyingPhoto(false);
+        }
+    };
+
+    const handleDeviceShare = async () => {
+        if (!customerPhone.trim()) {
+            setError('Please enter customer phone number.');
+            return;
+        }
+        if (!customerName.trim()) {
+            setError('Please enter customer name.');
+            return;
+        }
+        setError('');
+
+        const message = buildMessage();
+
+        setSending(true);
+        setSendStep('sharing');
+
+        // Log the share to Supabase
+        const { error: dbErr } = await supabase.from('inventory_shares').insert({
+            inventory_id: car.id,
+            shared_by: user?.id ?? null,
+            customer_name: customerName.trim(),
+            customer_phone: customerPhone.trim(),
+            customer_id: selectedCustomerId || null,
+            message_text: message,
+        });
+
+        if (dbErr) {
+            console.error('Share log error:', dbErr);
+        }
+
+        // On iOS, we must copy text to the clipboard so they can paste it as the caption.
+        // On Android, the browser native share passes files + text successfully to WhatsApp.
+        if (isIOSDevice) {
+            try {
+                await navigator.clipboard.writeText(message);
+                showToast('Description copied! Paste it as caption in WhatsApp.', 'success');
+            } catch (clipErr) {
+                console.warn('Could not copy text to clipboard:', clipErr);
+            }
+        }
+
+        setSending(false);
+        setSent(true);
+        setSendStep('idle');
+
+        // Open native sharing sheet
+        try {
+            if (prefetchedFiles.length > 0) {
+                if (isIOSDevice) {
+                    // Share only files to prevent iOS WhatsApp discarding images
+                    await navigator.share({
+                        files: prefetchedFiles
+                    });
+                } else {
+                    // Share files + text together (Android WhatsApp attaches photos and pre-fills caption)
+                    await navigator.share({
+                        files: prefetchedFiles,
+                        text: message,
+                        title: `${car.year} ${car.make} ${car.model}`
+                    });
+                }
+            } else {
+                await navigator.share({
+                    text: message,
+                    title: `${car.year} ${car.make} ${car.model}`
+                });
+            }
+        } catch (e: any) {
+            console.warn('Device share failed or cancelled:', e);
+            if (e.name !== 'AbortError') {
+                setError('Sharing failed: ' + (e.message || 'unknown error'));
+            }
+            setSent(false);
+            return;
+        }
+
+        // Auto-close after a short delay to allow toast visual feedback
+        setTimeout(onClose, 2500);
+    };
+
     const currentImage = allImages[photoIndex] ?? null;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            {toast && (
+                <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-semibold transition-all ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+                    <span className="material-symbols-outlined text-lg">{toast.type === 'success' ? 'check_circle' : 'error'}</span>
+                    {toast.msg}
+                </div>
+            )}
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
 
                 {/* Header */}
@@ -374,37 +585,38 @@ Feel free to call or WhatsApp us anytime.`;
                     {allImages.length > 0 && (
                         <div className="space-y-2">
                             {/* Step-by-step instruction banner */}
-                            <div className={`rounded-xl px-3 py-2.5 border transition-all ${
-                                photosDownloaded
-                                    ? 'bg-green-50 border-green-200'
-                                    : 'bg-blue-50 border-blue-200'
-                            }`}>
+                            <div className="rounded-xl px-3 py-2.5 border transition-all bg-blue-50 border-blue-200">
                                 <div className="flex items-start gap-2">
-                                    <span className={`material-symbols-outlined text-base mt-0.5 shrink-0 ${
-                                        photosDownloaded ? 'text-green-600' : 'text-blue-500'
-                                    }`}>
-                                        {photosDownloaded ? 'check_circle' : 'info'}
+                                    <span className="material-symbols-outlined text-base mt-0.5 shrink-0 text-blue-500">
+                                        info
                                     </span>
-                                    <div className={`text-xs leading-relaxed ${
-                                        photosDownloaded ? 'text-green-800' : 'text-blue-800'
-                                    }`}>
-                                        {photosDownloaded ? (
-                                            <>
-                                                <p className="font-bold mb-0.5">Photos downloaded! Next step:</p>
-                                                <p>Click <strong>"Send on WhatsApp"</strong> to open the chat. Then click the <strong>📎 attachment icon</strong> in WhatsApp and select your downloaded photos to send them.</p>
-                                            </>
+                                    <div className="text-xs leading-relaxed text-blue-800">
+                                        {canShareFiles ? (
+                                            isIOSDevice ? (
+                                                <>
+                                                    <p className="font-bold mb-0.5">iOS Mobile Sharing Workflow:</p>
+                                                    <p><strong>Step 1:</strong> Click <strong>Share via Device</strong> below. Select WhatsApp and your contact.</p>
+                                                    <p className="mt-0.5"><strong>Step 2:</strong> The car description is copied to your clipboard. In WhatsApp's photo caption editor, just **tap and select Paste**!</p>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <p className="font-bold mb-0.5">Android Mobile Sharing Workflow:</p>
+                                                    <p><strong>Step 1:</strong> Click <strong>Share via Device</strong> below. Select WhatsApp and your contact.</p>
+                                                    <p className="mt-0.5"><strong>Step 2:</strong> WhatsApp will open with the photos attached and the description pre-filled in the caption automatically!</p>
+                                                </>
+                                            )
                                         ) : (
                                             <>
-                                                <p className="font-bold mb-0.5">How photos are sent ({allImages.length} photo{allImages.length > 1 ? 's' : ''}):</p>
-                                                <p><strong>Step 1:</strong> Click <strong>Download All</strong> to save photos to your device.</p>
-                                                <p className="mt-0.5"><strong>Step 2:</strong> Click <strong>Send on WhatsApp</strong> to open the chat. Then click the <strong>📎 attachment icon</strong> and select the downloaded photos to send them.</p>
+                                                <p className="font-bold mb-0.5">Desktop/Web Sharing Workflow:</p>
+                                                <p><strong>Step 1:</strong> Select a photo, then click <strong>Copy Photo</strong> to copy it directly to your clipboard.</p>
+                                                <p className="mt-0.5"><strong>Step 2:</strong> Click <strong>Send on WhatsApp</strong>. In the WhatsApp chat box, press <strong>Ctrl+V</strong> (or Cmd+V) to paste the photo instantly!</p>
                                             </>
                                         )}
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Thumbnails + manual download button */}
+                            {/* Thumbnails + manual download/copy buttons */}
                             <div className="flex items-center gap-2">
                                 <div className="flex gap-2 overflow-x-auto pb-1 flex-1">
                                     {allImages.map((img, i) => (
@@ -417,22 +629,37 @@ Feel free to call or WhatsApp us anytime.`;
                                         </button>
                                     ))}
                                 </div>
-                                <button
-                                    onClick={() => downloadAllImages(false)}
-                                    disabled={downloading}
-                                    className={`shrink-0 h-10 px-3 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-60 ${
-                                        photosDownloaded
-                                            ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-200'
-                                            : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
-                                    }`}
-                                    title="Download all photos to attach in WhatsApp"
-                                >
-                                    {downloading
-                                        ? <span className="size-3.5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
-                                        : <span className="material-symbols-outlined text-base">{photosDownloaded ? 'download_done' : 'download'}</span>
-                                    }
-                                    {downloading ? 'Downloading…' : photosDownloaded ? 'Re-download' : `Download All (${allImages.length})`}
-                                </button>
+                                <div className="flex gap-1.5 shrink-0">
+                                    <button
+                                        onClick={handleCopyPhoto}
+                                        disabled={copyingPhoto}
+                                        className="h-10 px-3 rounded-xl text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5"
+                                        title="Copy active photo to clipboard (paste in WhatsApp with Ctrl+V)"
+                                    >
+                                        {copyingPhoto ? (
+                                            <span className="size-3.5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                                        ) : (
+                                            <span className="material-symbols-outlined text-base">content_copy</span>
+                                        )}
+                                        {copyingPhoto ? 'Copying…' : 'Copy Photo'}
+                                    </button>
+                                    <button
+                                        onClick={() => downloadAllImages(false)}
+                                        disabled={downloading}
+                                        className={`h-10 px-3 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-60 ${
+                                            photosDownloaded
+                                                ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-200'
+                                                : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                        title="Download all photos to attach in WhatsApp"
+                                    >
+                                        {downloading
+                                            ? <span className="size-3.5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                                            : <span className="material-symbols-outlined text-base">{photosDownloaded ? 'download_done' : 'download'}</span>
+                                        }
+                                        {downloading ? 'Downloading…' : photosDownloaded ? 'Re-download' : `Download All (${allImages.length})`}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -551,41 +778,90 @@ Feel free to call or WhatsApp us anytime.`;
                     )}
 
                     {/* Action buttons */}
-                    <div className="flex gap-3">
-                        <button
-                            onClick={onClose}
-                            className="flex-1 h-12 border border-slate-200 text-slate-600 font-semibold rounded-xl text-sm hover:bg-slate-50 transition-colors"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={handleSend}
-                            disabled={sending || sent}
-                            className={`flex-1 h-12 font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-sm ${
-                                sent
-                                    ? 'bg-green-100 text-green-700 border border-green-200'
-                                    : 'bg-green-500 hover:bg-green-600 text-white'
-                            } disabled:opacity-80`}
-                        >
-                            {sent ? (
-                                <>
-                                    <span className="material-symbols-outlined text-lg">check_circle</span>
-                                    Sent! Closing…
-                                </>
-                            ) : sendStep === 'opening' ? (
-                                <>
-                                    <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    Opening WhatsApp…
-                                </>
-                            ) : (
-                                <>
-                                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white shrink-0">
-                                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
-                                    </svg>
-                                    Send on WhatsApp
-                                </>
+                    <div className="flex flex-col gap-2.5">
+                        {canShareFiles ? (
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={onClose}
+                                    className="h-12 px-4 border border-slate-200 text-slate-600 font-semibold rounded-xl text-sm hover:bg-slate-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleDeviceShare}
+                                    disabled={sending || sent || prefetching}
+                                    className={`flex-1 h-12 font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-sm ${
+                                        sent
+                                            ? 'bg-green-100 text-green-700 border border-green-200'
+                                            : 'bg-green-500 hover:bg-green-600 text-white'
+                                    } disabled:opacity-80`}
+                                >
+                                    {sent ? (
+                                        <>
+                                            <span className="material-symbols-outlined text-lg">check_circle</span>
+                                            Shared! Closing…
+                                        </>
+                                    ) : prefetching ? (
+                                        <>
+                                            <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Preparing Photos ({prefetchedFiles.length}/{allImages.length})…
+                                        </>
+                                    ) : sendStep === 'sharing' ? (
+                                        <>
+                                            <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Opening Share Sheet…
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-outlined text-base">share</span>
+                                            Share via Device (with Photos)
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        ) : null}
+
+                        <div className="flex gap-3">
+                            {/* If canShareFiles is false, show Cancel button here */}
+                            {!canShareFiles && (
+                                <button
+                                    onClick={onClose}
+                                    className="flex-1 h-12 border border-slate-200 text-slate-600 font-semibold rounded-xl text-sm hover:bg-slate-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
                             )}
-                        </button>
+                            <button
+                                onClick={handleSend}
+                                disabled={sending || sent}
+                                className={`flex-1 h-12 font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-sm ${
+                                    canShareFiles 
+                                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/60' 
+                                        : sent
+                                            ? 'bg-green-100 text-green-700 border border-green-200'
+                                            : 'bg-green-500 hover:bg-green-600 text-white'
+                                } disabled:opacity-80`}
+                            >
+                                {sent && !canShareFiles ? (
+                                    <>
+                                        <span className="material-symbols-outlined text-lg">check_circle</span>
+                                        Sent! Closing…
+                                    </>
+                                ) : sendStep === 'opening' ? (
+                                    <>
+                                        <span className="size-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                                        Opening WhatsApp…
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg viewBox="0 0 24 24" className={`w-4 h-4 ${canShareFiles ? 'fill-slate-600' : 'fill-white'} shrink-0`}>
+                                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                                        </svg>
+                                        {canShareFiles ? 'Send Web Link (Text only)' : 'Send on WhatsApp'}
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
 
                     <p className="text-center text-[11px] text-slate-400">

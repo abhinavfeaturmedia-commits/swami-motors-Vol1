@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { toWhatsAppUrl } from '../../lib/utils';
+import HighlightText from '../../components/ui/HighlightText';
 
 // ─── Follow-Up Types ──────────────────────────────────────────────────────────
 
@@ -73,6 +74,8 @@ interface Lead {
     assigned_to: string | null;
     lead_quality?: string | null;
     budget?: string | null;
+    notes?: string | null;
+    internal_notes?: string | null;
     assigned_profile?: {
         full_name: string;
         email: string | null;
@@ -129,6 +132,8 @@ const formatQualityEmoji = (val: string | null | undefined) => {
 const LeadDetail = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const highlightQuery = searchParams.get('search') || '';
     const { inventory, activities, refreshData } = useData();
     const { profile } = useAuth();
     const { addNotification } = useNotifications();
@@ -176,6 +181,8 @@ const LeadDetail = () => {
     // Conversion State
     const [isConverting, setIsConverting] = useState(false);
     const [convertForm, setConvertForm] = useState({ inventory_id: '', final_price: '' });
+    const [convertCarSearch, setConvertCarSearch] = useState('');
+    const [convertCarSearchOpen, setConvertCarSearchOpen] = useState(false);
 
     // Staff State
     const [staffMembers, setStaffMembers] = useState<StaffProfile[]>([]);
@@ -691,6 +698,9 @@ const LeadDetail = () => {
 
             await refreshData();
             setIsConverting(false);
+            setConvertForm({ inventory_id: '', final_price: '' });
+            setConvertCarSearch('');
+            setConvertCarSearchOpen(false);
             fetchLead();
 
             const customerMsg = existingCustomer
@@ -970,7 +980,9 @@ const LeadDetail = () => {
                                 </div>
                                 <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-1">
-                                        <h2 className="text-2xl font-black text-primary font-display">{lead.full_name}</h2>
+                                        <h2 className="text-2xl font-black text-primary font-display">
+                                            <HighlightText text={lead.full_name} highlight={highlightQuery} />
+                                        </h2>
                                         <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${statusColors[lead.status] || 'bg-slate-100 text-slate-500'}`}>{formatStatus(lead.status)}</span>
                                         {canEdit ? (
                                             <select
@@ -1057,7 +1069,7 @@ const LeadDetail = () => {
                                     </div>
                                     <div>
                                         <p className="text-[10px] text-slate-400 uppercase font-bold">Primary Phone</p>
-                                        <p className="text-sm font-bold text-primary">{lead.phone}</p>
+                                        <p className="text-sm font-bold text-primary"><HighlightText text={lead.phone} highlight={highlightQuery} /></p>
                                     </div>
                                 </div>
                                 {lead.secondary_phone && (
@@ -1067,7 +1079,7 @@ const LeadDetail = () => {
                                         </div>
                                         <div>
                                             <p className="text-[10px] text-slate-400 uppercase font-bold">Secondary Phone</p>
-                                            <p className="text-sm font-bold text-primary">{lead.secondary_phone}</p>
+                                            <p className="text-sm font-bold text-primary"><HighlightText text={lead.secondary_phone} highlight={highlightQuery} /></p>
                                         </div>
                                     </div>
                                 )}
@@ -1077,7 +1089,7 @@ const LeadDetail = () => {
                                     </div>
                                     <div>
                                         <p className="text-[10px] text-slate-400 uppercase font-bold">Email Address</p>
-                                        <p className="text-sm font-bold text-primary">{lead.email || 'Not provided'}</p>
+                                        <p className="text-sm font-bold text-primary">{lead.email ? <HighlightText text={lead.email} highlight={highlightQuery} /> : 'Not provided'}</p>
                                     </div>
                                 </div>
                                 {lead.budget && (
@@ -1087,7 +1099,7 @@ const LeadDetail = () => {
                                         </div>
                                         <div>
                                             <p className="text-[10px] text-slate-400 uppercase font-bold">Budget</p>
-                                            <p className="text-sm font-bold text-primary">{lead.budget}</p>
+                                            <p className="text-sm font-bold text-primary"><HighlightText text={lead.budget} highlight={highlightQuery} /></p>
                                         </div>
                                     </div>
                                 )}
@@ -1098,7 +1110,7 @@ const LeadDetail = () => {
                                         </div>
                                         <div>
                                             <p className="text-[10px] text-slate-400 uppercase font-bold">WhatsApp</p>
-                                            <p className="text-sm font-bold text-primary">{lead.whatsapp_number}</p>
+                                            <p className="text-sm font-bold text-primary"><HighlightText text={lead.whatsapp_number} highlight={highlightQuery} /></p>
                                         </div>
                                     </div>
                                 )}
@@ -1109,7 +1121,7 @@ const LeadDetail = () => {
                                         </div>
                                         <div>
                                             <p className="text-[10px] text-slate-400 uppercase font-bold">Personal Address</p>
-                                            <p className="text-sm font-bold text-primary">{lead.personal_address}</p>
+                                            <p className="text-sm font-bold text-primary"><HighlightText text={lead.personal_address} highlight={highlightQuery} /></p>
                                         </div>
                                     </div>
                                 )}
@@ -1120,7 +1132,7 @@ const LeadDetail = () => {
                                         </div>
                                         <div>
                                             <p className="text-[10px] text-slate-400 uppercase font-bold">Office Address</p>
-                                            <p className="text-sm font-bold text-primary">{lead.office_address}</p>
+                                            <p className="text-sm font-bold text-primary"><HighlightText text={lead.office_address} highlight={highlightQuery} /></p>
                                         </div>
                                     </div>
                                 )}
@@ -1143,11 +1155,11 @@ const LeadDetail = () => {
                                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                                         <p className="text-[10px] text-slate-400 font-bold uppercase">Make</p>
-                                        <p className="text-sm font-bold text-primary">{lead.car_make}</p>
+                                        <p className="text-sm font-bold text-primary"><HighlightText text={lead.car_make} highlight={highlightQuery} /></p>
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                                         <p className="text-[10px] text-slate-400 font-bold uppercase">Model</p>
-                                        <p className="text-sm font-bold text-primary">{lead.car_model || '—'}</p>
+                                        <p className="text-sm font-bold text-primary"><HighlightText text={lead.car_model} highlight={highlightQuery} /></p>
                                     </div>
                                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                                         <p className="text-[10px] text-slate-400 font-bold uppercase">Year</p>
@@ -1160,11 +1172,26 @@ const LeadDetail = () => {
                                 </div>
                             ) : null}
 
-                            <div className="bg-slate-50 p-4 xl:p-5 rounded-xl border border-slate-100">
-                                {lead.message ? (
-                                    <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{lead.message}</p>
-                                ) : (
-                                    <p className="text-sm text-slate-400 italic">No message provided.</p>
+                            <div className="bg-slate-50 p-4 xl:p-5 rounded-xl border border-slate-100 space-y-4">
+                                <div>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Inquiry Message</p>
+                                    {lead.message ? (
+                                        <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed"><HighlightText text={lead.message} highlight={highlightQuery} /></p>
+                                    ) : (
+                                        <p className="text-sm text-slate-400 italic">No message provided.</p>
+                                    )}
+                                </div>
+                                {lead.notes && (
+                                    <div className="border-t border-slate-200/60 pt-3">
+                                        <p className="text-[10px] text-amber-600 font-bold uppercase mb-1">Customer Notes</p>
+                                        <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed"><HighlightText text={lead.notes} highlight={highlightQuery} /></p>
+                                    </div>
+                                )}
+                                {lead.internal_notes && (
+                                    <div className="border-t border-slate-200/60 pt-3">
+                                        <p className="text-[10px] text-red-600 font-bold uppercase mb-1">Internal Notes</p>
+                                        <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed"><HighlightText text={lead.internal_notes} highlight={highlightQuery} /></p>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -1204,8 +1231,8 @@ const LeadDetail = () => {
                                             {i < fullTimeline.length - 1 && <div className="w-0.5 flex-1 bg-slate-100 mt-2" />}
                                         </div>
                                         <div className="pb-4">
-                                            <h4 className="font-bold text-primary text-sm">{event.title}</h4>
-                                            <p className="text-sm text-slate-600 mt-1 whitespace-pre-wrap">{event.desc}</p>
+                                            <h4 className="font-bold text-primary text-sm"><HighlightText text={event.title} highlight={highlightQuery} /></h4>
+                                            <p className="text-sm text-slate-600 mt-1 whitespace-pre-wrap"><HighlightText text={event.desc} highlight={highlightQuery} /></p>
                                             <p className="text-[11px] text-slate-400 mt-1.5 font-bold uppercase">{event.time}</p>
                                         </div>
                                     </div>
@@ -1230,16 +1257,111 @@ const LeadDetail = () => {
                                     <form onSubmit={handleConvert} className="space-y-4 bg-white/60 p-4 rounded-xl border border-green-100/50">
                                         <div>
                                             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Select Vehicle Sold</label>
-                                            <select required value={convertForm.inventory_id} onChange={e => setConvertForm({ ...convertForm, inventory_id: e.target.value })} className="w-full h-10 border border-slate-200 rounded-lg px-3 text-sm text-primary outline-none focus:border-green-400 bg-white shadow-sm">
-                                                <option value="">-- Choose Car --</option>
-                                                {availableCars.map(car => (
-                                                    <option key={car.id} value={car.id}>
-                                                        {car.year} {car.make} {car.model}
-                                                        {car.source === 'consignment' ? ' 🤝 Consignment' : car.source === 'dealer' ? ' 🏪 Dealer' : ' 🏠 Owned'}
-                                                        {' — ₹'}{(car.price / 100000).toFixed(1)}L
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            {(() => {
+                                                const normalizedSearch = convertCarSearch.toLowerCase().replace(/\s/g, '');
+                                                const filteredCars = availableCars.filter((car: any) => {
+                                                    if (!normalizedSearch) return true;
+                                                    const nameMatch = `${car.year} ${car.make} ${car.model}`.toLowerCase().includes(convertCarSearch.toLowerCase());
+                                                    const regMatch = (car.registration_no || '').toLowerCase().replace(/\s/g, '').includes(normalizedSearch);
+                                                    return nameMatch || regMatch;
+                                                });
+                                                const selectedCar = availableCars.find((c: any) => c.id === convertForm.inventory_id);
+                                                
+                                                return (
+                                                    <div className="relative">
+                                                        <div className="relative">
+                                                            <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[16px] pointer-events-none">search</span>
+                                                            <input 
+                                                                type="text" 
+                                                                value={convertCarSearch}
+                                                                onChange={e => { 
+                                                                    setConvertCarSearch(e.target.value); 
+                                                                    setConvertCarSearchOpen(true); 
+                                                                    if (convertForm.inventory_id) {
+                                                                        setConvertForm(f => ({ ...f, inventory_id: '' })); 
+                                                                    }
+                                                                }}
+                                                                onFocus={() => setConvertCarSearchOpen(true)}
+                                                                onBlur={() => setTimeout(() => setConvertCarSearchOpen(false), 200)}
+                                                                placeholder="Search car by name, model, reg no..."
+                                                                className="w-full h-10 border border-slate-200 rounded-lg pl-8 pr-8 text-xs bg-white outline-none focus:border-green-400 transition shadow-sm" 
+                                                            />
+                                                            {convertCarSearch && (
+                                                                <button 
+                                                                    type="button" 
+                                                                    onClick={() => { 
+                                                                        setConvertCarSearch(''); 
+                                                                        setConvertForm(f => ({ ...f, inventory_id: '' })); 
+                                                                        setConvertCarSearchOpen(false); 
+                                                                    }} 
+                                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                                                >
+                                                                    <span className="material-symbols-outlined text-[16px]">close</span>
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        
+                                                        {selectedCar && (
+                                                            <div className="mt-2 flex items-center gap-2.5 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
+                                                                <span className="material-symbols-outlined text-green-600 text-[16px]">directions_car</span>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="text-xs font-bold text-green-800 truncate">
+                                                                        {selectedCar.year} {selectedCar.make} {selectedCar.model}
+                                                                    </p>
+                                                                    <p className="text-[10px] text-green-600 font-mono">
+                                                                        {selectedCar.registration_no || 'No Reg'} · ₹{Number(selectedCar.price).toLocaleString('en-IN')}
+                                                                        {selectedCar.source === 'consignment' ? ' (Consignment)' : selectedCar.source === 'dealer' ? ' (Dealer)' : ' (Owned)'}
+                                                                    </p>
+                                                                </div>
+                                                                <span className="text-[9px] font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded uppercase tracking-wider shrink-0">Selected</span>
+                                                            </div>
+                                                        )}
+                                                        
+                                                        {convertCarSearchOpen && (
+                                                            <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
+                                                                {filteredCars.length === 0 ? (
+                                                                    <div className="flex flex-col items-center py-6 text-slate-400">
+                                                                        <span className="material-symbols-outlined text-2xl mb-1">search_off</span>
+                                                                        <p className="text-xs font-medium">No available cars found</p>
+                                                                    </div>
+                                                                ) : (
+                                                                    filteredCars.map((car: any) => {
+                                                                        const isSelected = car.id === convertForm.inventory_id;
+                                                                        return (
+                                                                            <button 
+                                                                                key={car.id} 
+                                                                                type="button"
+                                                                                onClick={() => { 
+                                                                                    setConvertForm(f => ({ ...f, inventory_id: car.id, final_price: String(car.price || '') })); 
+                                                                                    setConvertCarSearch(`${car.year} ${car.make} ${car.model}`); 
+                                                                                    setConvertCarSearchOpen(false); 
+                                                                                }}
+                                                                                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors border-b border-slate-50 last:border-0 hover:bg-slate-50 ${isSelected ? 'bg-green-50/50' : ''}`}
+                                                                            >
+                                                                                <div className="size-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                                                                                    <span className="material-symbols-outlined text-slate-500 text-[15px]">directions_car</span>
+                                                                                </div>
+                                                                                <div className="flex-1 min-w-0">
+                                                                                    <p className="text-xs font-bold text-slate-700 truncate">
+                                                                                        {car.year} {car.make} {car.model}
+                                                                                    </p>
+                                                                                    <p className="text-[10px] text-slate-400 font-mono">
+                                                                                        {car.registration_no || 'No Reg'} · {car.source === 'consignment' ? '🤝 Consignment' : car.source === 'dealer' ? '🏪 Dealer' : '🏠 Owned'}
+                                                                                    </p>
+                                                                                </div>
+                                                                                <div className="text-right shrink-0">
+                                                                                    <p className="text-xs font-bold text-primary">₹{(car.price / 100000).toFixed(2)}L</p>
+                                                                                    <p className="text-[9px] text-slate-400 font-mono">₹{Number(car.price).toLocaleString('en-IN')}</p>
+                                                                                </div>
+                                                                            </button>
+                                                                        );
+                                                                    })
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                         <div>
                                             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Final Sale Price (₹)</label>
@@ -1268,12 +1390,12 @@ const LeadDetail = () => {
                                             ) : null;
                                         })()}
                                         <div className="flex gap-2 pt-2">
-                                            <button type="button" onClick={() => setIsConverting(false)} className="flex-1 bg-slate-200 text-slate-600 font-bold text-xs h-9 rounded-lg hover:bg-slate-300 transition">Cancel</button>
-                                            <button type="submit" className="flex-1 bg-green-600 text-white font-bold text-xs h-9 rounded-lg hover:bg-green-700 transition shadow-sm">Confirm Sale</button>
+                                            <button type="button" onClick={() => { setIsConverting(false); setConvertForm({ inventory_id: '', final_price: '' }); setConvertCarSearch(''); setConvertCarSearchOpen(false); }} className="flex-1 bg-slate-200 text-slate-600 font-bold text-xs h-9 rounded-lg hover:bg-slate-300 transition">Cancel</button>
+                                            <button type="submit" disabled={!convertForm.inventory_id || !convertForm.final_price} className="flex-1 bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs h-9 rounded-lg hover:bg-green-700 transition shadow-sm">Confirm Sale</button>
                                         </div>
                                     </form>
                                 ) : (
-                                    <button onClick={() => setIsConverting(true)} className="w-full flex items-center justify-center gap-2 h-11 bg-green-600 text-white font-bold rounded-xl text-sm hover:bg-green-700 transition shadow-sm">
+                                    <button onClick={() => { setIsConverting(true); setConvertForm({ inventory_id: '', final_price: '' }); setConvertCarSearch(''); setConvertCarSearchOpen(false); }} className="w-full flex items-center justify-center gap-2 h-11 bg-green-600 text-white font-bold rounded-xl text-sm hover:bg-green-700 transition shadow-sm">
                                         Convert to Sale
                                     </button>
                                 )}

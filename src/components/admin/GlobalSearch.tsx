@@ -104,16 +104,36 @@ const GlobalSearch = () => {
         // 1. LEADS
         if (category === 'All' || category === 'Leads') {
             leads.forEach(item => {
-                if (isMatch(item.full_name) || isMatch(item.phone) || isMatch(item.email) || isMatch(item.notes)) {
+                if (
+                    isMatch(item.full_name) ||
+                    isMatch(item.phone) ||
+                    isMatch(item.email) ||
+                    isMatch(item.notes) ||
+                    isMatch(item.internal_notes) ||
+                    isMatch(item.message) ||
+                    isMatch(item.car_make) ||
+                    isMatch(item.car_model)
+                ) {
+                    let matchedNote = undefined;
+                    if (isMatch(item.notes)) {
+                        matchedNote = item.notes;
+                    } else if (isMatch(item.internal_notes)) {
+                        matchedNote = item.internal_notes;
+                    } else if (isMatch(item.message)) {
+                        matchedNote = item.message;
+                    } else if (isMatch(item.car_make) || isMatch(item.car_model)) {
+                        matchedNote = `${item.car_make || ''} ${item.car_model || ''}`;
+                    }
+
                     matches.push({
                         id: item.id,
                         type: 'Lead',
                         title: item.full_name || 'Unknown Lead',
                         subtitle: `${item.phone || 'No Phone'} • ${item.status || 'New'}`,
-                        url: `/admin/leads/${item.id}`,
+                        url: `/admin/leads/${item.id}?search=${encodeURIComponent(query)}`,
                         icon: 'person',
                         color: 'bg-blue-100 text-blue-600',
-                        matchedNote: isMatch(item.notes) && !isMatch(item.full_name) && !isMatch(item.phone) ? item.notes : undefined
+                        matchedNote: matchedNote
                     });
                 }
             });
@@ -360,7 +380,7 @@ const GlobalSearch = () => {
                                         {item.matchedNote && (
                                             <div className="mt-1.5 p-1.5 bg-yellow-50/50 border border-yellow-100 rounded-md">
                                                 <p className="text-[10px] text-slate-600 line-clamp-1">
-                                                    <span className="font-semibold text-yellow-700">Note match: </span> 
+                                                    <span className="font-semibold text-yellow-700">Matched Context: </span> 
                                                     "..." <HighlightText text={item.matchedNote.substring(Math.max(0, item.matchedNote.toLowerCase().indexOf(query.toLowerCase()) - 20), item.matchedNote.toLowerCase().indexOf(query.toLowerCase()) + 60)} highlight={query} /> "..."
                                                 </p>
                                             </div>
