@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 interface Car {
@@ -22,6 +22,10 @@ const SECTIONS = [
 ];
 
 const CompareModels = () => {
+    const [searchParams] = useSearchParams();
+    const paramCarA = searchParams.get('carA') || '';
+    const paramCarB = searchParams.get('carB') || '';
+
     const [inventory, setInventory] = useState<Car[]>([]);
     const [loading, setLoading] = useState(true);
     const [leftId, setLeftId] = useState('');
@@ -36,13 +40,27 @@ const CompareModels = () => {
                 .order('created_at', { ascending: false });
             if (!error && data) {
                 setInventory(data);
-                if (data.length >= 1) setLeftId(data[0].id);
-                if (data.length >= 2) setRightId(data[1].id);
+                
+                const hasA = data.some(c => c.id === paramCarA);
+                const hasB = data.some(c => c.id === paramCarB);
+
+                if (hasA) {
+                    setLeftId(paramCarA);
+                } else if (data.length >= 1) {
+                    setLeftId(data[0].id);
+                }
+
+                if (hasB) {
+                    setRightId(paramCarB);
+                } else if (data.length >= 2) {
+                    const fallbackB = data.find(c => c.id !== (hasA ? paramCarA : data[0].id));
+                    setRightId(fallbackB ? fallbackB.id : (data[1] ? data[1].id : ''));
+                }
             }
             setLoading(false);
         };
         fetchInventory();
-    }, []);
+    }, [paramCarA, paramCarB]);
 
     const getPrimaryImage = (images: string[] | null) => {
         if (!images || images.length === 0) return 'https://placehold.co/800x500/slate/white?text=No+Photo';
@@ -58,7 +76,7 @@ const CompareModels = () => {
         if (!car) return '—';
         const val = (car as any)[key];
         if (val === undefined || val === null || val === '') return '—';
-        if (key === 'price') return `₹${(Number(val) / 100000).toFixed(2)} L`;
+        if (key === 'price') return Number(val) > 0 ? `₹${(Number(val) / 100000).toFixed(2)} L` : 'Price on Request';
         if (key === 'mileage') return `${Number(val).toLocaleString('en-IN')} km`;
         return String(val);
     };

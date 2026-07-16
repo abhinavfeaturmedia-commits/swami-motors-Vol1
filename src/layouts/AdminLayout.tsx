@@ -64,6 +64,7 @@ const NAV_GROUPS: NavGroup[] = [
             { name: 'Price History', href: '/admin/price-history', icon: 'trending_up', module: 'operations' },
             { name: 'Expenses', href: '/admin/expenses', icon: 'receipt_long', module: 'operations' },
             { name: 'Share Logs', href: '/admin/share-logs', icon: 'share', module: 'operations' },
+            { name: 'Shared Catalogs', href: '/admin/shared-catalogs', icon: 'folder_shared', module: 'operations' },
         ],
     },
     {
@@ -94,7 +95,6 @@ const NAV_GROUPS: NavGroup[] = [
             { name: 'Users', href: '/admin/users', icon: 'manage_accounts', module: 'users' },
             { name: 'Attendance', href: '/admin/attendance', icon: 'fingerprint', module: 'attendance' },
             { name: 'Audit Logs', href: '/admin/audit-logs', icon: 'history', module: 'audit_logs' },
-            { name: 'Feedback', href: '/admin/feedback', icon: 'reviews', module: 'settings' },
             { name: 'Settings', href: '/admin/settings', icon: 'settings', module: 'settings' },
         ],
     },

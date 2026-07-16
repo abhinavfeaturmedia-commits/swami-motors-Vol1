@@ -45,9 +45,18 @@ const ShareLogs: React.FC = () => {
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [page, setPage] = useState(0);
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const PAGE_SIZE = 50;
 
-    const fetchLogs = async () => {
-        setLoading(true);
+    const fetchLogs = async (pageNum = 0, append = false) => {
+        if (pageNum === 0) setLoading(true);
+        else setLoadingMore(true);
+
+        const from = pageNum * PAGE_SIZE;
+        const to = from + PAGE_SIZE - 1;
+
         const { data, error } = await supabase
             .from('inventory_shares')
             .select(`
@@ -55,13 +64,23 @@ const ShareLogs: React.FC = () => {
                 inventory:inventory_id ( make, model, year, variant, thumbnail ),
                 profile:shared_by ( full_name, email )
             `)
-            .order('shared_at', { ascending: false });
+            .order('shared_at', { ascending: false })
+            .range(from, to);
 
-        if (!error && data) setLogs(data as ShareLog[]);
-        setLoading(false);
+        if (!error && data) {
+            if (append) {
+                setLogs(prev => [...prev, ...data as ShareLog[]]);
+            } else {
+                setLogs(data as ShareLog[]);
+            }
+            setHasMore(data.length === PAGE_SIZE);
+        }
+
+        if (pageNum === 0) setLoading(false);
+        else setLoadingMore(false);
     };
 
-    useEffect(() => { fetchLogs(); }, []);
+    useEffect(() => { fetchLogs(0); }, []);
 
     // ─── Filtering ───────────────────────────────────────────────────────────
     const filtered = logs.filter(log => {
@@ -116,7 +135,7 @@ const ShareLogs: React.FC = () => {
                     <p className="text-slate-500 text-sm mt-1">Track every car shared with customers via WhatsApp</p>
                 </div>
                 <button
-                    onClick={fetchLogs}
+                    onClick={() => { setPage(0); fetchLogs(0); }}
                     className="h-10 w-10 flex items-center justify-center border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-50 transition-colors"
                     title="Refresh"
                 >
@@ -323,14 +342,28 @@ const ShareLogs: React.FC = () => {
                 </table>
 
                 {!loading && filtered.length > 0 && (
-                    <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
+                    <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
                         <p className="text-xs text-slate-400">
-                            Showing {filtered.length} of {logs.length} share records
+                            Showing {filtered.length} of {logs.length}{hasMore ? '+' : ''} share records
                             {uniqueCars > 0 && ` · ${uniqueCars} unique cars`}
                         </p>
-                        <p className="text-xs text-slate-400">
-                            {uniqueCustomers} unique customers reached
-                        </p>
+                        <div className="flex items-center gap-4">
+                            <p className="text-xs text-slate-400">
+                                {uniqueCustomers} unique customers reached
+                            </p>
+                            {hasMore && (
+                                <button
+                                    onClick={() => { const nextPage = page + 1; setPage(nextPage); fetchLogs(nextPage, true); }}
+                                    disabled={loadingMore}
+                                    className="h-8 px-4 text-xs font-bold text-primary border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5 disabled:opacity-60"
+                                >
+                                    {loadingMore && (
+                                        <span className="size-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                                    )}
+                                    {loadingMore ? 'Loading…' : 'Load More'}
+                                </button>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
+import { generateOpenRouterCompletion } from '../../lib/openrouter';
 import imageCompression from 'browser-image-compression';
 import VideoPlayer from '../../components/ui/VideoPlayer';
 
@@ -26,7 +27,7 @@ const InventoryForm = () => {
     const isEditMode = Boolean(id);
     const navigate = useNavigate();
     const { user, hasPermission } = useAuth();
-    const { refreshData } = useData() || {};
+    const { settings, refreshData } = (useData() as any) || {};
     const canManage = hasPermission('inventory', 'manage');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -41,6 +42,9 @@ const InventoryForm = () => {
         video_url: '',
         description: '',
     });
+
+    const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
+    const [generatingError, setGeneratingError] = useState<string | null>(null);
 
     // ─── Source state ─────────────────────────────────────────────────────────
     const [source, setSource] = useState<'purchased' | 'consignment' | 'dealer'>('purchased');
@@ -90,6 +94,61 @@ const InventoryForm = () => {
     const [autoFillText, setAutoFillText] = useState('');
 
     const set = (field: string, value: string | number) => setForm(prev => ({ ...prev, [field]: value }));
+
+    const handleGenerateDescription = async () => {
+        const orSettings = settings?.openrouter_settings;
+        if (!orSettings?.api_key || !orSettings?.is_enabled) {
+            setGeneratingError('OpenRouter is not configured or disabled in settings.');
+            return;
+        }
+
+        if (!form.make || !form.model) {
+            setGeneratingError('Please select both a make and model before generating.');
+            return;
+        }
+
+        setIsGeneratingDesc(true);
+        setGeneratingError(null);
+
+        try {
+            const systemPrompt = `You are a professional automotive copywriter at "Shree Swami Samarth Motors" (Swami Motors), a premium pre-owned car dealership in Kolhapur, Maharashtra, India.
+Your goal is to write a premium, compelling marketing description (100-150 words) for a vehicle listing.
+Focus on key benefits, drive quality, condition, pre-owned value, and sign off professionally.
+Do NOT use placeholders like "[Dealer Name]" or "[Your Name]" - refer to us as "Shree Swami Samarth Motors".
+Do NOT write conversational introductions. Respond with the listing text directly.`;
+
+            const userPrompt = `Write a listing description for:
+Make: ${form.make}
+Model: ${form.model}
+Variant: ${form.variant || 'Standard'}
+Year: ${form.year}
+Price: ${form.price ? `₹${(Number(form.price) / 100000).toFixed(2)} Lakh` : 'Competitive pricing'}
+Transmission: ${form.transmission}
+Fuel Type: ${form.fuel_type}
+Mileage: ${form.mileage ? `${Number(form.mileage).toLocaleString()} km` : 'Low mileage'}
+Ownership: ${form.ownership} Owner(s)
+Condition: ${form.condition}`;
+
+            const apiKey = orSettings.api_key;
+            const model = orSettings.default_model === 'custom' 
+                ? orSettings.custom_model 
+                : orSettings.default_model;
+
+            const response = await generateOpenRouterCompletion({
+                apiKey,
+                model,
+                systemPrompt,
+                userPrompt
+            });
+            
+            set('description', response);
+        } catch (err: any) {
+            console.error('Description generation failed:', err);
+            setGeneratingError(err.message || 'Failed to generate description.');
+        } finally {
+            setIsGeneratingDesc(false);
+        }
+    };
 
     // ─── Load data if Edit Mode ─────────────────────────────────────────────
     useEffect(() => {
@@ -1105,8 +1164,47 @@ const InventoryForm = () => {
                         </div>
                     </div>
                     <div className="mt-5">
-                        <label className="text-sm font-medium text-slate-700 mb-1.5 block">Description</label>
+                        <div className="flex justify-between items-center mb-1.5">
+                            <label className="text-sm font-medium text-slate-700 block">Description</label>
+                            
+                            {!settings?.openrouter_settings?.is_enabled || !settings?.openrouter_settings?.api_key ? (
+                                <Link 
+                                    to="/admin/settings#openrouter"
+                                    className="text-[10px] text-slate-400 hover:text-primary transition-colors flex items-center gap-1 font-semibold"
+                                >
+                                    <span className="material-symbols-outlined text-[12px]">smart_toy</span>
+                                    Enable AI generation in Settings
+                                </Link>
+                            ) : !settings?.openrouter_settings?.features?.car_description_generator ? (
+                                <Link 
+                                    to="/admin/settings#openrouter"
+                                    className="text-[10px] text-slate-400 hover:text-primary transition-colors flex items-center gap-1 font-semibold"
+                                >
+                                    <span className="material-symbols-outlined text-[12px]">toggle_off</span>
+                                    Enable AI Writer feature in Settings
+                                </Link>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={handleGenerateDescription}
+                                    disabled={isGeneratingDesc}
+                                    className="text-[11px] text-primary hover:text-primary-light transition-colors flex items-center gap-1 font-bold disabled:opacity-50 animate-pulse-once"
+                                >
+                                    <span className={`material-symbols-outlined text-[14px] ${isGeneratingDesc ? 'animate-spin' : ''}`}>
+                                        {isGeneratingDesc ? 'sync' : 'auto_awesome'}
+                                    </span>
+                                    {isGeneratingDesc ? 'Writing Description...' : 'Write with AI'}
+                                </button>
+                            )}
+                        </div>
                         <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={3} placeholder="Highlight key features, service history, accident-free status, etc." className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/10 resize-y" />
+                        
+                        {generatingError && (
+                            <p className="text-[11px] text-red-600 font-semibold mt-1 flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">error</span>
+                                {generatingError}
+                            </p>
+                        )}
                     </div>
                     <div className="mt-5 pt-5 border-t border-slate-100 space-y-4">
                         <div>

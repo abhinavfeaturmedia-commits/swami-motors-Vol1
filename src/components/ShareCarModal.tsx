@@ -203,8 +203,16 @@ const ShareCarModal: React.FC<Props> = ({ car, onClose }) => {
         }
     };
 
-    // Car listing link — use VITE_PUBLIC_URL in production, fallback to current origin in dev
-    const publicBase = import.meta.env.VITE_PUBLIC_URL?.replace(/\/$/, '') ?? window.location.origin;
+    // Car listing link — use VITE_PUBLIC_URL in production, fallback to current origin on local/LAN
+    const getPublicBase = () => {
+        const envPublicUrl = import.meta.env.VITE_PUBLIC_URL?.replace(/\/$/, '');
+        const isLocal = window.location.hostname === 'localhost'
+            || /^192\.168\./.test(window.location.hostname)
+            || /^10\./.test(window.location.hostname)
+            || /^172\.(1[6-9]|2\d|3[01])\./.test(window.location.hostname);
+        return (envPublicUrl && !isLocal) ? envPublicUrl : window.location.origin;
+    };
+    const publicBase = getPublicBase();
     const carLink = `${publicBase}/car/${car.id}`;
 
     // Build the WhatsApp message — NO emojis (they render as ◆ diamonds in WhatsApp Web)
@@ -263,6 +271,19 @@ Kolhapur, Maharashtra
 Feel free to call or WhatsApp us anytime.`;
     };
 
+    // Deduplication: skip logging if the same car+phone was already logged in the last 60 seconds
+    // This prevents duplicate entries when both handleSend and handleDeviceShare are triggered
+    const checkRecentDuplicate = async (carId: string, phone: string): Promise<boolean> => {
+        const sixtySecsAgo = new Date(Date.now() - 60000).toISOString();
+        const { count } = await supabase
+            .from('inventory_shares')
+            .select('id', { count: 'exact', head: true })
+            .eq('inventory_id', carId)
+            .eq('customer_phone', phone.trim())
+            .gte('shared_at', sixtySecsAgo);
+        return (count ?? 0) > 0;
+    };
+
     const handleSend = async () => {
         if (!customerPhone.trim()) {
             setError('Please enter customer phone number.');
@@ -282,18 +303,20 @@ Feel free to call or WhatsApp us anytime.`;
 
         setSendStep('opening');
 
-        // Log the share to Supabase
-        const { error: dbErr } = await supabase.from('inventory_shares').insert({
-            inventory_id: car.id,
-            shared_by: user?.id ?? null,
-            customer_name: customerName.trim(),
-            customer_phone: customerPhone.trim(),
-            customer_id: selectedCustomerId || null,
-            message_text: message,
-        });
-
-        if (dbErr) {
-            console.error('Share log error:', dbErr);
+        // Log the share to Supabase — skip if same car+phone was logged in the last 60s
+        const isDuplicateSend = await checkRecentDuplicate(car.id, customerPhone);
+        if (!isDuplicateSend) {
+            const { error: dbErr } = await supabase.from('inventory_shares').insert({
+                inventory_id: car.id,
+                shared_by: user?.id ?? null,
+                customer_name: customerName.trim(),
+                customer_phone: customerPhone.trim(),
+                customer_id: selectedCustomerId || null,
+                message_text: message,
+            });
+            if (dbErr) {
+                console.error('Share log error:', dbErr);
+            }
         }
 
         setSending(false);
@@ -374,18 +397,20 @@ Feel free to call or WhatsApp us anytime.`;
         setSending(true);
         setSendStep('sharing');
 
-        // Log the share to Supabase
-        const { error: dbErr } = await supabase.from('inventory_shares').insert({
-            inventory_id: car.id,
-            shared_by: user?.id ?? null,
-            customer_name: customerName.trim(),
-            customer_phone: customerPhone.trim(),
-            customer_id: selectedCustomerId || null,
-            message_text: message,
-        });
-
-        if (dbErr) {
-            console.error('Share log error:', dbErr);
+        // Log the share to Supabase — skip if same car+phone was logged in the last 60s
+        const isDuplicateDeviceShare = await checkRecentDuplicate(car.id, customerPhone);
+        if (!isDuplicateDeviceShare) {
+            const { error: dbErr } = await supabase.from('inventory_shares').insert({
+                inventory_id: car.id,
+                shared_by: user?.id ?? null,
+                customer_name: customerName.trim(),
+                customer_phone: customerPhone.trim(),
+                customer_id: selectedCustomerId || null,
+                message_text: message,
+            });
+            if (dbErr) {
+                console.error('Share log error:', dbErr);
+            }
         }
 
         // On iOS, we must copy text to the clipboard so they can paste it as the caption.

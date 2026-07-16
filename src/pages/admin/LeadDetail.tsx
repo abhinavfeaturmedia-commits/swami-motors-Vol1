@@ -4,8 +4,9 @@ import { supabase } from '../../lib/supabase';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
-import { toWhatsAppUrl } from '../../lib/utils';
+import { toWhatsAppUrl, formatPriceLakh } from '../../lib/utils';
 import HighlightText from '../../components/ui/HighlightText';
+import { generateOpenRouterCompletion } from '../../lib/openrouter';
 
 // ─── Follow-Up Types ──────────────────────────────────────────────────────────
 
@@ -129,17 +130,228 @@ const formatQualityEmoji = (val: string | null | undefined) => {
     }
 };
 
+// ─── AI Response Drafting Widget ──────────────────────────────────────────────
+const AiResponseWidget: React.FC<{ lead: any; linkedCars: any[]; openRouterSettings: any }> = ({
+    lead,
+    linkedCars,
+    openRouterSettings
+}) => {
+    const [draft, setDraft] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [tone, setTone] = useState('polite');
+
+    const [sentiment, setSentiment] = useState<{ score: string; sentiment: string; explanation: string } | null>(null);
+    const [analyzing, setAnalyzing] = useState(false);
+
+    const handleGenerate = async () => {
+        setLoading(true);
+        setError(null);
+        setDraft('');
+        
+        try {
+            const systemPrompt = `You are a professional sales assistant at "Shree Swami Samarth Motors" (Swami Motors), a premium pre-owned car dealership in Kolhapur, Maharashtra, India.
+Your goal is to draft a helpful, professional, and persuasive response to a customer enquiry.
+Keep the message concise, friendly, and structured for WhatsApp/email.
+Do NOT use generic placeholders like "[Your Name]" or "[Dealer Name]" - sign off as "Sales Team, Shree Swami Samarth Motors".
+Provide real Indian context (e.g. Kolhapur, prices in Lakhs if mentioned). 
+Write the draft directly without any introductory conversational wrapper (like "Here is the draft:").`;
+
+            let carDetailsText = 'any suitable vehicle in our catalog';
+            if (linkedCars && linkedCars.length > 0) {
+                carDetailsText = linkedCars.map(c => `${c.year} ${c.make} ${c.model} (${c.transmission}, ${c.fuel_type}, Price: ₹${(c.price / 100000).toFixed(2)} Lakh)`).join(', ');
+            } else if (lead.car_make) {
+                carDetailsText = `${lead.car_year || ''} ${lead.car_make} ${lead.car_model || ''}`;
+            }
+
+            const toneDescription = tone === 'polite' 
+                ? 'polite, professional, helpful, and welcoming'
+                : tone === 'persuasive'
+                ? 'persuasive, sales-oriented, emphasizing excellent value, and encouraging action (booking a visit/test drive)'
+                : 'short, direct, and straightforward for quick WhatsApp messaging';
+
+            const userPrompt = `Draft a response to:
+Customer Name: ${lead.full_name}
+Enquiry Type: ${lead.type === 'sell_car' ? 'Wants to SELL their car' : 'Wants to BUY a car'}
+Customer Message: "${lead.message || 'Interested in vehicles'}"
+Interested Vehicle(s): ${carDetailsText}
+Budget: ${lead.budget || 'Not specified'}
+
+The tone should be: ${toneDescription}.
+Format the response clearly with line breaks suitable for WhatsApp. Include a call to action asking them to schedule a showroom visit at Kasaba Bawada, Kolhapur or book a test drive.`;
+
+            const apiKey = openRouterSettings.api_key;
+            const model = openRouterSettings.default_model === 'custom' 
+                ? openRouterSettings.custom_model 
+                : openRouterSettings.default_model;
+
+            const response = await generateOpenRouterCompletion({
+                apiKey,
+                model,
+                systemPrompt,
+                userPrompt
+            });
+            
+            setDraft(response);
+        } catch (err: any) {
+            console.error('AI Draft generation failed:', err);
+            setError(err.message || 'Failed to generate response. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(draft);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    const handleAnalyzeSentiment = async () => {
+        if (!lead.message) return;
+        setAnalyzing(true);
+        setError(null);
+        try {
+            const systemPrompt = `You are an expert CRM analyst. Analyze the following customer car inquiry and return a JSON object with:
+1. "score": "Hot" (highly interested, ready to buy/sell), "Warm" (interested but has questions/conditional), or "Cold" (low interest, spam, or generic enquiry).
+2. "sentiment": "Positive", "Neutral", or "Negative".
+3. "explanation": a concise 1-sentence explanation of why you gave this score.
+Return ONLY valid JSON. No markdown backticks, no other text.`;
+            const userPrompt = `Customer Message: "${lead.message}"`;
+            
+            const apiKey = openRouterSettings.api_key;
+            const model = openRouterSettings.default_model === 'custom' 
+                ? openRouterSettings.custom_model 
+                : openRouterSettings.default_model;
+
+            const response = await generateOpenRouterCompletion({
+                apiKey,
+                model,
+                systemPrompt,
+                userPrompt
+            });
+            
+            const cleaned = response.replace(/```json|```/g, '').trim();
+            const parsed = JSON.parse(cleaned);
+            setSentiment(parsed);
+        } catch (err: any) {
+            console.error('Sentiment analysis failed:', err);
+            setError(err.message || 'Sentiment analysis failed.');
+        } finally {
+            setAnalyzing(false);
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="flex gap-2">
+                <select
+                    value={tone}
+                    onChange={e => setTone(e.target.value)}
+                    className="flex-1 h-9 bg-slate-50 border border-slate-200 rounded-xl px-2.5 text-xs text-slate-700 outline-none focus:border-primary/40 focus:bg-white transition-colors cursor-pointer"
+                >
+                    <option value="polite">Professional & Polite</option>
+                    <option value="persuasive">Persuasive (Sales-focused)</option>
+                    <option value="short">Quick & Direct (WhatsApp)</option>
+                </select>
+                
+                <button
+                    onClick={handleGenerate}
+                    disabled={loading}
+                    className="h-9 px-4 bg-primary text-white text-xs font-bold rounded-xl flex items-center gap-1.5 hover:bg-primary/95 disabled:opacity-50 transition-all shrink-0"
+                >
+                    <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>
+                        {loading ? 'sync' : 'auto_awesome'}
+                    </span>
+                    {loading ? 'Generating...' : 'Generate Draft'}
+                </button>
+            </div>
+
+            {openRouterSettings?.features?.sentiment_analysis && lead.message && (
+                <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">Customer Sentiment</span>
+                    {!sentiment ? (
+                        <button
+                            onClick={handleAnalyzeSentiment}
+                            disabled={analyzing}
+                            className="text-[10px] text-primary hover:text-primary-light font-bold flex items-center gap-1"
+                        >
+                            {analyzing && <span className="material-symbols-outlined text-xs animate-spin">sync</span>}
+                            {analyzing ? 'Analyzing...' : '⚡ Analyze Sentiment'}
+                        </button>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                sentiment.score === 'Hot' ? 'bg-red-500/10 text-red-600' :
+                                sentiment.score === 'Warm' ? 'bg-amber-500/10 text-amber-600' :
+                                'bg-slate-500/10 text-slate-600'
+                            }`}>{sentiment.score} Lead</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                sentiment.sentiment === 'Positive' ? 'bg-green-500/10 text-green-600' :
+                                sentiment.sentiment === 'Negative' ? 'bg-red-500/10 text-red-600' :
+                                'bg-slate-500/10 text-slate-600'
+                            }`}>{sentiment.sentiment}</span>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {sentiment && (
+                <div className="bg-purple-50/50 rounded-xl border border-purple-100/60 p-3 text-xs text-purple-900 leading-normal animate-fadeIn">
+                    <p className="font-semibold text-[10px] text-purple-600 uppercase tracking-wider mb-0.5">Analyst Explanation</p>
+                    <p className="italic">"{sentiment.explanation}"</p>
+                </div>
+            )}
+
+            {error && (
+                <p className="text-[11px] text-red-600 font-semibold flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-xs">error</span> {error}
+                </p>
+            )}
+
+            {draft && (
+                <div className="bg-slate-50 rounded-xl border border-slate-100 p-3.5 space-y-3 animate-fadeIn">
+                    <pre className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed font-body">
+                        {draft}
+                    </pre>
+                    <div className="flex gap-2 border-t border-slate-200/60 pt-3">
+                        <button
+                            onClick={handleCopy}
+                            className="flex-1 h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                            <span className="material-symbols-outlined text-xs">{copied ? 'check' : 'content_copy'}</span>
+                            {copied ? 'Copied!' : 'Copy Reply'}
+                        </button>
+                        <a
+                            href={toWhatsAppUrl(lead.whatsapp_number || lead.phone, draft)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex-1 h-8 bg-green-600 hover:bg-green-500 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                            <span className="material-symbols-outlined text-xs">chat</span>
+                            Open in WhatsApp
+                        </a>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const LeadDetail = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const highlightQuery = searchParams.get('search') || '';
-    const { inventory, activities, refreshData } = useData();
+    const { inventory, activities, settings, refreshData } = useData() as any;
     const { profile } = useAuth();
     const { addNotification } = useNotifications();
     
     const [lead, setLead] = useState<Lead | null>(null);
     const [loading, setLoading] = useState(true);
+    const [linkedCars, setLinkedCars] = useState<any[]>([]);
+    const [linkedAccessories, setLinkedAccessories] = useState<any[]>([]);
 
     const isAdmin = profile?.role === 'admin';
     const canEdit = isAdmin || (lead?.assigned_to === profile?.id);
@@ -518,12 +730,39 @@ const LeadDetail = () => {
     };
 
     useEffect(() => {
+        const fetchLinkedItems = async () => {
+            try {
+                // Fetch linked cars
+                const { data: carsData, error: carsErr } = await supabase
+                    .from('lead_inventory_items')
+                    .select('inventory(*)')
+                    .eq('lead_id', id);
+                
+                if (!carsErr && carsData) {
+                    setLinkedCars(carsData.map((item: any) => item.inventory).filter(Boolean));
+                }
+
+                // Fetch linked accessories
+                const { data: accData, error: accErr } = await supabase
+                    .from('lead_accessories')
+                    .select('accessories(*)')
+                    .eq('lead_id', id);
+                
+                if (!accErr && accData) {
+                    setLinkedAccessories(accData.map((item: any) => item.accessories).filter(Boolean));
+                }
+            } catch (err) {
+                console.error("Error fetching linked items:", err);
+            }
+        };
+
         if (id) {
             fetchLead();
             fetchFollowUps();
             fetchCarInterests();
             fetchStaff();
             fetchVisits();
+            fetchLinkedItems();
         }
     }, [id, fetchFollowUps, fetchCarInterests, fetchStaff, fetchVisits]);
 
@@ -744,7 +983,7 @@ const LeadDetail = () => {
         </div>
     );
 
-    const leadActivities = activities.filter(a => a.lead_id === id);
+    const leadActivities = activities.filter((a: any) => a.lead_id === id);
     const activityIcon = (type: string) => {
         if(type === 'call') return {icon: 'call', color: 'bg-green-500'};
         if(type === 'whatsapp') return {icon: 'chat', color: 'bg-green-600'};
@@ -757,7 +996,7 @@ const LeadDetail = () => {
         return {icon: 'info', color: 'bg-slate-500'};
     };
 
-    const dynamicTimeline = leadActivities.map(a => {
+    const dynamicTimeline = leadActivities.map((a: any) => {
         const types = a.activity_type ? a.activity_type.split(',') : ['note'];
         const mainStyle = activityIcon(types[0]);
         const allIcons = types.map((t: string) => activityIcon(t).icon);
@@ -775,7 +1014,7 @@ const LeadDetail = () => {
         { icons: ['person_add'], title: 'LEAD GENERATED', desc: `Inquiry received via ${formatType(lead.type)}`, time: new Date(lead.lead_date ? lead.lead_date + 'T00:00:00' : lead.created_at).toLocaleString('en-IN', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}), color: 'bg-slate-800' }
     ];
 
-    const availableCars = inventory.filter(c => c.status !== 'sold');
+    const availableCars = inventory.filter((c: any) => c.status !== 'sold');
 
     return (
         <div className="space-y-6">
@@ -1194,6 +1433,115 @@ const LeadDetail = () => {
                                     </div>
                                 )}
                             </div>
+
+                            {/* Linked Vehicles from Catalog Cart */}
+                            {linkedCars.length > 0 && (
+                                <div className="mt-6 border-t border-slate-100 pt-6">
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                                        <span className="material-symbols-outlined text-sm text-primary">directions_car</span>
+                                        Linked Vehicles ({linkedCars.length})
+                                    </h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {linkedCars.map(car => (
+                                            <div key={car.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100 transition-colors">
+                                                <div className="w-16 h-12 rounded-lg bg-slate-200 overflow-hidden shrink-0">
+                                                    {car.thumbnail ? (
+                                                        <img src={car.thumbnail} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center bg-slate-100">
+                                                            <span className="material-symbols-outlined text-slate-300 text-xl">directions_car</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <Link to={`/car/${car.id}`} target="_blank" className="text-xs sm:text-sm font-bold text-slate-800 hover:text-primary transition-colors truncate block">
+                                                        {car.year} {car.make} {car.model}
+                                                    </Link>
+                                                    <p className="text-[10px] text-slate-400 font-semibold">{car.fuel_type} • {car.transmission} • {car.condition}</p>
+                                                </div>
+                                                <div className="text-right shrink-0">
+                                                    <p className="text-xs font-black text-primary">₹ {formatPriceLakh(car.price)} L</p>
+                                                    <p className="text-[9px] text-slate-400 mt-0.5">{car.status}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Linked Accessories from Catalog Quote */}
+                            {linkedAccessories.length > 0 && (
+                                <div className="mt-6 border-t border-slate-100 pt-6">
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                                        <span className="material-symbols-outlined text-sm text-primary">tune</span>
+                                        Selected Accessories ({linkedAccessories.length})
+                                    </h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {linkedAccessories.map(acc => (
+                                            <div key={acc.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100 transition-colors">
+                                                <div className="w-10 h-10 rounded-lg bg-slate-200 overflow-hidden shrink-0">
+                                                    {acc.image_url ? (
+                                                        <img src={acc.image_url} alt={acc.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center bg-slate-100">
+                                                            <span className="material-symbols-outlined text-slate-300 text-lg">tune</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-xs font-bold text-slate-800 truncate">{acc.name}</p>
+                                                    <p className="text-[10px] text-slate-400 font-semibold">{acc.category}</p>
+                                                </div>
+                                                <div className="text-right shrink-0">
+                                                    <p className="text-xs font-black text-primary">₹ {Number(acc.price).toLocaleString('en-IN')}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* AI Smart Response Assistant Linkage */}
+                        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-[var(--shadow-card)] space-y-4">
+                            <h3 className="font-bold text-primary font-display flex items-center gap-2">
+                                <span className="material-symbols-outlined text-purple-600 text-lg">smart_toy</span>
+                                AI Smart Response Assistant
+                            </h3>
+                            
+                            {!settings?.openrouter_settings?.is_enabled || !settings?.openrouter_settings?.api_key ? (
+                                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col items-center text-center">
+                                    <span className="material-symbols-outlined text-slate-300 text-3xl mb-2">lock</span>
+                                    <p className="text-xs font-semibold text-slate-700">AI Response Drafting is Disabled</p>
+                                    <p className="text-[11px] text-slate-400 mt-1 max-w-[280px]">
+                                        To draft instant context-aware replies, configure your OpenRouter API key in settings.
+                                    </p>
+                                    <Link 
+                                        to="/admin/settings#openrouter" 
+                                        className="mt-3.5 h-8 px-4 bg-primary text-white text-[11px] font-bold rounded-lg flex items-center gap-1.5 hover:bg-primary-light transition-colors"
+                                    >
+                                        <span className="material-symbols-outlined text-xs">settings</span>
+                                        Configure OpenRouter Settings
+                                    </Link>
+                                </div>
+                            ) : !settings?.openrouter_settings?.features?.lead_response_suggestions ? (
+                                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col items-center text-center">
+                                    <span className="material-symbols-outlined text-slate-300 text-3xl mb-2">toggle_off</span>
+                                    <p className="text-xs font-semibold text-slate-700">Smart Lead Responses Feature Off</p>
+                                    <p className="text-[11px] text-slate-400 mt-1 max-w-[280px]">
+                                        The smart responses feature is disabled in settings. Enable it to generate reply suggestions.
+                                    </p>
+                                    <Link 
+                                        to="/admin/settings#openrouter" 
+                                        className="mt-3.5 h-8 px-4 bg-primary text-white text-[11px] font-bold rounded-lg flex items-center gap-1.5 hover:bg-primary-light transition-colors"
+                                    >
+                                        <span className="material-symbols-outlined text-xs">settings</span>
+                                        Enable Feature in Settings
+                                    </Link>
+                                </div>
+                            ) : (
+                                <AiResponseWidget lead={lead} linkedCars={linkedCars} openRouterSettings={settings.openrouter_settings} />
+                            )}
                         </div>
 
                         {/* Timeline */}
@@ -1368,7 +1716,7 @@ const LeadDetail = () => {
                                             <input required type="number" placeholder="Eg: 550000" value={convertForm.final_price} onChange={e => setConvertForm({ ...convertForm, final_price: e.target.value })} className="w-full h-10 border border-slate-200 rounded-lg px-3 text-sm text-primary outline-none focus:border-green-400 bg-white shadow-sm" />
                                         </div>
                                         {convertForm.inventory_id && (() => {
-                                            const car = availableCars.find(c => c.id === convertForm.inventory_id);
+                                            const car = availableCars.find((c: any) => c.id === convertForm.inventory_id);
                                             if (!car) return null;
                                             const price = Number(convertForm.final_price) || 0;
                                             let earningLabel = '';

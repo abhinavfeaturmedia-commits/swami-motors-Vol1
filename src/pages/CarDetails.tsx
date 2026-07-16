@@ -6,6 +6,7 @@ import DownloadPhotosModal from '../components/admin/DownloadPhotosModal';
 import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
+import { useInquiryCart } from '../contexts/InquiryCartContext';
 import VideoPlayer from '../components/ui/VideoPlayer';
 
 const SPECS = [
@@ -55,6 +56,7 @@ const CarDetails = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [car, setCar] = useState<CarData | null>(null);
+    const { addToCart, isInCart, setIsCartOpen } = useInquiryCart();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     
@@ -593,6 +595,32 @@ const CarDetails = () => {
                             <Link to={`/book-test-drive?car=${car.id}`} className="w-full h-12 flex items-center justify-center gap-2 bg-accent text-primary font-bold rounded-xl hover:bg-accent-hover transition-all shadow-sm text-sm">
                                 <span className="material-symbols-outlined text-lg">directions_car</span> Book Test Drive
                             </Link>
+                            <button
+                                onClick={() => {
+                                    if (isInCart(car.id)) {
+                                        setIsCartOpen(true);
+                                    } else {
+                                        addToCart({
+                                            id: car.id,
+                                            make: car.make,
+                                            model: car.model,
+                                            year: car.year,
+                                            price: car.price,
+                                            fuel_type: car.fuel_type,
+                                            transmission: car.transmission,
+                                            mileage: car.mileage,
+                                            images: car.images,
+                                            status: car.status,
+                                            created_at: car.source || new Date().toISOString(),
+                                            condition: car.condition
+                                        });
+                                    }
+                                }}
+                                className={`w-full h-12 flex items-center justify-center gap-2 font-bold rounded-xl transition-all text-sm border ${isInCart(car.id) ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100/70' : 'bg-primary text-white border-primary hover:bg-primary-light'}`}
+                            >
+                                <span className="material-symbols-outlined text-lg">{isInCart(car.id) ? 'done' : 'folder_special'}</span>
+                                {isInCart(car.id) ? 'In Inquiry Cart' : 'Add to Inquiry Cart'}
+                            </button>
                             <a href={`https://wa.me/919823237975?text=I'm interested in the ${car.year} ${car.make} ${car.model} (ID: ${car.id})`} target="_blank" rel="noreferrer" className="w-full h-12 flex items-center justify-center gap-2 bg-[#25D366] text-white font-bold rounded-xl hover:bg-[#20bd5a] transition-colors text-sm">
                                 <span className="material-symbols-outlined text-lg">forum</span> WhatsApp Inquiry
                             </a>

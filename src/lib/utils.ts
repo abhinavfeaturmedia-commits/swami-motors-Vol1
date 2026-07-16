@@ -88,3 +88,31 @@ export const LEAD_STATUS_COLORS: Record<string, string> = {
     closed_won: 'bg-green-100 text-green-700',
     closed_lost: 'bg-slate-200 text-slate-500',
 };
+
+// ─── YouTube / Shorts Utilities ──────────────────────────────────────────────────
+
+/** Extracts the 11-character video ID from YouTube/Shorts URLs */
+export const getYouTubeVideoId = (url: string | null | undefined): string | null => {
+    if (!url) return null;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|shorts\/)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return match && match[2].length === 11 ? match[2] : null;
+};
+
+/** Returns the standard embed URL for standard videos or Shorts */
+export const getYouTubeEmbedUrl = (url: string | null | undefined): string | null => {
+    const id = getYouTubeVideoId(url);
+    return id ? `https://www.youtube.com/embed/${id}` : null;
+};
+
+/** Returns the URL of the YouTube thumbnail image */
+export const getYouTubeThumbnail = (url: string | null | undefined): string => {
+    const id = getYouTubeVideoId(url);
+    return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : 'https://placehold.co/800x450/e2e8f0/94a3b8?text=No+Video';
+};
+
+/** Automatically detects if a URL is a Shorts URL */
+export const detectVideoType = (url: string | null | undefined): 'video' | 'short' => {
+    if (!url) return 'video';
+    return url.toLowerCase().includes('/shorts/') ? 'short' : 'video';
+};

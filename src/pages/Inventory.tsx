@@ -4,6 +4,7 @@ import { X, Heart } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { useInquiryCart } from '../contexts/InquiryCartContext';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Car {
@@ -19,10 +20,12 @@ interface Car {
     status: string;
     created_at: string;
     condition: string;
+    body_type?: string;
 }
 
 const Inventory = () => {
     const [searchParams] = useSearchParams();
+    const { addToCart, isInCart, setIsCartOpen } = useInquiryCart();
     
     const [cars, setCars] = useState<Car[]>([]);
     const [loading, setLoading] = useState(true);
@@ -38,6 +41,8 @@ const Inventory = () => {
     const [selectedYears, setSelectedYears] = useState<string[]>([]);
     const [selectedBudget, setSelectedBudget] = useState<string>('');
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedBodyTypes, setSelectedBodyTypes] = useState<string[]>([]);
+    const [selectedTransmissions, setSelectedTransmissions] = useState<string[]>([]);
 
     // Wishlist state
     const [wishlist, setWishlist] = useState<string[]>([]);
@@ -86,6 +91,12 @@ const Inventory = () => {
         
         const yearVal = searchParams.get('year');
         setSelectedYears(yearVal ? [yearVal] : []);
+
+        const bodyTypeVal = searchParams.get('body_type');
+        setSelectedBodyTypes(bodyTypeVal ? bodyTypeVal.split(',') : []);
+
+        const transmissionVal = searchParams.get('transmission');
+        setSelectedTransmissions(transmissionVal ? transmissionVal.split(',') : []);
     }, [searchParams]);
 
     const toggleWishlist = async (e: React.MouseEvent, id: string) => {
@@ -155,6 +166,16 @@ const Inventory = () => {
             if (selectedBudget === '5to10' && (car.price < 500000 || car.price > 1000000)) return false;
             if (selectedBudget === '10to20' && (car.price < 1000000 || car.price > 2000000)) return false;
             if (selectedBudget === '20plus' && car.price < 2000000) return false;
+        }
+
+        // Body Type filter
+        if (selectedBodyTypes.length > 0 && !selectedBodyTypes.some(bt => (car.body_type || '').toLowerCase() === bt.toLowerCase())) {
+            return false;
+        }
+
+        // Transmission filter
+        if (selectedTransmissions.length > 0 && !selectedTransmissions.some(t => (car.transmission || '').toLowerCase() === t.toLowerCase())) {
+            return false;
         }
 
         return true;
@@ -253,7 +274,7 @@ const Inventory = () => {
                     <div className="lg:sticky lg:top-[5.5rem] space-y-4">
                         <div className="flex items-center justify-between mb-2">
                             <h3 className="font-bold text-primary font-display text-lg">Filters</h3>
-                            <button onClick={() => { setSelectedBrands([]); setSelectedYears([]); setSelectedBudget(''); }} className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">Clear All</button>
+                            <button onClick={() => { setSelectedBrands([]); setSelectedYears([]); setSelectedBudget(''); setSelectedBodyTypes([]); setSelectedTransmissions([]); }} className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">Clear All</button>
                         </div>
                         {renderFiltersContent()}
                     </div>
@@ -282,7 +303,7 @@ const Inventory = () => {
                                 <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
                                     <h3 className="font-bold text-primary font-display text-lg">Filters</h3>
                                     <div className="flex items-center gap-4">
-                                        <button onClick={() => { setSelectedBrands([]); setSelectedYears([]); setSelectedBudget(''); }} className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">Clear All</button>
+                                        <button onClick={() => { setSelectedBrands([]); setSelectedYears([]); setSelectedBudget(''); setSelectedBodyTypes([]); setSelectedTransmissions([]); }} className="text-xs font-semibold text-accent hover:text-accent-hover transition-colors">Clear All</button>
                                         <button onClick={() => setShowFilters(false)} className="p-1.5 bg-slate-50 text-slate-400 hover:text-primary rounded-full flex items-center justify-center">
                                             <X size={18} />
                                         </button>
@@ -346,9 +367,27 @@ const Inventory = () => {
                     </div>
 
                     {/* Active Filters Pills */}
-                    {(selectedBrands.length > 0 || selectedYears.length > 0 || selectedBudget || searchQuery) && (
+                    {(selectedBrands.length > 0 || selectedYears.length > 0 || selectedBudget || searchQuery || selectedBodyTypes.length > 0 || selectedTransmissions.length > 0) && (
                         <div className="flex flex-wrap gap-2 mb-6 items-center">
                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mr-1">Active Filters:</span>
+                            
+                            {selectedBodyTypes.map(bt => (
+                                <span key={bt} className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-700 text-[11px] font-semibold px-3 py-1.5 rounded-xl border border-slate-200">
+                                    Type: {bt}
+                                    <button onClick={() => setSelectedBodyTypes(prev => prev.filter(x => x !== bt))} className="hover:bg-slate-200 rounded p-0.5">
+                                        <X size={10} />
+                                    </button>
+                                </span>
+                            ))}
+
+                            {selectedTransmissions.map(t => (
+                                <span key={t} className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-700 text-[11px] font-semibold px-3 py-1.5 rounded-xl border border-slate-200">
+                                    Transmission: {t}
+                                    <button onClick={() => setSelectedTransmissions(prev => prev.filter(x => x !== t))} className="hover:bg-slate-200 rounded p-0.5">
+                                        <X size={10} />
+                                    </button>
+                                </span>
+                            ))}
                             
                             {searchQuery && (
                                 <span className="inline-flex items-center gap-1.5 bg-primary text-white text-[11px] font-semibold px-3 py-1.5 rounded-xl shadow-sm">
@@ -400,11 +439,15 @@ const Inventory = () => {
                                     setSelectedYears([]);
                                     setSelectedBudget('');
                                     setSearchQuery('');
+                                    setSelectedBodyTypes([]);
+                                    setSelectedTransmissions([]);
                                     const params = new URLSearchParams(window.location.search);
                                     params.delete('search');
                                     params.delete('make');
                                     params.delete('budget');
                                     params.delete('year');
+                                    params.delete('body_type');
+                                    params.delete('transmission');
                                     window.history.replaceState({}, '', window.location.pathname);
                                 }}
                                 className="text-xs font-bold text-red-500 hover:text-red-700 hover:underline px-2 py-1"
@@ -515,12 +558,24 @@ const Inventory = () => {
                                                 <span className="text-xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)} Lakh</span>
                                             </div>
                                             <div className="flex gap-2">
-                                                <Link to={`/book-test-drive?car=${car.id}`} className="flex-1 h-10 flex items-center justify-center text-sm font-semibold text-primary border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+                                                <Link to={`/book-test-drive?car=${car.id}`} className="flex-1 h-10 flex items-center justify-center text-xs font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
                                                     Test Drive
                                                 </Link>
-                                                <a href={`https://wa.me/919876543210?text=I'm interested in the ${car.year} ${car.make} ${car.model}`} target="_blank" rel="noreferrer" className="flex-1 h-10 flex items-center justify-center text-sm font-semibold text-white bg-primary rounded-xl hover:bg-primary-light transition-colors gap-1.5">
-                                                    <span className="material-symbols-outlined text-sm">chat</span> Contact
-                                                </a>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        if (isInCart(car.id)) {
+                                                            setIsCartOpen(true);
+                                                        } else {
+                                                            addToCart(car);
+                                                        }
+                                                    }}
+                                                    className={`flex-1 h-10 flex items-center justify-center text-xs font-semibold rounded-xl transition-all duration-200 gap-1.5 ${isInCart(car.id) ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100/70' : 'bg-primary text-white hover:bg-primary-light'}`}
+                                                >
+                                                    <span className="material-symbols-outlined text-sm">{isInCart(car.id) ? 'done' : 'folder_special'}</span>
+                                                    {isInCart(car.id) ? 'In Inquiry' : 'Add to Inquiry'}
+                                                </button>
                                             </div>
                                         </div>
                                     </article>

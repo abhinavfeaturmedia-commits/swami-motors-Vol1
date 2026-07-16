@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import ShareCarModal from '../../components/ShareCarModal';
 import HighlightText from '../../components/ui/HighlightText';
 import DownloadPhotosModal from '../../components/admin/DownloadPhotosModal';
+import CreateSharedCatalogModal from '../../components/admin/CreateSharedCatalogModal';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface Car {
@@ -47,7 +48,7 @@ interface Dealer { id: string; dealer_code: string; name: string; }
 // ─── Skeleton ────────────────────────────────────────────────────────────────
 const SkeletonRow = () => (
     <tr className="border-b border-slate-50">
-        {[...Array(6)].map((_, i) => (
+        {[...Array(7)].map((_, i) => (
             <td key={i} className="px-5 py-4">
                 <div className="h-4 bg-slate-100 rounded-lg animate-pulse" style={{ width: i === 0 ? '180px' : '80px' }} />
             </td>
@@ -73,6 +74,8 @@ const AdminInventory = () => {
     const [shareCarId, setShareCarId] = useState<string | null>(null);
     const [downloadCarId, setDownloadCarId] = useState<string | null>(null);
     const [shareCounts, setShareCounts] = useState<Record<string, number>>({});
+    const [selectedCarIds, setSelectedCarIds] = useState<string[]>([]);
+    const [isSharedModalOpen, setIsSharedModalOpen] = useState(false);
 
     useEffect(() => {
         supabase.from('dealers').select('id, dealer_code, name').then(({ data }) => {
@@ -300,6 +303,22 @@ const AdminInventory = () => {
                 <table className="w-full min-w-[750px]">
                     <thead>
                         <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                            {canManage && (
+                                <th className="px-5 py-3 text-left w-10">
+                                    <input 
+                                        type="checkbox"
+                                        checked={selectedCarIds.length > 0 && selectedCarIds.length === filtered.length}
+                                        onChange={(e) => {
+                                            if (e.target.checked) {
+                                                setSelectedCarIds(filtered.map(c => c.id));
+                                            } else {
+                                                setSelectedCarIds([]);
+                                            }
+                                        }}
+                                        className="rounded border-slate-300 text-primary focus:ring-primary size-4 cursor-pointer"
+                                    />
+                                </th>
+                            )}
                             <th className="text-left px-5 py-3">Vehicle</th>
                             <th className="text-left px-5 py-3">Price</th>
                             <th className="text-left px-5 py-3">Details</th>
@@ -313,7 +332,7 @@ const AdminInventory = () => {
                             [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
                         ) : filtered.length === 0 ? (
                             <tr>
-                                <td colSpan={6} className="text-center py-16">
+                                <td colSpan={7} className="text-center py-16">
                                     <span className="material-symbols-outlined text-4xl text-slate-200 mb-3 block">directions_car</span>
                                     <p className="text-slate-400 font-medium text-sm">
                                         {searchQuery ? `No results for "${searchQuery}"` : 'No vehicles in this category'}
@@ -326,6 +345,22 @@ const AdminInventory = () => {
                         ) : (
                             filtered.map(car => (
                                 <tr key={car.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
+                                    {canManage && (
+                                        <td className="px-5 py-3.5 w-10">
+                                            <input 
+                                                type="checkbox"
+                                                checked={selectedCarIds.includes(car.id)}
+                                                onChange={() => {
+                                                    if (selectedCarIds.includes(car.id)) {
+                                                        setSelectedCarIds(selectedCarIds.filter(id => id !== car.id));
+                                                    } else {
+                                                        setSelectedCarIds([...selectedCarIds, car.id]);
+                                                    }
+                                                }}
+                                                className="rounded border-slate-300 text-primary focus:ring-primary size-4 cursor-pointer"
+                                            />
+                                        </td>
+                                    )}
                                     <td className="px-5 py-3.5">
                                         <div className="flex items-center gap-3">
                                             <div className="size-12 rounded-xl overflow-hidden bg-slate-100 shrink-0">
@@ -464,6 +499,36 @@ const AdminInventory = () => {
                     />
                 ) : null;
             })()}
+
+            {/* Shared Catalog Modal */}
+            <CreateSharedCatalogModal
+                isOpen={isSharedModalOpen}
+                onClose={() => setIsSharedModalOpen(false)}
+                selectedCarIds={selectedCarIds}
+                onSuccess={() => setSelectedCarIds([])}
+            />
+
+            {/* Sticky Shared Action Bar */}
+            {selectedCarIds.length > 0 && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white rounded-2xl px-6 py-4 flex items-center gap-6 shadow-2xl border border-slate-800 animate-slide-up">
+                    <span className="text-xs sm:text-sm font-semibold whitespace-nowrap">
+                        {selectedCarIds.length} {selectedCarIds.length === 1 ? 'car' : 'cars'} selected
+                    </span>
+                    <div className="h-4 w-px bg-slate-700 shrink-0" />
+                    <button
+                        onClick={() => setIsSharedModalOpen(true)}
+                        className="flex items-center gap-2 h-9 px-4 bg-accent text-primary rounded-xl text-xs font-bold hover:bg-accent/80 transition-colors shrink-0"
+                    >
+                        <span className="material-symbols-outlined text-sm">share</span> Generate Shared Catalog
+                    </button>
+                    <button
+                        onClick={() => setSelectedCarIds([])}
+                        className="text-xs text-slate-400 hover:text-white font-semibold whitespace-nowrap shrink-0"
+                    >
+                        Deselect All
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

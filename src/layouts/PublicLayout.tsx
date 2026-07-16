@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Heart, User, Menu, X, Phone, Mail, MapPin, Facebook, Instagram, Twitter, Youtube } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useInquiryCart } from '../contexts/InquiryCartContext';
+import { InquiryCartDrawer } from '../components/ui/InquiryCartDrawer';
+import { Chatbot } from '../components/Chatbot';
 
 const PublicLayout: React.FC = () => {
     const location = useLocation();
@@ -9,10 +12,12 @@ const PublicLayout: React.FC = () => {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
     const [searchVal, setSearchVal] = useState('');
+    const { cartItems, setIsCartOpen } = useInquiryCart();
 
     const navLinks = [
         { name: 'Home', path: '/' },
         { name: 'Inventory', path: '/inventory' },
+        { name: 'Accessories', path: '/accessories' },
         { name: 'Sell Car', path: '/sell' },
         { name: 'Services', path: '/services' },
         { name: 'Finance', path: '/finance' },
@@ -312,6 +317,30 @@ const PublicLayout: React.FC = () => {
                     </div>
                 </div>
             </footer>
+
+            {/* Floating Inquiry Cart Badge */}
+            <AnimatePresence>
+                {cartItems.length > 0 && (
+                    <motion.button
+                        initial={{ scale: 0, opacity: 0, y: 50 }}
+                        animate={{ scale: 1, opacity: 1, y: 0 }}
+                        exit={{ scale: 0, opacity: 0, y: 50 }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setIsCartOpen(true)}
+                        className="fixed bottom-6 right-[5.5rem] z-40 flex items-center justify-center gap-3 h-14 px-6 rounded-full bg-primary text-white shadow-2xl hover:bg-primary-light transition-colors border border-white/10"
+                    >
+                        <span className="material-symbols-outlined text-2xl">folder_special</span>
+                        <span className="text-sm font-bold tracking-wide">Inquiry Cart</span>
+                        <span className="flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-accent text-primary text-xs font-black shadow-inner">
+                            {cartItems.length}
+                        </span>
+                    </motion.button>
+                )}
+            </AnimatePresence>
+
+            <Chatbot />
+            <InquiryCartDrawer />
         </div>
     );
 };

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useData } from '../../contexts/DataContext';
 import { supabase } from '../../lib/supabase';
+import { validateOpenRouterKey } from '../../lib/openrouter';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -89,6 +91,7 @@ const SkeletonLine: React.FC<{ w?: string }> = ({ w = 'w-full' }) => (
 
 const AdminSettings: React.FC = () => {
     const { settings, loading: globalLoading, refreshData } = useData();
+    const location = useLocation();
 
     // Local state — all empty/default until DB resolves
     const [businessProfile, setBusinessProfile]   = useState({ ...DEFAULT_BUSINESS });
@@ -96,10 +99,57 @@ const AdminSettings: React.FC = () => {
     const [notifications,   setNotifications]      = useState({ ...DEFAULT_NOTIFICATIONS });
     const [operations,      setOperations]         = useState({ ...DEFAULT_OPERATIONS });
 
+    // ── OpenRouter integration state ──────────────────────────────────────────
+    const [openRouterEnabled,     setOpenRouterEnabled]     = useState(false);
+    const [openRouterApiKey,      setOpenRouterApiKey]      = useState('');
+    const [openRouterModel,       setOpenRouterModel]       = useState('google/gemini-2.5-flash');
+    const [openRouterCustomModel, setOpenRouterCustomModel] = useState('');
+    const [openRouterFeatures,    setOpenRouterFeatures]    = useState<Record<string, boolean>>({
+        lead_response_suggestions: true,
+        car_description_generator: true,
+        sentiment_analysis: true,
+    });
+    const [showApiKey,            setShowApiKey]            = useState(false);
+    
+    // Key validation states
+    const [isValidatingKey,       setIsValidatingKey]       = useState(false);
+    const [validationResult,      setValidationResult]      = useState<{
+        success: boolean;
+        label?: string;
+        limit?: number;
+        limit_remaining?: number;
+        is_free_tier?: boolean;
+        error?: string;
+    } | null>(null);
+
     const [saving, setSaving] = useState(false);
     const [saved,  setSaved]  = useState(false);
     const [error,  setError]  = useState<string | null>(null);
     const [loaded, setLoaded] = useState(false); // prevents flash of defaults
+
+    // Scroll to OpenRouter section if hash exists
+    useEffect(() => {
+        if (loaded && location.hash === '#openrouter') {
+            const el = document.getElementById('openrouter-section');
+            if (el) {
+                setTimeout(() => {
+                    el.scrollIntoView({ behavior: 'smooth' });
+                    el.classList.add('ring-4', 'ring-primary/20', 'border-primary');
+                    setTimeout(() => {
+                        el.classList.remove('ring-4', 'ring-primary/20', 'border-primary');
+                    }, 3000);
+                }, 100);
+            }
+        }
+    }, [location.hash, loaded]);
+
+    // ── Deal of the Week state ────────────────────────────────────────────────
+    const [dealInventory, setDealInventory] = useState<{ id: string; make: string; model: string; year: number }[]>([]);
+    const [dealCarId,     setDealCarId]     = useState('');
+    const [dealEndsAt,    setDealEndsAt]    = useState('');
+    const [dealSaving,    setDealSaving]    = useState(false);
+    const [dealSaved,     setDealSaved]     = useState(false);
+    const [dealError,     setDealError]     = useState<string | null>(null);
 
     // ── Sync from DB once settings are fetched ────────────────────────────────
     useEffect(() => {
@@ -120,9 +170,83 @@ const AdminSettings: React.FC = () => {
         if (settings.operations) {
             setOperations({ ...DEFAULT_OPERATIONS, ...settings.operations });
         }
+        if (settings.openrouter_settings) {
+            const or = settings.openrouter_settings;
+            setOpenRouterEnabled(!!or.is_enabled);
+            setOpenRouterApiKey(or.api_key || '');
+            setOpenRouterModel(or.default_model || 'google/gemini-2.5-flash');
+            setOpenRouterCustomModel(or.custom_model || '');
+            if (or.features) {
+                setOpenRouterFeatures({
+                    lead_response_suggestions: !!or.features.lead_response_suggestions,
+                    car_description_generator: !!or.features.car_description_generator,
+                    sentiment_analysis: !!or.features.sentiment_analysis,
+                });
+            }
+        }
     }, [globalLoading, settings]);
 
+    // ── Deal of the Week: load inventory + current config on mount ────────────
+    useEffect(() => {
+        supabase
+            .from('inventory')
+            .select('id, make, model, year')
+            .eq('status', 'available')
+            .order('created_at', { ascending: false })
+            .limit(50)
+            .then(({ data }) => { if (data) setDealInventory(data); });
+
+        supabase
+            .from('dealership_settings')
+            .select('setting_value')
+            .eq('setting_key', 'deal_of_the_week')
+            .maybeSingle()
+            .then(({ data }) => {
+                if (data?.setting_value) {
+                    setDealCarId(data.setting_value.car_id || '');
+                    const raw = data.setting_value.ends_at || '';
+                    if (raw) {
+                        const d = new Date(raw);
+                        const pad = (n: number) => String(n).padStart(2, '0');
+                        setDealEndsAt(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+                    }
+                }
+            });
+    }, []);
+
+    const handleSaveDeal = async () => {
+        if (!dealCarId) { setDealError('Please select a car.'); return; }
+        setDealSaving(true); setDealError(null);
+        const { error: err } = await supabase
+            .from('dealership_settings')
+            .upsert(
+                { setting_key: 'deal_of_the_week', setting_value: { car_id: dealCarId, ends_at: dealEndsAt ? new Date(dealEndsAt).toISOString() : null } },
+                { onConflict: 'setting_key' }
+            );
+        setDealSaving(false);
+        if (err) { setDealError(err.message); }
+        else { setDealSaved(true); setTimeout(() => setDealSaved(false), 3000); }
+    };
+
+    const handleTestConnection = async () => {
+        if (!openRouterApiKey) {
+            setValidationResult({ success: false, error: 'Please enter an API key to test.' });
+            return;
+        }
+        setIsValidatingKey(true);
+        setValidationResult(null);
+        try {
+            const result = await validateOpenRouterKey(openRouterApiKey);
+            setValidationResult(result);
+        } catch (err: any) {
+            setValidationResult({ success: false, error: err.message || 'Validation failed.' });
+        } finally {
+            setIsValidatingKey(false);
+        }
+    };
+
     // ── Save all sections to Supabase ─────────────────────────────────────────
+
     const handleSave = async () => {
         setSaving(true);
         setError(null);
@@ -132,6 +256,13 @@ const AdminSettings: React.FC = () => {
                 upsertSetting('working_hours',    workingHours),
                 upsertSetting('notifications',    notifications),
                 upsertSetting('operations',       operations),
+                upsertSetting('openrouter_settings', {
+                    is_enabled: openRouterEnabled,
+                    api_key: openRouterApiKey,
+                    default_model: openRouterModel,
+                    custom_model: openRouterCustomModel,
+                    features: openRouterFeatures,
+                }),
             ]);
 
             const firstError = results.find(r => r.error);
@@ -392,8 +523,230 @@ const AdminSettings: React.FC = () => {
                 )}
             </SectionCard>
 
-            {/* ── 5. System Info ──────────────────────────────────────────── */}
+            {/* ── 5. Deal of the Week ──────────────────────────────────── */}
+            <SectionCard icon="local_offer" title="Deal of the Week" subtitle="Select a car to spotlight on the homepage with a special offer countdown timer">
+                <div className="space-y-5">
+                    <div>
+                        <FieldLabel>Featured Car</FieldLabel>
+                        <select
+                            value={dealCarId}
+                            onChange={e => setDealCarId(e.target.value)}
+                            className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-primary outline-none focus:border-primary/40 focus:bg-white transition-colors appearance-none cursor-pointer"
+                        >
+                            <option value="">— Select a car from inventory —</option>
+                            {dealInventory.map(c => (
+                                <option key={c.id} value={c.id}>{c.year} {c.make} {c.model}</option>
+                            ))}
+                        </select>
+                        <p className="text-[11px] text-slate-400 mt-1.5">Only available cars are listed. This car will be featured on the public homepage.</p>
+                    </div>
+
+                    <div>
+                        <FieldLabel>Deal Expires At</FieldLabel>
+                        <TextInput
+                            type="datetime-local"
+                            value={dealEndsAt}
+                            onChange={e => setDealEndsAt(e.target.value)}
+                        />
+                        <p className="text-[11px] text-slate-400 mt-1.5">A live countdown timer will display on the homepage. Leave blank to hide the timer.</p>
+                    </div>
+
+                    {dealError && (
+                        <p className="text-xs text-red-600 font-semibold flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-sm">error</span> {dealError}
+                        </p>
+                    )}
+
+                    <button
+                        onClick={handleSaveDeal}
+                        disabled={dealSaving}
+                        className="h-10 px-6 bg-primary text-white font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 shadow-sm"
+                    >
+                        <span className={`material-symbols-outlined text-base ${dealSaving ? 'animate-spin' : ''}`}>
+                            {dealSaved ? 'check' : dealSaving ? 'sync' : 'local_offer'}
+                        </span>
+                        {dealSaved ? 'Deal Saved!' : dealSaving ? 'Saving…' : 'Save Deal of the Week'}
+                    </button>
+                </div>
+            </SectionCard>
+
+            {/* ── 6. OpenRouter AI Integration ────────────────────────────── */}
+            <div id="openrouter-section" className="transition-all duration-300 rounded-2xl">
+                <SectionCard icon="smart_toy" title="OpenRouter AI Integration" subtitle="Configure AI features like smart follow-up suggestions and automated vehicle descriptions">
+                    {isLoading ? (
+                        <div className="space-y-4">{[...Array(4)].map((_, i) => <SkeletonLine key={i} />)}</div>
+                    ) : (
+                        <div className="space-y-5">
+                            {/* Enable/Disable Toggle */}
+                            <div className="flex items-center justify-between py-1">
+                                <div>
+                                    <p className="text-sm font-semibold text-primary">Enable AI Features</p>
+                                    <p className="text-xs text-slate-400 mt-0.5">Activate OpenRouter-powered features across inventory and lead management</p>
+                                </div>
+                                <Toggle
+                                    checked={openRouterEnabled}
+                                    onChange={() => setOpenRouterEnabled(!openRouterEnabled)}
+                                />
+                            </div>
+
+                            {openRouterEnabled && (
+                                <>
+                                    <hr className="border-slate-100" />
+                                    
+                                    {/* API Key */}
+                                    <div>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <FieldLabel>OpenRouter API Key</FieldLabel>
+                                            <a 
+                                                href="https://openrouter.ai/keys" 
+                                                target="_blank" 
+                                                rel="noreferrer" 
+                                                className="text-[10px] text-primary hover:underline font-bold"
+                                            >
+                                                Get API Key ↗
+                                            </a>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                                <input
+                                                    type={showApiKey ? 'text' : 'password'}
+                                                    value={openRouterApiKey}
+                                                    onChange={e => setOpenRouterApiKey(e.target.value)}
+                                                    placeholder="sk-or-v1-..."
+                                                    className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-3 pr-10 text-sm text-primary outline-none focus:border-primary/40 focus:bg-white transition-colors"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowApiKey(!showApiKey)}
+                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 flex items-center justify-center"
+                                                >
+                                                    <span className="material-symbols-outlined text-[18px]">
+                                                        {showApiKey ? 'visibility_off' : 'visibility'}
+                                                    </span>
+                                                </button>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={handleTestConnection}
+                                                disabled={isValidatingKey || !openRouterApiKey}
+                                                className="h-10 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-sm transition-colors disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                                            >
+                                                {isValidatingKey && <span className="material-symbols-outlined text-sm animate-spin">sync</span>}
+                                                {isValidatingKey ? 'Testing...' : 'Test Connection'}
+                                            </button>
+                                        </div>
+                                        
+                                        {/* Connection Validation Result */}
+                                        {validationResult && (
+                                            <div className={`mt-3 p-3.5 rounded-xl border text-xs leading-relaxed flex items-start gap-2.5 ${
+                                                validationResult.success 
+                                                    ? 'bg-green-50 border-green-200 text-green-800' 
+                                                    : 'bg-red-50 border-red-200 text-red-800'
+                                            }`}>
+                                                <span className="material-symbols-outlined text-base shrink-0 mt-0.5">
+                                                    {validationResult.success ? 'check_circle' : 'error'}
+                                                </span>
+                                                <div>
+                                                    <p className="font-bold">{validationResult.success ? 'Connected successfully!' : 'Connection failed'}</p>
+                                                    {validationResult.success ? (
+                                                        <div className="mt-1 space-y-0.5 opacity-90">
+                                                            <p><strong>Key Label:</strong> {validationResult.label}</p>
+                                                            <p><strong>Limit:</strong> {validationResult.limit !== null && validationResult.limit !== undefined ? `$${validationResult.limit}` : 'No limit'}</p>
+                                                            <p><strong>Remaining:</strong> {validationResult.limit_remaining !== null && validationResult.limit_remaining !== undefined ? `$${validationResult.limit_remaining}` : 'Unlimited'}</p>
+                                                            <p><strong>Free Tier:</strong> {validationResult.is_free_tier ? 'Yes' : 'No'}</p>
+                                                        </div>
+                                                    ) : (
+                                                        <p className="mt-0.5">{validationResult.error}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Default Model */}
+                                    <div>
+                                        <FieldLabel>Default AI Model</FieldLabel>
+                                        <select
+                                            value={openRouterModel}
+                                            onChange={e => setOpenRouterModel(e.target.value)}
+                                            className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-primary outline-none focus:border-primary/40 focus:bg-white transition-colors appearance-none cursor-pointer"
+                                        >
+                                            <option value="google/gemini-2.5-flash">Gemini 2.5 Flash (Recommended - fast & precise)</option>
+                                            <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (Highly intelligent & analytical)</option>
+                                            <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B Instruct (Free - powerful)</option>
+                                            <option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B Instruct (Free - fast & basic)</option>
+                                            <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (Advanced reasoning & coding)</option>
+                                            <option value="deepseek/deepseek-chat">DeepSeek V3 (Efficient & responsive)</option>
+                                            <option value="custom">— Use Custom Model ID —</option>
+                                        </select>
+                                    </div>
+
+                                    {/* Custom Model Input */}
+                                    {openRouterModel === 'custom' && (
+                                        <div className="animate-fadeIn">
+                                            <FieldLabel>Custom OpenRouter Model ID</FieldLabel>
+                                            <input
+                                                type="text"
+                                                value={openRouterCustomModel}
+                                                onChange={e => setOpenRouterCustomModel(e.target.value)}
+                                                placeholder="e.g. mistralai/mistral-7b-instruct:free"
+                                                className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-primary outline-none focus:border-primary/40 focus:bg-white transition-colors"
+                                            />
+                                            <p className="text-[10px] text-slate-400 mt-1">Provide any valid model identifier from the OpenRouter model catalog.</p>
+                                        </div>
+                                    )}
+
+                                    <hr className="border-slate-100" />
+
+                                    {/* Specific Enabled Features */}
+                                    <div>
+                                        <FieldLabel>Enabled AI Features</FieldLabel>
+                                        <div className="space-y-3.5 mt-2">
+                                            {[
+                                                { 
+                                                    key: 'lead_response_suggestions', 
+                                                    label: 'Smart Lead Responses', 
+                                                    desc: 'Enable automated drafting of context-aware WhatsApp/email responses on Lead Details' 
+                                                },
+                                                { 
+                                                    key: 'car_description_generator', 
+                                                    label: 'Automated Vehicle Descriptions', 
+                                                    desc: 'Enable AI copy generation based on vehicle specs inside the Inventory Listing Form' 
+                                                },
+                                                { 
+                                                    key: 'sentiment_analysis', 
+                                                    label: 'Lead Sentiment & Quality Scoring', 
+                                                    desc: 'Analyze customer inquiry text to gauge sentiment and score lead quality automatically' 
+                                                },
+                                            ].map(feature => (
+                                                <label key={feature.key} className="flex items-start gap-3 cursor-pointer group">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={!!openRouterFeatures[feature.key]}
+                                                        onChange={() => setOpenRouterFeatures(prev => ({
+                                                            ...prev,
+                                                            [feature.key]: !prev[feature.key]
+                                                        }))}
+                                                        className="mt-1 rounded border-slate-300 text-primary focus:ring-primary size-4 shrink-0"
+                                                    />
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-slate-700 group-hover:text-primary transition-colors">{feature.label}</p>
+                                                        <p className="text-xs text-slate-400 mt-0.5 leading-normal">{feature.desc}</p>
+                                                    </div>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </SectionCard>
+            </div>
+
+            {/* ── 7. System Info ──────────────────────────────────────────── */}
             <SectionCard icon="info" title="System Information" subtitle="Read-only metadata about this deployment">
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {[
                         { label: 'Application',   value: 'Swami Motors Admin Panel' },
