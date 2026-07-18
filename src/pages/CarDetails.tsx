@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut, Heart, Download } from 'lucide-react';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Check, ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut, Heart, Download, Send, MessageSquare, CheckCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import DownloadPhotosModal from '../components/admin/DownloadPhotosModal';
 import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
@@ -59,6 +59,19 @@ const CarDetails = () => {
     const { addToCart, isInCart, setIsCartOpen } = useInquiryCart();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
+
+    const [searchParams] = useSearchParams();
+    const catalogId = searchParams.get('catalogId');
+    const [catalogData, setCatalogData] = useState<any | null>(null);
+    const [catalogLiked, setCatalogLiked] = useState<boolean>(false);
+    const [catalogComments, setCatalogComments] = useState<string[]>([]);
+    const [commentInput, setCommentInput] = useState('');
+    const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
+    const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+        setToast({ msg, type });
+        setTimeout(() => setToast(null), 3000);
+    };
     
     const { user, profile, isAdmin, isStaff, hasPermission } = useAuth();
     const isStaffOrAdmin = isAdmin || isStaff;
@@ -142,7 +155,7 @@ const CarDetails = () => {
     const [lightboxZoom, setLightboxZoom] = useState(false);
     const [zoomStyle, setZoomStyle] = useState<React.CSSProperties>({ transformOrigin: 'center' });
     const [isHovered, setIsHovered] = useState(false);
-    const [mobileTab, setMobileTab] = useState<'overview' | 'features' | 'inspection' | 'video'>('overview');
+    const [mobileTab, setMobileTab] = useState<'overview' | 'features' | 'inspection' | 'video' | 'comments'>('overview');
     const thumbnailRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
     // Lightbox Swipe State
@@ -342,6 +355,119 @@ const CarDetails = () => {
         fetchCar();
     }, [id]);
 
+    useEffect(() => {
+        const fetchCatalogContext = async () => {
+            if (!catalogId || !id) return;
+            try {
+                // Fetch catalog metadata
+                const { data: catData, error: catError } = await supabase
+                    .from('shared_catalogs')
+                    .select('*, salesperson:profiles!shared_catalogs_created_by_fkey(full_name, email, phone, avatar_url)')
+                    .eq('id', catalogId)
+                    .single();
+
+                if (!catError && catData) {
+                    setCatalogData(catData);
+                }
+
+                // Fetch catalog item state (likes and comments)
+                const { data: itemData, error: itemError } = await supabase
+                    .from('shared_catalog_items')
+                    .select('is_liked, comments')
+                    .eq('catalog_id', catalogId)
+                    .eq('inventory_id', id)
+                    .single();
+
+                if (!itemError && itemData) {
+                    setCatalogLiked(itemData.is_liked || false);
+                    setCatalogComments(itemData.comments || []);
+                } else {
+                    // Fallback to local storage
+                    const storedLikes = localStorage.getItem(`likes_${catalogId}`);
+                    if (storedLikes) {
+                        try {
+                            const likesMap = JSON.parse(storedLikes);
+                            setCatalogLiked(likesMap[id] || false);
+                        } catch (e) {}
+                    }
+                    const storedComments = localStorage.getItem(`comments_${catalogId}`);
+                    if (storedComments) {
+                        try {
+                            const commentsMap = JSON.parse(storedComments);
+                            setCatalogComments(commentsMap[id] || []);
+                        } catch (e) {}
+                    }
+                }
+            } catch (err) {
+                console.error('Error fetching catalog context details:', err);
+            }
+        };
+
+        fetchCatalogContext();
+    }, [id, catalogId]);
+
+    const handleCatalogLikeToggle = async () => {
+        if (!catalogId || !car) return;
+        const nextState = !catalogLiked;
+        setCatalogLiked(nextState);
+
+        // Update local storage
+        try {
+            const storedLikes = localStorage.getItem(`likes_${catalogId}`);
+            const likesMap = storedLikes ? JSON.parse(storedLikes) : {};
+            likesMap[car.id] = nextState;
+            localStorage.setItem(`likes_${catalogId}`, JSON.stringify(likesMap));
+        } catch (e) {
+            console.warn('Local storage write failed:', e);
+        }
+
+        // Save to Supabase
+        const { error } = await supabase
+            .from('shared_catalog_items')
+            .update({ is_liked: nextState })
+            .eq('catalog_id', catalogId)
+            .eq('inventory_id', car.id);
+
+        if (error) {
+            console.error('Failed to sync like to Supabase:', error);
+            showToast('Failed to save like state.', 'error');
+        } else {
+            showToast(nextState ? 'Added to favorites!' : 'Removed from favorites!', 'success');
+        }
+    };
+
+    const handleCatalogAddComment = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!catalogId || !car || !commentInput.trim()) return;
+        const nextComments = [...catalogComments, commentInput.trim()];
+        setCatalogComments(nextComments);
+        setCommentInput('');
+
+        // Update local storage
+        try {
+            const storedComments = localStorage.getItem(`comments_${catalogId}`);
+            const commentsMap = storedComments ? JSON.parse(storedComments) : {};
+            commentsMap[car.id] = nextComments;
+            localStorage.setItem(`comments_${catalogId}`, JSON.stringify(commentsMap));
+        } catch (e) {
+            console.warn('Local storage write failed:', e);
+        }
+
+        // Save to Supabase
+        const { error } = await supabase
+            .from('shared_catalog_items')
+            .update({ comments: nextComments })
+            .eq('catalog_id', catalogId)
+            .eq('inventory_id', car.id);
+
+        if (error) {
+            console.error('Failed to sync comment to Supabase:', error);
+            showToast('Failed to save comment.', 'error');
+        } else {
+            showToast('Comment posted successfully!', 'success');
+        }
+    };
+
     if (loading) {
         return <div className="container-main py-20 text-center text-slate-400 font-medium">Loading vehicle details...</div>;
     }
@@ -371,6 +497,41 @@ const CarDetails = () => {
                 <span className="material-symbols-outlined text-xs">chevron_right</span>
                 <span className="text-primary font-medium">{car.make}: {car.model}</span>
             </nav>
+
+            {/* Curator Banner */}
+            {catalogId && catalogData && (
+                <div className="bg-gradient-to-r from-primary to-slate-800 text-white rounded-3xl p-5 sm:p-6 shadow-xl mb-8 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                        <div className="size-12 rounded-2xl bg-white/10 overflow-hidden shrink-0 flex items-center justify-center border border-white/15">
+                            {catalogData.salesperson?.avatar_url ? (
+                                <img src={catalogData.salesperson.avatar_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                                <span className="material-symbols-outlined text-white text-2xl">account_circle</span>
+                            )}
+                        </div>
+                        <div>
+                            <span className="bg-accent/20 text-accent text-[9px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider inline-flex items-center gap-1 border border-accent/15">
+                                <span className="material-symbols-outlined text-[10px]">verified</span> Curated For You
+                            </span>
+                            <h3 className="font-extrabold text-sm sm:text-base mt-1">
+                                Curated Selection for {catalogData.customer_name}
+                            </h3>
+                            {catalogData.custom_message && (
+                                <p className="text-xs text-slate-300 italic mt-0.5 max-w-md">
+                                    "{catalogData.custom_message}"
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => navigate(`/shared-catalog/${catalogId}`)}
+                        className="inline-flex h-10 items-center justify-center gap-1.5 px-5 bg-white/10 hover:bg-white/20 active:scale-95 text-white text-xs font-bold rounded-xl border border-white/15 transition-all shrink-0"
+                    >
+                        <ChevronLeft size={16} />
+                        Back to Catalog
+                    </button>
+                </div>
+            )}
 
             {/* Desktop Layout */}
             <div className="hidden lg:grid grid-cols-3 gap-8">
@@ -569,6 +730,75 @@ const CarDetails = () => {
                             ))}
                         </div>
                     </div>
+
+                    {/* Catalog Feedback/Comments Section (Desktop only) */}
+                    {catalogId && (
+                        <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-[var(--shadow-card)] space-y-6">
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-50">
+                                <div className="flex items-center gap-3">
+                                    <div className="size-10 bg-rose-50 text-rose-500 rounded-xl flex items-center justify-center">
+                                        <Heart size={20} fill={catalogLiked ? '#f43f5e' : 'none'} className={catalogLiked ? 'text-rose-500' : ''} />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-primary font-display">Personalized Feedback</h3>
+                                        <p className="text-xs text-slate-500">Likes & Comments on this vehicle</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={handleCatalogLikeToggle}
+                                    className={`h-9 px-4 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                                        catalogLiked 
+                                            ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100' 
+                                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    <Heart size={14} fill={catalogLiked ? 'currentColor' : 'none'} />
+                                    {catalogLiked ? 'Liked' : 'Like vehicle'}
+                                </button>
+                            </div>
+
+                            {/* Comments List */}
+                            <div className="space-y-4">
+                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Comments Feed</h4>
+                                {catalogComments.length === 0 ? (
+                                    <p className="text-slate-400 text-xs py-2">No comments left on this car yet. Add one below!</p>
+                                ) : (
+                                    <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                                        {catalogComments.map((cmt, idx) => (
+                                            <div key={idx} className="bg-slate-50 p-3 rounded-2xl border border-slate-100/60 flex items-start gap-2.5">
+                                                <div className="size-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                                                    {(catalogData?.customer_name || 'C').charAt(0).toUpperCase()}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-bold text-slate-800">{catalogData?.customer_name || 'Customer'}</p>
+                                                    <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{cmt}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Add Comment Form */}
+                                <form onSubmit={handleCatalogAddComment} className="flex gap-2 items-center pt-2">
+                                    <input 
+                                        type="text"
+                                        value={commentInput}
+                                        onChange={(e) => setCommentInput(e.target.value)}
+                                        placeholder="Add a comment or question for your representative..."
+                                        className="w-full text-xs text-slate-600 bg-slate-50 h-10 px-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/10"
+                                    />
+                                    <button 
+                                        type="submit"
+                                        disabled={!commentInput.trim()}
+                                        className="h-10 px-4 bg-primary text-white text-xs font-bold rounded-xl hover:bg-primary-light disabled:opacity-30 disabled:bg-slate-200 transition-all flex items-center justify-center gap-1"
+                                    >
+                                        <Send size={12} />
+                                        <span>Post</span>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Right Sidebar */}
@@ -626,22 +856,65 @@ const CarDetails = () => {
                             </a>
                             <button 
                                 onClick={async () => {
+                                    const shareUrl = catalogId 
+                                        ? `${window.location.origin}/car/${car.id}?catalogId=${catalogId}`
+                                        : `${window.location.origin}/car/${car.id}`;
                                     const shareData = {
                                         title: `${car.year} ${car.make} ${car.model}`,
                                         text: `Check out this ${car.year} ${car.make} ${car.model} at Shree Swami Samarth Motors!`,
-                                        url: window.location.href,
+                                        url: shareUrl,
                                     };
+                                    
+                                    const fallbackCopy = () => {
+                                        try {
+                                            const el = document.createElement('textarea');
+                                            el.value = shareUrl;
+                                            el.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+                                            document.body.appendChild(el);
+                                            el.focus();
+                                            el.select();
+                                            const success = document.execCommand('copy');
+                                            document.body.removeChild(el);
+                                            if (success) {
+                                                showToast("Car link copied to clipboard!", "success");
+                                            } else {
+                                                showToast("Failed to copy link.", "error");
+                                            }
+                                        } catch (err) {
+                                            showToast("Failed to copy link.", "error");
+                                        }
+                                    };
+
                                     if (navigator.share) {
-                                        try { await navigator.share(shareData); } catch (err) { console.log('Share canceled or failed', err); }
+                                        try { 
+                                            await navigator.share(shareData); 
+                                        } catch (err) { 
+                                            console.log('Share canceled or failed', err); 
+                                        }
                                     } else {
-                                        navigator.clipboard.writeText(window.location.href);
-                                        alert("Link copied to clipboard!");
+                                        if (navigator.clipboard && window.isSecureContext) {
+                                            navigator.clipboard.writeText(shareUrl).then(() => {
+                                                showToast("Car link copied to clipboard!", "success");
+                                            }).catch(() => {
+                                                fallbackCopy();
+                                            });
+                                        } else {
+                                            fallbackCopy();
+                                        }
                                     }
                                 }}
                                 className="w-full h-10 flex items-center justify-center gap-2 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition-colors text-sm mt-2"
                             >
                                 <span className="material-symbols-outlined text-lg">share</span> Share Car
                             </button>
+                            {catalogId && (
+                                <button
+                                    onClick={() => setIsDownloadModalOpen(true)}
+                                    className="w-full h-10 flex items-center justify-center gap-2 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors text-sm mt-2 shadow-sm cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-lg">download</span> Download High-Res Photos
+                                </button>
+                            )}
                         </div>
                         <div className="flex items-center gap-2 text-xs text-slate-500 justify-center">
                             <span className="material-symbols-outlined text-sm text-success">verified</span>
@@ -811,6 +1084,18 @@ const CarDetails = () => {
                         
                         <span className="bg-accent-light text-accent text-[9px] font-extrabold px-2.5 py-1 rounded-lg uppercase tracking-wider">Negotiable</span>
                     </div>
+
+                    {catalogId && (
+                        <div className="mt-4 pt-3 border-t border-slate-100">
+                            <button
+                                onClick={() => setIsDownloadModalOpen(true)}
+                                className="w-full h-10 flex items-center justify-center gap-1.5 bg-slate-900 text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-base">download</span>
+                                Download High-Res Photos
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Mobile Staff Controls */}
@@ -864,7 +1149,10 @@ const CarDetails = () => {
                 {/* Tab Selector */}
                 <div className="px-4">
                     <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200/50">
-                        {(['overview', 'features', 'inspection', 'video'] as const).map(tab => (
+                        {(catalogId 
+                            ? (['overview', 'features', 'inspection', 'video', 'comments'] as const) 
+                            : (['overview', 'features', 'inspection', 'video'] as const)
+                        ).map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setMobileTab(tab)}
@@ -874,7 +1162,7 @@ const CarDetails = () => {
                                         : 'text-slate-500 hover:text-primary'
                                 }`}
                             >
-                                {tab === 'video' ? 'Video Tour' : tab}
+                                {tab === 'video' ? 'Video Tour' : tab === 'comments' ? 'Feedback' : tab}
                             </button>
                         ))}
                     </div>
@@ -988,6 +1276,62 @@ const CarDetails = () => {
                                     <p>No video tour uploaded for this vehicle.</p>
                                 </div>
                             )}
+                        </div>
+                    )}
+
+                    {catalogId && mobileTab === 'comments' && (
+                        <div className="px-4">
+                            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-50">
+                                    <h3 className="text-sm font-bold text-primary font-display">Personalized Feedback</h3>
+                                    <button
+                                        onClick={handleCatalogLikeToggle}
+                                        className={`size-8 rounded-full border transition-all flex items-center justify-center ${
+                                            catalogLiked 
+                                                ? 'bg-rose-50 border-rose-200 text-rose-600' 
+                                                : 'bg-slate-50 border-slate-200 text-slate-400'
+                                        }`}
+                                    >
+                                        <Heart size={14} fill={catalogLiked ? 'currentColor' : 'none'} />
+                                    </button>
+                                </div>
+                                <div className="space-y-4">
+                                    {catalogComments.length === 0 ? (
+                                        <p className="text-slate-400 text-xs py-2 text-center">No comments left yet.</p>
+                                    ) : (
+                                        <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                                            {catalogComments.map((cmt, idx) => (
+                                                <div key={idx} className="bg-slate-50/70 p-3 rounded-2xl border border-slate-100/50 flex items-start gap-2.5">
+                                                    <div className="size-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0">
+                                                        {(catalogData?.customer_name || 'C').charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-[10px] font-bold text-slate-800">{catalogData?.customer_name || 'Customer'}</p>
+                                                        <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{cmt}</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <form onSubmit={handleCatalogAddComment} className="flex gap-2 items-center pt-2">
+                                        <input 
+                                            type="text"
+                                            value={commentInput}
+                                            onChange={(e) => setCommentInput(e.target.value)}
+                                            placeholder="Write comment..."
+                                            className="w-full text-xs text-slate-600 bg-slate-50 h-9 px-3 rounded-xl border border-slate-200 outline-none focus:ring-1 focus:ring-primary/10"
+                                        />
+                                        <button 
+                                            type="submit"
+                                            disabled={!commentInput.trim()}
+                                            className="h-9 px-3 bg-primary text-white text-xs font-bold rounded-xl hover:bg-primary-light disabled:opacity-30 disabled:bg-slate-200 transition-all flex items-center justify-center"
+                                        >
+                                            <Send size={12} />
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -1204,6 +1548,14 @@ const CarDetails = () => {
                     isOpen={isDownloadModalOpen}
                     onClose={() => setIsDownloadModalOpen(false)}
                 />
+            )}
+
+            {/* Custom Premium Toast Alerts */}
+            {toast && (
+                <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-semibold transition-all ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+                    {toast.type === 'success' ? <CheckCircle size={18} /> : <X size={18} />}
+                    {toast.msg}
+                </div>
             )}
         </div>
     );

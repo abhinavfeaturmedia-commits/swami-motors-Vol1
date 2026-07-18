@@ -431,6 +431,21 @@ const LeadDetail = () => {
     const [carSelectorMode, setCarSelectorMode] = useState<'stock' | 'wishlist'>('stock');
     const [wishlistForm, setWishlistForm] = useState({ make: '', model: '', year: '', variant: '', color: '', interest_level: 'warm', notes: '' });
 
+    // Service Conversion State
+    const [isConvertingService, setIsConvertingService] = useState(false);
+    const [serviceForm, setServiceForm] = useState({
+        type: 'loan',
+        provider_name: '',
+        amount: '',
+        premium_amount: '',
+        policy_number: '',
+        tenure_months: '',
+        interest_rate: '',
+        commission_earned: '',
+        notes: ''
+    });
+    const [serviceSaving, setServiceSaving] = useState(false);
+
     const fetchFollowUps = useCallback(async () => {
         if (!id) return;
         setFollowUpsLoading(true);
@@ -721,6 +736,10 @@ const LeadDetail = () => {
             if (data) {
                 setLead(data as unknown as Lead);
                 setEditForm(data);
+                setServiceForm(prev => ({
+                    ...prev,
+                    type: data.type === 'insurance' ? 'insurance' : 'loan'
+                }));
             }
         } catch (error) {
             console.error("Error fetching lead:", error);
@@ -949,6 +968,90 @@ const LeadDetail = () => {
         } catch (error: any) {
             console.error('Error converting lead', error);
             alert(`Conversion failed: ${error.message}`);
+        }
+    };
+
+    const handleConvertService = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setServiceSaving(true);
+        try {
+            let customerId: string;
+            const { data: existingCustomer } = await supabase
+                .from('customers')
+                .select('id, full_name')
+                .eq('phone', lead?.phone || '')
+                .maybeSingle();
+
+            if (existingCustomer) {
+                customerId = existingCustomer.id;
+            } else {
+                const { data: custData, error: custErr } = await supabase.from('customers').insert({
+                    full_name: lead?.full_name,
+                    phone: lead?.phone,
+                    email: lead?.email,
+                    alternate_phone: lead?.secondary_phone || null,
+                    address: lead?.personal_address || null,
+                    office_address: lead?.office_address || null,
+                    whatsapp_number: lead?.whatsapp_number || null,
+                    lead_id: lead?.id || null,
+                    loyalty_status: 'silver'
+                }).select('id').single();
+                if (custErr || !custData) throw new Error('Failed to create customer record.');
+                customerId = custData.id;
+            }
+
+            const carId = carInterests.length > 0 ? carInterests[0].inventory_id : null;
+
+            const payload: any = {
+                type: serviceForm.type,
+                customer_id: customerId,
+                car_id: carId || null,
+                full_name: lead?.full_name,
+                phone: lead?.phone,
+                email: lead?.email,
+                status: serviceForm.type === 'loan' ? 'approved' : 'policy_issued',
+                provider_name: serviceForm.provider_name.trim() || null,
+                amount: serviceForm.amount ? Number(serviceForm.amount) : null,
+                tenure_months: serviceForm.tenure_months ? parseInt(serviceForm.tenure_months) : null,
+                interest_rate: serviceForm.interest_rate ? Number(serviceForm.interest_rate) : null,
+                premium_amount: serviceForm.premium_amount ? Number(serviceForm.premium_amount) : null,
+                policy_number: serviceForm.policy_number.trim() || null,
+                commission_earned: serviceForm.commission_earned ? Number(serviceForm.commission_earned) : 0,
+                notes: serviceForm.notes.trim() || null
+            };
+
+            const { error: servErr } = await supabase.from('finance_services').insert(payload);
+            if (servErr) throw servErr;
+
+            await supabase.from('leads').update({ status: 'closed_won' }).eq('id', lead?.id);
+
+            await supabase.from('lead_activities').insert({
+                lead_id: lead?.id,
+                activity_type: 'meeting',
+                notes: `Converted to ${serviceForm.type === 'loan' ? 'Loan' : 'Insurance'} service file. Provider: ${serviceForm.provider_name || 'N/A'}. Commission: ₹${Number(serviceForm.commission_earned || 0).toLocaleString('en-IN')}`,
+                created_by: profile?.id ?? null,
+            });
+
+            await refreshData();
+            setIsConvertingService(false);
+            setServiceForm({
+                type: 'loan',
+                provider_name: '',
+                amount: '',
+                premium_amount: '',
+                policy_number: '',
+                tenure_months: '',
+                interest_rate: '',
+                commission_earned: '',
+                notes: ''
+            });
+            fetchLead();
+            alert(`${serviceForm.type === 'loan' ? 'Loan' : 'Insurance'} service file created successfully!`);
+        } catch (error: any) {
+            console.error('Error converting lead to service file:', error);
+            alert(`Conversion failed: ${error.message}`);
+        } finally {
+            setServiceSaving(false);
         }
     };
 
@@ -1750,6 +1853,154 @@ const LeadDetail = () => {
                             </div>
                         )}
 
+                        {lead.status !== 'closed_won' && canEdit && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 shadow-sm">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="material-symbols-outlined text-blue-600 text-lg font-bold">handshake</span>
+                                    <h4 className="font-bold text-blue-800 text-sm font-display">Process Finance & Insurance</h4>
+                                </div>
+                                <p className="text-xs text-blue-700/80 mb-5 leading-relaxed">
+                                    Convert this lead to an active loan application or insurance policy file.
+                                </p>
+                                
+                                {isConvertingService ? (
+                                    <form onSubmit={handleConvertService} className="space-y-4 bg-white/60 p-4 rounded-xl border border-blue-100/50">
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Service Type</label>
+                                            <select 
+                                                value={serviceForm.type} 
+                                                onChange={e => setServiceForm(f => ({ ...f, type: e.target.value as 'loan' | 'insurance' }))}
+                                                className="w-full h-9 border border-slate-200 rounded-lg px-2 text-xs bg-white outline-none focus:border-blue-400"
+                                            >
+                                                <option value="loan">Car Loan</option>
+                                                <option value="insurance">Car Insurance</option>
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Provider / Company Name</label>
+                                            <input 
+                                                required 
+                                                type="text" 
+                                                placeholder={serviceForm.type === 'loan' ? 'e.g. HDFC Bank' : 'e.g. TATA AIG'} 
+                                                value={serviceForm.provider_name} 
+                                                onChange={e => setServiceForm(f => ({ ...f, provider_name: e.target.value }))} 
+                                                className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:border-blue-400 shadow-sm" 
+                                            />
+                                        </div>
+
+                                        {serviceForm.type === 'loan' ? (
+                                            <>
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Loan Amount (₹)</label>
+                                                    <input 
+                                                        required 
+                                                        type="number" 
+                                                        placeholder="Principal Amount" 
+                                                        value={serviceForm.amount} 
+                                                        onChange={e => setServiceForm(f => ({ ...f, amount: e.target.value }))} 
+                                                        className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:border-blue-400 shadow-sm" 
+                                                    />
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div>
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Tenure (Months)</label>
+                                                        <input 
+                                                            type="number" 
+                                                            placeholder="e.g. 60" 
+                                                            value={serviceForm.tenure_months} 
+                                                            onChange={e => setServiceForm(f => ({ ...f, tenure_months: e.target.value }))} 
+                                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:border-blue-400 shadow-sm" 
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Rate (%)</label>
+                                                        <input 
+                                                            type="number" 
+                                                            step="0.01" 
+                                                            placeholder="e.g. 9.5" 
+                                                            value={serviceForm.interest_rate} 
+                                                            onChange={e => setServiceForm(f => ({ ...f, interest_rate: e.target.value }))} 
+                                                            className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:border-blue-400 shadow-sm" 
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Premium Amount (₹)</label>
+                                                    <input 
+                                                        required 
+                                                        type="number" 
+                                                        placeholder="Premium" 
+                                                        value={serviceForm.premium_amount} 
+                                                        onChange={e => setServiceForm(f => ({ ...f, premium_amount: e.target.value }))} 
+                                                        className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:border-blue-400 shadow-sm" 
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Policy Number</label>
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="Optional policy code" 
+                                                        value={serviceForm.policy_number} 
+                                                        onChange={e => setServiceForm(f => ({ ...f, policy_number: e.target.value }))} 
+                                                        className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:border-blue-400 shadow-sm" 
+                                                    />
+                                                </div>
+                                            </>
+                                        )}
+
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Commission Earned (₹)</label>
+                                            <input 
+                                                type="number" 
+                                                placeholder="Expected agency payout" 
+                                                value={serviceForm.commission_earned} 
+                                                onChange={e => setServiceForm(f => ({ ...f, commission_earned: e.target.value }))} 
+                                                className="w-full h-9 border border-slate-200 rounded-lg px-3 text-xs bg-white outline-none focus:border-blue-400 shadow-sm" 
+                                            />
+                                        </div>
+
+                                        <div className="flex gap-2 pt-2">
+                                            <button 
+                                                type="button" 
+                                                onClick={() => { 
+                                                    setIsConvertingService(false); 
+                                                    setServiceForm(prev => ({
+                                                        ...prev,
+                                                        provider_name: '',
+                                                        amount: '',
+                                                        premium_amount: '',
+                                                        policy_number: '',
+                                                        tenure_months: '',
+                                                        interest_rate: '',
+                                                        commission_earned: '',
+                                                        notes: ''
+                                                    })); 
+                                                }} 
+                                                className="flex-1 bg-slate-200 text-slate-600 font-bold text-xs h-9 rounded-lg hover:bg-slate-300 transition"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button 
+                                                type="submit" 
+                                                disabled={serviceSaving}
+                                                className="flex-1 bg-blue-600 text-white font-bold text-xs h-9 rounded-lg hover:bg-blue-700 transition shadow-sm flex items-center justify-center gap-1"
+                                            >
+                                                {serviceSaving ? <span className="size-3 animate-spin border border-white/30 border-t-white rounded-full" /> : 'Confirm File'}
+                                            </button>
+                                        </div>
+                                    </form>
+                                ) : (
+                                    <button onClick={() => setIsConvertingService(true)} className="w-full flex items-center justify-center gap-2 h-11 bg-blue-600 text-white font-bold rounded-xl text-sm hover:bg-blue-700 transition shadow-sm">
+                                        Convert to Service File
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
                         {/* Suggestion */}
                         <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-[var(--shadow-card)]">
                             <div className="flex items-center gap-2 mb-3"><span className="material-symbols-outlined text-accent text-lg">lightbulb</span><h4 className="font-bold text-primary text-sm">Suggested Next Step</h4></div>
@@ -1958,12 +2209,23 @@ const LeadDetail = () => {
                                             )}
                                             {interest.notes && (<p className="text-[10px] text-slate-500 mt-0.5 truncate">{interest.notes}</p>)}
                                         </div>
-                                        {canEdit && (
-                                            <button onClick={() => handleRemoveCarInterest(interest.id)} title="Remove"
-                                                className="size-7 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-red-100 hover:text-red-500 text-slate-400 transition-colors shrink-0">
-                                                <span className="material-symbols-outlined text-[14px]">close</span>
-                                            </button>
-                                        )}
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            {interest.is_wishlist && (
+                                                <Link
+                                                    to={`/admin/inventory?makes=${encodeURIComponent(interest.custom_make || '')}&models=${encodeURIComponent(interest.custom_model || '')}`}
+                                                    className="size-7 flex items-center justify-center rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 transition-colors"
+                                                    title="Find matches in current inventory"
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">search</span>
+                                                </Link>
+                                            )}
+                                            {canEdit && (
+                                                <button onClick={() => handleRemoveCarInterest(interest.id)} title="Remove"
+                                                    className="size-7 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-red-100 hover:text-red-500 text-slate-400 transition-colors">
+                                                    <span className="material-symbols-outlined text-[14px]">close</span>
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>

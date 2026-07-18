@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import ShareCarModal from '../../components/ShareCarModal';
@@ -63,9 +64,145 @@ const AdminInventory = () => {
     
     const [cars, setCars] = useState<Car[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('All');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [dealerFilter, setDealerFilter] = useState('all');
+    
+    // Sync filter states with URL query parameters
+    const [searchParams, setSearchParams] = useSearchParams();
+    
+    const activeTab = searchParams.get('tab') || 'All';
+    const searchQuery = searchParams.get('search') || '';
+    const dealerFilter = searchParams.get('dealer') || 'all';
+
+    const setActiveTab = (tab: string) => {
+        setSearchParams(prev => {
+            if (tab === 'All') prev.delete('tab');
+            else prev.set('tab', tab);
+            return prev;
+        });
+    };
+
+    const setSearchQuery = (query: string) => {
+        setSearchParams(prev => {
+            if (!query) prev.delete('search');
+            else prev.set('search', query);
+            return prev;
+        });
+    };
+
+    const setDealerFilter = (dealer: string) => {
+        setSearchParams(prev => {
+            if (dealer === 'all') prev.delete('dealer');
+            else prev.set('dealer', dealer);
+            return prev;
+        });
+    };
+
+    // Advanced filters parsed from searchParams
+    const selectedMakes = useMemo(() => searchParams.get('makes')?.split(',').filter(Boolean) || [], [searchParams]);
+    const selectedModels = useMemo(() => searchParams.get('models')?.split(',').filter(Boolean) || [], [searchParams]);
+    const selectedYears = useMemo(() => searchParams.get('years')?.split(',').map(Number).filter(Boolean) || [], [searchParams]);
+    const selectedFuels = useMemo(() => searchParams.get('fuels')?.split(',').filter(Boolean) || [], [searchParams]);
+    const selectedTransmissions = useMemo(() => searchParams.get('transmissions')?.split(',').filter(Boolean) || [], [searchParams]);
+    const selectedBodies = useMemo(() => searchParams.get('bodies')?.split(',').filter(Boolean) || [], [searchParams]);
+    const selectedOwnerships = useMemo(() => searchParams.get('ownerships')?.split(',').map(Number).filter(n => !isNaN(n)) || [], [searchParams]);
+    const selectedColors = useMemo(() => searchParams.get('colors')?.split(',').filter(Boolean) || [], [searchParams]);
+    const priceMin = searchParams.get('price_min') || '';
+    const priceMax = searchParams.get('price_max') || '';
+
+    // Filter drawer and local UI states
+    const [showFilterDrawer, setShowFilterDrawer] = useState(false);
+    const [brandSearch, setBrandSearch] = useState('');
+    const [modelSearch, setModelSearch] = useState('');
+    const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+        price: true,
+        make: true,
+        model: true,
+        year: false,
+        fuel: false,
+        transmission: false,
+        body: false,
+        ownership: false,
+        color: false,
+    });
+
+    const toggleSection = (section: string) => {
+        setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+    };
+
+    const toggleFilterList = (key: string, value: string | number) => {
+        setSearchParams(prev => {
+            const current = prev.get(key)?.split(',').filter(Boolean) || [];
+            const valStr = String(value);
+            let next: string[];
+            if (current.includes(valStr)) {
+                next = current.filter(x => x !== valStr);
+            } else {
+                next = [...current, valStr];
+            }
+            if (next.length === 0) {
+                prev.delete(key);
+            } else {
+                prev.set(key, next.join(','));
+            }
+            return prev;
+        });
+    };
+
+    const toggleMake = (make: string) => {
+        setSearchParams(prev => {
+            const currentMakes = prev.get('makes')?.split(',').filter(Boolean) || [];
+            let nextMakes: string[];
+            if (currentMakes.includes(make)) {
+                nextMakes = currentMakes.filter(x => x !== make);
+                // Clean up selected models of this make
+                const currentModels = prev.get('models')?.split(',').filter(Boolean) || [];
+                const modelsToRemove = new Set(cars.filter(c => c.make === make).map(c => c.model));
+                const nextModels = currentModels.filter(m => !modelsToRemove.has(m));
+                if (nextModels.length === 0) prev.delete('models');
+                else prev.set('models', nextModels.join(','));
+            } else {
+                nextMakes = [...currentMakes, make];
+            }
+            if (nextMakes.length === 0) prev.delete('makes');
+            else prev.set('makes', nextMakes.join(','));
+            return prev;
+        });
+    };
+
+    const handlePriceChange = (min: string, max: string) => {
+        setSearchParams(prev => {
+            if (!min) prev.delete('price_min');
+            else prev.set('price_min', min);
+            if (!max) prev.delete('price_max');
+            else prev.set('price_max', max);
+            return prev;
+        });
+    };
+
+    const clearAllFilters = () => {
+        setSearchParams(prev => {
+            const tab = prev.get('tab');
+            const search = prev.get('search');
+            const dealer = prev.get('dealer');
+            const next = new URLSearchParams();
+            if (tab) next.set('tab', tab);
+            if (search) next.set('search', search);
+            if (dealer) next.set('dealer', dealer);
+            return next;
+        });
+    };
+
+    const activeFiltersCount = 
+        selectedMakes.length + 
+        selectedModels.length + 
+        selectedYears.length + 
+        selectedFuels.length + 
+        selectedTransmissions.length + 
+        selectedBodies.length + 
+        selectedOwnerships.length + 
+        selectedColors.length + 
+        (priceMin ? 1 : 0) + 
+        (priceMax ? 1 : 0);
+
     const [dealers, setDealers] = useState<Dealer[]>([]);
     const [dealerFilterOpen, setDealerFilterOpen] = useState(false);
     const [dealerFilterSearch, setDealerFilterSearch] = useState('');
@@ -151,19 +288,98 @@ const AdminInventory = () => {
         }
     };
 
+    // Dynamic option count facets based on current active tab and dealer source
+    const facets = useMemo(() => {
+        const baseCars = cars.filter(c => {
+            const matchTab = activeTab === 'All' || c.status === activeTab;
+            const matchDealer = dealerFilter === 'all'
+                ? true
+                : dealerFilter === 'purchased'
+                    ? (!c.source || c.source === 'purchased' || c.source === 'own')
+                : dealerFilter === 'consignment'
+                    ? c.source === 'consignment'
+                : dealerFilter === 'dealer'
+                    ? c.source === 'dealer'
+                    : c.dealer_id === dealerFilter;
+            return matchTab && matchDealer;
+        });
+
+        const makes: Record<string, number> = {};
+        const models: Record<string, number> = {};
+        const years: Record<number, number> = {};
+        const fuels: Record<string, number> = {};
+        const transmissions: Record<string, number> = {};
+        const bodies: Record<string, number> = {};
+        const ownerships: Record<number, number> = {};
+        const colors: Record<string, number> = {};
+
+        baseCars.forEach(c => {
+            if (c.make) makes[c.make] = (makes[c.make] || 0) + 1;
+            if (c.model) models[c.model] = (models[c.model] || 0) + 1;
+            if (c.year) years[c.year] = (years[c.year] || 0) + 1;
+            if (c.fuel_type) fuels[c.fuel_type] = (fuels[c.fuel_type] || 0) + 1;
+            if (c.transmission) transmissions[c.transmission] = (transmissions[c.transmission] || 0) + 1;
+            if (c.body_type) bodies[c.body_type] = (bodies[c.body_type] || 0) + 1;
+            if (c.ownership !== null && c.ownership !== undefined) {
+                ownerships[c.ownership] = (ownerships[c.ownership] || 0) + 1;
+            }
+            if (c.color) colors[c.color] = (colors[c.color] || 0) + 1;
+        });
+
+        return { makes, models, years, fuels, transmissions, bodies, ownerships, colors };
+    }, [cars, activeTab, dealerFilter]);
+
     const filtered = cars.filter(c => {
+        // Status tab
         const matchTab = activeTab === 'All' || c.status === activeTab;
+        
+        // Search query
         const q = searchQuery.toLowerCase();
         const matchSearch = !q || `${c.make} ${c.model} ${c.variant ?? ''} ${c.registration_no ?? ''}`.toLowerCase().includes(q);
+        
+        // Dealer source
         const matchDealer = dealerFilter === 'all'
             ? true
             : dealerFilter === 'purchased'
                 ? (!c.source || c.source === 'purchased' || c.source === 'own')
             : dealerFilter === 'consignment'
                 ? c.source === 'consignment'
+            : dealerFilter === 'dealer'
+                ? c.source === 'dealer'
                 : c.dealer_id === dealerFilter;
+
+        // Makes (Brands)
+        if (selectedMakes.length > 0 && !selectedMakes.includes(c.make)) return false;
+
+        // Models
+        if (selectedModels.length > 0 && !selectedModels.includes(c.model)) return false;
+
+        // Years
+        if (selectedYears.length > 0 && !selectedYears.includes(c.year)) return false;
+
+        // Fuel types
+        if (selectedFuels.length > 0 && (!c.fuel_type || !selectedFuels.includes(c.fuel_type))) return false;
+
+        // Transmissions
+        if (selectedTransmissions.length > 0 && (!c.transmission || !selectedTransmissions.includes(c.transmission))) return false;
+
+        // Body types
+        if (selectedBodies.length > 0 && (!c.body_type || !selectedBodies.includes(c.body_type))) return false;
+
+        // Ownerships
+        if (selectedOwnerships.length > 0 && (c.ownership === null || !selectedOwnerships.includes(c.ownership))) return false;
+
+        // Colors
+        if (selectedColors.length > 0 && (!c.color || !selectedColors.includes(c.color))) return false;
+
+        // Price range (min and max in Lakhs in query param, stored in absolute rupees in DB)
+        const priceLakhs = c.price / 100000;
+        if (priceMin && priceLakhs < parseFloat(priceMin)) return false;
+        if (priceMax && priceLakhs > parseFloat(priceMax)) return false;
+
         return matchTab && matchSearch && matchDealer;
     });
+
 
     const tabCount = (tab: string) => tab === 'All' ? cars.length : cars.filter(c => c.status === tab).length;
 
@@ -225,6 +441,7 @@ const AdminInventory = () => {
                                 {dealerFilter === 'all' ? 'All Sources' :
                                  dealerFilter === 'purchased' ? 'Purchased' :
                                  dealerFilter === 'consignment' ? 'Consignment' :
+                                 dealerFilter === 'dealer' ? 'All Dealer Cars' :
                                  dealers.find(d => d.id === dealerFilter) ? `${dealers.find(d => d.id === dealerFilter)?.dealer_code} — ${dealers.find(d => d.id === dealerFilter)?.name}` : 'All Sources'}
                             </span>
                             <span className="material-symbols-outlined text-[18px] text-slate-400">expand_more</span>
@@ -252,6 +469,7 @@ const AdminInventory = () => {
                                             { id: 'all', label: 'All Sources', type: 'base' },
                                             { id: 'purchased', label: 'Purchased', type: 'base' },
                                             { id: 'consignment', label: 'Consignment', type: 'base' },
+                                            { id: 'dealer', label: 'All Dealer Cars', type: 'base' },
                                             ...dealers.map(d => ({ id: d.id, label: `${d.dealer_code} — ${d.name}`, code: d.dealer_code, name: d.name, type: 'dealer' }))
                                         ];
                                         
@@ -294,8 +512,130 @@ const AdminInventory = () => {
                             className="w-full h-10 border border-slate-200 rounded-xl pl-9 pr-4 text-sm outline-none focus:ring-2 focus:ring-primary/10"
                         />
                     </div>
+                    {/* Drawer Toggle Button */}
+                    <button
+                        onClick={() => setShowFilterDrawer(true)}
+                        className={`h-10 px-4 rounded-xl text-sm font-semibold flex items-center gap-2 border transition-all shrink-0 cursor-pointer ${
+                            activeFiltersCount > 0
+                                ? 'bg-primary/5 text-primary border-primary hover:bg-primary/10'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-sm'
+                        }`}
+                    >
+                        <span className="material-symbols-outlined text-[18px]">filter_alt</span>
+                        <span>Filters</span>
+                        {activeFiltersCount > 0 && (
+                            <span className="flex items-center justify-center size-5 rounded-full bg-primary text-white text-[10px] font-bold">
+                                {activeFiltersCount}
+                            </span>
+                        )}
+                    </button>
                 </div>
             </div>
+
+            {/* Active Filters Pills */}
+            {activeFiltersCount > 0 && (
+                <div className="flex flex-wrap gap-2 items-center bg-slate-50/50 p-3 rounded-2xl border border-slate-100 animate-fade-in">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mr-1">Active Filters:</span>
+                    
+                    {selectedMakes.map(m => (
+                        <span key={m} className="inline-flex items-center gap-1 bg-white text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+                            Make: {m}
+                            <button onClick={() => toggleMake(m)} className="hover:bg-slate-100 rounded-full p-0.5 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors ml-0.5">
+                                <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </span>
+                    ))}
+
+                    {selectedModels.map(m => (
+                        <span key={m} className="inline-flex items-center gap-1 bg-white text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+                            Model: {m}
+                            <button onClick={() => toggleFilterList('models', m)} className="hover:bg-slate-100 rounded-full p-0.5 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors ml-0.5">
+                                <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </span>
+                    ))}
+
+                    {selectedYears.map(y => (
+                        <span key={y} className="inline-flex items-center gap-1 bg-white text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+                            Year: {y}
+                            <button onClick={() => toggleFilterList('years', y)} className="hover:bg-slate-100 rounded-full p-0.5 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors ml-0.5">
+                                <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </span>
+                    ))}
+
+                    {selectedFuels.map(f => (
+                        <span key={f} className="inline-flex items-center gap-1 bg-white text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+                            Fuel: {f}
+                            <button onClick={() => toggleFilterList('fuels', f)} className="hover:bg-slate-100 rounded-full p-0.5 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors ml-0.5">
+                                <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </span>
+                    ))}
+
+                    {selectedTransmissions.map(t => (
+                        <span key={t} className="inline-flex items-center gap-1 bg-white text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+                            Trans: {t}
+                            <button onClick={() => toggleFilterList('transmissions', t)} className="hover:bg-slate-100 rounded-full p-0.5 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors ml-0.5">
+                                <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </span>
+                    ))}
+
+                    {selectedBodies.map(b => (
+                        <span key={b} className="inline-flex items-center gap-1 bg-white text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+                            Body: {b}
+                            <button onClick={() => toggleFilterList('bodies', b)} className="hover:bg-slate-100 rounded-full p-0.5 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors ml-0.5">
+                                <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </span>
+                    ))}
+
+                    {selectedOwnerships.map(o => (
+                        <span key={o} className="inline-flex items-center gap-1 bg-white text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+                            Owners: {o === 1 ? '1st Owner' : o === 2 ? '2nd Owner' : o === 3 ? '3rd Owner' : `${o} Owners`}
+                            <button onClick={() => toggleFilterList('ownerships', o)} className="hover:bg-slate-100 rounded-full p-0.5 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors ml-0.5">
+                                <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </span>
+                    ))}
+
+                    {selectedColors.map(c => (
+                        <span key={c} className="inline-flex items-center gap-1 bg-white text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+                            Color: {c}
+                            <button onClick={() => toggleFilterList('colors', c)} className="hover:bg-slate-100 rounded-full p-0.5 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors ml-0.5">
+                                <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </span>
+                    ))}
+
+                    {priceMin && (
+                        <span className="inline-flex items-center gap-1 bg-white text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+                            Min: ₹{priceMin}L
+                            <button onClick={() => handlePriceChange('', priceMax)} className="hover:bg-slate-100 rounded-full p-0.5 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors ml-0.5">
+                                <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </span>
+                    )}
+
+                    {priceMax && (
+                        <span className="inline-flex items-center gap-1 bg-white text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+                            Max: ₹{priceMax}L
+                            <button onClick={() => handlePriceChange(priceMin, '')} className="hover:bg-slate-100 rounded-full p-0.5 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors ml-0.5">
+                                <span className="material-symbols-outlined text-sm">close</span>
+                            </button>
+                        </span>
+                    )}
+
+                    <button
+                        onClick={clearAllFilters}
+                        className="text-xs font-bold text-red-500 hover:text-red-600 transition-colors px-2 py-1 ml-auto cursor-pointer"
+                    >
+                        Clear All
+                    </button>
+                </div>
+            )}
+
 
             {/* Table */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] overflow-hidden">
@@ -529,6 +869,419 @@ const AdminInventory = () => {
                     </button>
                 </div>
             )}
+
+            {/* Filter Drawer */}
+            <AnimatePresence>
+                {showFilterDrawer && (
+                    <>
+                        {/* Backdrop overlay */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.5 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setShowFilterDrawer(false)}
+                            className="fixed inset-0 bg-black/40 z-50 cursor-pointer"
+                        />
+                        {/* Drawer body */}
+                        <motion.div
+                            initial={{ x: '100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '100%' }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                            className="fixed right-0 top-0 bottom-0 w-full max-w-[420px] bg-white z-50 shadow-2xl flex flex-col h-full border-l border-slate-200 overflow-hidden"
+                        >
+                            {/* Drawer Header */}
+                            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                                <div>
+                                    <h3 className="font-bold text-primary text-base">Filter Inventory</h3>
+                                    {activeFiltersCount > 0 && (
+                                        <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{activeFiltersCount} active filter{activeFiltersCount !== 1 ? 's' : ''}</p>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    {activeFiltersCount > 0 && (
+                                        <button
+                                            onClick={clearAllFilters}
+                                            className="text-xs font-bold text-red-500 hover:text-red-600 transition-colors cursor-pointer"
+                                        >
+                                            Clear All
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setShowFilterDrawer(false)}
+                                        className="size-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-50 text-slate-500 hover:text-primary transition-colors cursor-pointer"
+                                    >
+                                        <span className="material-symbols-outlined text-lg">close</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Drawer Filters Body */}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                
+                                {/* Section: Price / Budget */}
+                                <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <button
+                                        onClick={() => toggleSection('price')}
+                                        className="w-full p-3.5 flex items-center justify-between text-sm font-bold text-primary hover:bg-slate-50/50 transition-colors cursor-pointer outline-none"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-slate-400 text-[18px]">currency_rupee</span>
+                                            Price / Budget
+                                        </span>
+                                        <span className="material-symbols-outlined text-slate-400 text-lg transition-transform" style={{ transform: expandedSections.price ? 'rotate(180deg)' : 'none' }}>expand_more</span>
+                                    </button>
+                                    {expandedSections.price && (
+                                        <div className="p-4 border-t border-slate-100 bg-slate-50/20 space-y-4">
+                                            {/* Quick budget presets */}
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {[
+                                                    { label: 'Under 3L', value: '3' },
+                                                    { label: 'Under 5L', value: '5' },
+                                                    { label: 'Under 10L', value: '10' },
+                                                    { label: 'Under 15L', value: '15' },
+                                                    { label: 'Under 20L', value: '20' },
+                                                    { label: 'Under 30L', value: '30' },
+                                                ].map(b => (
+                                                    <button
+                                                        key={b.label}
+                                                        onClick={() => handlePriceChange('', b.value)}
+                                                        className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                                            priceMax === b.value && !priceMin
+                                                                ? 'bg-primary text-white border-primary'
+                                                                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+                                                        }`}
+                                                    >
+                                                        {b.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            {/* Custom Price Range */}
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex-1">
+                                                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Min (Lakhs)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={priceMin}
+                                                        onChange={e => handlePriceChange(e.target.value, priceMax)}
+                                                        placeholder="e.g. 2.5"
+                                                        className="w-full h-9 bg-white border border-slate-200 rounded-lg px-3 text-xs outline-none focus:ring-2 focus:ring-primary/10"
+                                                    />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Max (Lakhs)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={priceMax}
+                                                        onChange={e => handlePriceChange(priceMin, e.target.value)}
+                                                        placeholder="e.g. 8.5"
+                                                        className="w-full h-9 bg-white border border-slate-200 rounded-lg px-3 text-xs outline-none focus:ring-2 focus:ring-primary/10"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Section: Brand (Make) */}
+                                <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <button
+                                        onClick={() => toggleSection('make')}
+                                        className="w-full p-3.5 flex items-center justify-between text-sm font-bold text-primary hover:bg-slate-50/50 transition-colors cursor-pointer outline-none"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-slate-400 text-[18px]">directions_car</span>
+                                            Brand / Make
+                                        </span>
+                                        <span className="material-symbols-outlined text-slate-400 text-lg transition-transform" style={{ transform: expandedSections.make ? 'rotate(180deg)' : 'none' }}>expand_more</span>
+                                    </button>
+                                    {expandedSections.make && (
+                                        <div className="p-3 border-t border-slate-100 bg-slate-50/20 space-y-3">
+                                            <div className="relative">
+                                                <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[16px] pointer-events-none">search</span>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Search brands..."
+                                                    value={brandSearch}
+                                                    onChange={e => setBrandSearch(e.target.value)}
+                                                    className="w-full h-8 bg-white border border-slate-200 rounded-lg pl-8 pr-3 text-xs outline-none focus:ring-2 focus:ring-primary/10"
+                                                />
+                                            </div>
+                                            <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+                                                {(() => {
+                                                    const makeKeys = Object.keys(facets.makes).filter(m => m.toLowerCase().includes(brandSearch.toLowerCase().trim()));
+                                                    if (makeKeys.length === 0) return <p className="text-[11px] text-slate-400 italic p-1">No brands found</p>;
+                                                    return makeKeys.sort().map(m => (
+                                                        <label key={m} className="flex items-center gap-2.5 cursor-pointer py-0.5 group">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedMakes.includes(m)}
+                                                                onChange={() => toggleMake(m)}
+                                                                className="rounded border-slate-300 text-primary focus:ring-primary size-4 cursor-pointer"
+                                                            />
+                                                            <span className="text-xs text-slate-700 group-hover:text-primary transition-colors flex-1 truncate">{m}</span>
+                                                            <span className="text-[10px] text-slate-400 bg-slate-100 rounded px-1.5 py-0.5 font-bold shrink-0">{facets.makes[m]}</span>
+                                                        </label>
+                                                    ));
+                                                })()}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Section: Model */}
+                                <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <button
+                                        onClick={() => toggleSection('model')}
+                                        className="w-full p-3.5 flex items-center justify-between text-sm font-bold text-primary hover:bg-slate-50/50 transition-colors cursor-pointer outline-none"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-slate-400 text-[18px]">car_tag</span>
+                                            Model
+                                        </span>
+                                        <span className="material-symbols-outlined text-slate-400 text-lg transition-transform" style={{ transform: expandedSections.model ? 'rotate(180deg)' : 'none' }}>expand_more</span>
+                                    </button>
+                                    {expandedSections.model && (
+                                        <div className="p-3 border-t border-slate-100 bg-slate-50/20 space-y-3">
+                                            <div className="relative">
+                                                <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[16px] pointer-events-none">search</span>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Search models..."
+                                                    value={modelSearch}
+                                                    onChange={e => setModelSearch(e.target.value)}
+                                                    className="w-full h-8 bg-white border border-slate-200 rounded-lg pl-8 pr-3 text-xs outline-none focus:ring-2 focus:ring-primary/10"
+                                                />
+                                            </div>
+                                            <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+                                                {(() => {
+                                                    const availableModels = Object.keys(facets.models).filter(m => {
+                                                        if (selectedMakes.length > 0) {
+                                                            return cars.some(c => c.model === m && selectedMakes.includes(c.make));
+                                                        }
+                                                        return true;
+                                                    });
+
+                                                    const filteredModels = availableModels.filter(m => m.toLowerCase().includes(modelSearch.toLowerCase().trim()));
+                                                    if (filteredModels.length === 0) return <p className="text-[11px] text-slate-400 italic p-1">No models found</p>;
+                                                    
+                                                    return filteredModels.sort().map(m => (
+                                                        <label key={m} className="flex items-center gap-2.5 cursor-pointer py-0.5 group">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedModels.includes(m)}
+                                                                onChange={() => toggleFilterList('models', m)}
+                                                                className="rounded border-slate-300 text-primary focus:ring-primary size-4 cursor-pointer"
+                                                            />
+                                                            <span className="text-xs text-slate-700 group-hover:text-primary transition-colors flex-1 truncate">{m}</span>
+                                                            <span className="text-[10px] text-slate-400 bg-slate-100 rounded px-1.5 py-0.5 font-bold shrink-0">{facets.models[m]}</span>
+                                                        </label>
+                                                    ));
+                                                })()}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Section: Model Year */}
+                                <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <button
+                                        onClick={() => toggleSection('year')}
+                                        className="w-full p-3.5 flex items-center justify-between text-sm font-bold text-primary hover:bg-slate-50/50 transition-colors cursor-pointer outline-none"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-slate-400 text-[18px]">calendar_month</span>
+                                            Model Year
+                                        </span>
+                                        <span className="material-symbols-outlined text-slate-400 text-lg transition-transform" style={{ transform: expandedSections.year ? 'rotate(180deg)' : 'none' }}>expand_more</span>
+                                    </button>
+                                    {expandedSections.year && (
+                                        <div className="p-3 border-t border-slate-100 bg-slate-50/20 pr-1">
+                                            <div className="max-h-40 overflow-y-auto space-y-2">
+                                                {Object.keys(facets.years).map(Number).sort((a,b) => b-a).map(y => (
+                                                    <label key={y} className="flex items-center gap-2.5 cursor-pointer py-0.5 group">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedYears.includes(y)}
+                                                            onChange={() => toggleFilterList('years', y)}
+                                                            className="rounded border-slate-300 text-primary focus:ring-primary size-4 cursor-pointer"
+                                                        />
+                                                        <span className="text-xs text-slate-700 group-hover:text-primary transition-colors flex-1">{y}</span>
+                                                        <span className="text-[10px] text-slate-400 bg-slate-100 rounded px-1.5 py-0.5 font-bold shrink-0">{facets.years[y]}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Section: Fuel Type */}
+                                <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <button
+                                        onClick={() => toggleSection('fuel')}
+                                        className="w-full p-3.5 flex items-center justify-between text-sm font-bold text-primary hover:bg-slate-50/50 transition-colors cursor-pointer outline-none"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-slate-400 text-[18px]">local_gas_station</span>
+                                            Fuel Type
+                                        </span>
+                                        <span className="material-symbols-outlined text-slate-400 text-lg transition-transform" style={{ transform: expandedSections.fuel ? 'rotate(180deg)' : 'none' }}>expand_more</span>
+                                    </button>
+                                    {expandedSections.fuel && (
+                                        <div className="p-3 border-t border-slate-100 bg-slate-50/20 pr-1 space-y-2">
+                                            {Object.keys(facets.fuels).sort().map(f => (
+                                                <label key={f} className="flex items-center gap-2.5 cursor-pointer py-0.5 group">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedFuels.includes(f)}
+                                                        onChange={() => toggleFilterList('fuels', f)}
+                                                        className="rounded border-slate-300 text-primary focus:ring-primary size-4 cursor-pointer"
+                                                    />
+                                                    <span className="text-xs text-slate-700 group-hover:text-primary transition-colors flex-1">{f}</span>
+                                                    <span className="text-[10px] text-slate-400 bg-slate-100 rounded px-1.5 py-0.5 font-bold shrink-0">{facets.fuels[f]}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Section: Transmission */}
+                                <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <button
+                                        onClick={() => toggleSection('transmission')}
+                                        className="w-full p-3.5 flex items-center justify-between text-sm font-bold text-primary hover:bg-slate-50/50 transition-colors cursor-pointer outline-none"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-slate-400 text-[18px]">settings_input_hdmi</span>
+                                            Transmission
+                                        </span>
+                                        <span className="material-symbols-outlined text-slate-400 text-lg transition-transform" style={{ transform: expandedSections.transmission ? 'rotate(180deg)' : 'none' }}>expand_more</span>
+                                    </button>
+                                    {expandedSections.transmission && (
+                                        <div className="p-3 border-t border-slate-100 bg-slate-50/20 pr-1 space-y-2">
+                                            {Object.keys(facets.transmissions).sort().map(t => (
+                                                <label key={t} className="flex items-center gap-2.5 cursor-pointer py-0.5 group">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedTransmissions.includes(t)}
+                                                        onChange={() => toggleFilterList('transmissions', t)}
+                                                        className="rounded border-slate-300 text-primary focus:ring-primary size-4 cursor-pointer"
+                                                    />
+                                                    <span className="text-xs text-slate-700 group-hover:text-primary transition-colors flex-1">{t}</span>
+                                                    <span className="text-[10px] text-slate-400 bg-slate-100 rounded px-1.5 py-0.5 font-bold shrink-0">{facets.transmissions[t]}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Section: Body Type */}
+                                <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <button
+                                        onClick={() => toggleSection('body')}
+                                        className="w-full p-3.5 flex items-center justify-between text-sm font-bold text-primary hover:bg-slate-50/50 transition-colors cursor-pointer outline-none"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-slate-400 text-[18px]">airport_shuttle</span>
+                                            Body Type
+                                        </span>
+                                        <span className="material-symbols-outlined text-slate-400 text-lg transition-transform" style={{ transform: expandedSections.body ? 'rotate(180deg)' : 'none' }}>expand_more</span>
+                                    </button>
+                                    {expandedSections.body && (
+                                        <div className="p-3 border-t border-slate-100 bg-slate-50/20 pr-1 space-y-2">
+                                            {Object.keys(facets.bodies).sort().map(b => (
+                                                <label key={b} className="flex items-center gap-2.5 cursor-pointer py-0.5 group">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedBodies.includes(b)}
+                                                        onChange={() => toggleFilterList('bodies', b)}
+                                                        className="rounded border-slate-300 text-primary focus:ring-primary size-4 cursor-pointer"
+                                                    />
+                                                    <span className="text-xs text-slate-700 group-hover:text-primary transition-colors flex-1">{b}</span>
+                                                    <span className="text-[10px] text-slate-400 bg-slate-100 rounded px-1.5 py-0.5 font-bold shrink-0">{facets.bodies[b]}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Section: Ownership */}
+                                <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <button
+                                        onClick={() => toggleSection('ownership')}
+                                        className="w-full p-3.5 flex items-center justify-between text-sm font-bold text-primary hover:bg-slate-50/50 transition-colors cursor-pointer outline-none"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-slate-400 text-[18px]">person</span>
+                                            Ownership
+                                        </span>
+                                        <span className="material-symbols-outlined text-slate-400 text-lg transition-transform" style={{ transform: expandedSections.ownership ? 'rotate(180deg)' : 'none' }}>expand_more</span>
+                                    </button>
+                                    {expandedSections.ownership && (
+                                        <div className="p-3 border-t border-slate-100 bg-slate-50/20 pr-1 space-y-2">
+                                            {Object.keys(facets.ownerships).map(Number).sort().map(o => (
+                                                <label key={o} className="flex items-center gap-2.5 cursor-pointer py-0.5 group">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedOwnerships.includes(o)}
+                                                        onChange={() => toggleFilterList('ownerships', o)}
+                                                        className="rounded border-slate-300 text-primary focus:ring-primary size-4 cursor-pointer"
+                                                    />
+                                                    <span className="text-xs text-slate-700 group-hover:text-primary transition-colors flex-1">
+                                                        {o === 1 ? '1st Owner' : o === 2 ? '2nd Owner' : o === 3 ? '3rd Owner' : `${o} Owners`}
+                                                    </span>
+                                                    <span className="text-[10px] text-slate-400 bg-slate-100 rounded px-1.5 py-0.5 font-bold shrink-0">{facets.ownerships[o]}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Section: Color */}
+                                <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <button
+                                        onClick={() => toggleSection('color')}
+                                        className="w-full p-3.5 flex items-center justify-between text-sm font-bold text-primary hover:bg-slate-50/50 transition-colors cursor-pointer outline-none"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-slate-400 text-[18px]">palette</span>
+                                            Color
+                                        </span>
+                                        <span className="material-symbols-outlined text-slate-400 text-lg transition-transform" style={{ transform: expandedSections.color ? 'rotate(180deg)' : 'none' }}>expand_more</span>
+                                    </button>
+                                    {expandedSections.color && (
+                                        <div className="p-3 border-t border-slate-100 bg-slate-50/20 pr-1 space-y-2 max-h-40 overflow-y-auto">
+                                            {Object.keys(facets.colors).sort().map(c => (
+                                                <label key={c} className="flex items-center gap-2.5 cursor-pointer py-0.5 group">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedColors.includes(c)}
+                                                        onChange={() => toggleFilterList('colors', c)}
+                                                        className="rounded border-slate-300 text-primary focus:ring-primary size-4 cursor-pointer"
+                                                    />
+                                                    <span className="text-xs text-slate-700 group-hover:text-primary transition-colors flex-1">{c}</span>
+                                                    <span className="text-[10px] text-slate-400 bg-slate-100 rounded px-1.5 py-0.5 font-bold shrink-0">{facets.colors[c]}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                            </div>
+
+                            {/* Drawer Footer */}
+                            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex gap-3">
+                                <button
+                                    onClick={() => setShowFilterDrawer(false)}
+                                    className="flex-1 h-11 bg-primary text-white font-bold rounded-xl text-sm hover:bg-primary-light transition-colors shadow-sm cursor-pointer"
+                                >
+                                    View {filtered.length} Vehicles
+                                </button>
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

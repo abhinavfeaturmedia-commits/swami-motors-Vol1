@@ -47,8 +47,13 @@ const UserDashboard = () => {
     const [wishlistCars, setWishlistCars] = useState<WishlistCar[]>([]);
     const [wishlistLoading, setWishlistLoading] = useState(false);
 
+    // ─── Finance Services State ────────────────────────────────────────────────
+    const [myServices, setMyServices] = useState<any[]>([]);
+    const [servicesLoading, setServicesLoading] = useState(false);
+
     const tabs = [
         { id: 'bookings', label: 'My Bookings', icon: 'event_note' },
+        { id: 'services', label: 'Financial Services', icon: 'handshake' },
         { id: 'shortlisted', label: 'Shortlisted Cars', icon: 'favorite' },
         { id: 'settings', label: 'Profile', icon: 'person' },
     ];
@@ -81,6 +86,35 @@ const UserDashboard = () => {
 
         fetchBookings();
     }, [profile]);
+
+    // ─── Fetch financial services ─────────────────────────────────────────────
+    useEffect(() => {
+        const fetchServices = async () => {
+            if (!profile?.phone && !profile?.email) {
+                setServicesLoading(false);
+                return;
+            }
+            setServicesLoading(true);
+            let query = supabase
+                .from('finance_services')
+                .select('*, car:inventory(*)')
+                .order('created_at', { ascending: false });
+
+            if (profile.phone) {
+                query = query.eq('phone', profile.phone);
+            } else if (profile.email) {
+                query = query.eq('email', profile.email);
+            }
+
+            const { data } = await query;
+            setMyServices(data || []);
+            setServicesLoading(false);
+        };
+
+        if (activeTab === 'services') {
+            fetchServices();
+        }
+    }, [activeTab, profile]);
 
     // ─── Load wishlist from Supabase ─────────────────────────────────────
     useEffect(() => {
@@ -243,6 +277,115 @@ const UserDashboard = () => {
                                             </div>
                                         </div>
                                     ))}
+                                </div>
+                            )}
+                        </section>
+                    )}
+
+                    {/* Financial Services Tab */}
+                    {activeTab === 'services' && (
+                        <section className="mb-10 animate-in fade-in duration-200">
+                            <h2 className="text-lg font-bold text-primary font-display flex items-center gap-2 mb-4">
+                                <span className="material-symbols-outlined text-accent">handshake</span> My Loans & Insurance Policies
+                            </h2>
+
+                            {servicesLoading ? (
+                                <div className="space-y-3">
+                                    {[1, 2].map(i => (
+                                        <div key={i} className="bg-white rounded-2xl border border-slate-100 p-5 animate-pulse h-20" />
+                                    ))}
+                                </div>
+                            ) : myServices.length === 0 ? (
+                                <div className="bg-white rounded-2xl border border-slate-100 p-10 shadow-[var(--shadow-card)] flex flex-col items-center justify-center text-center">
+                                    <div className="size-16 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-4">
+                                        <span className="material-symbols-outlined text-3xl text-slate-300">handshake</span>
+                                    </div>
+                                    <h3 className="font-bold text-primary font-display text-lg mb-1 font-medium">No active services</h3>
+                                    <p className="text-sm text-slate-400 max-w-xs mb-5">
+                                        You don't have any active loan files or insurance policies registered with us.
+                                    </p>
+                                    <div className="flex gap-2 justify-center">
+                                        <Link to="/finance" className="inline-flex items-center gap-2 h-10 px-5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-light transition-colors">
+                                            <span className="material-symbols-outlined text-base">calculate</span> EMI Calculator
+                                        </Link>
+                                        <Link to="/insurance" className="inline-flex items-center gap-2 h-10 px-5 bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-200 transition-colors">
+                                            <span className="material-symbols-outlined text-base">shield</span> Insurance Quote
+                                        </Link>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {myServices.map(s => {
+                                        const statusColors: Record<string, string> = {
+                                            pending: 'bg-amber-100 text-amber-700 border-amber-200',
+                                            docs_submitted: 'bg-blue-100 text-blue-700 border-blue-200',
+                                            bank_processing: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+                                            quote_sent: 'bg-blue-100 text-blue-700 border-blue-200',
+                                            payment_pending: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+                                            approved: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+                                            disbursed: 'bg-green-100 text-green-700 border-green-200',
+                                            policy_issued: 'bg-green-100 text-green-700 border-green-200',
+                                            rejected: 'bg-red-100 text-red-700 border-red-200',
+                                            cancelled: 'bg-slate-100 text-slate-500 border-slate-200'
+                                        };
+                                        return (
+                                            <div key={s.id} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)] flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                                <div className="flex items-start gap-4">
+                                                    <div className="size-12 rounded-xl bg-slate-50 border border-slate-100 text-primary flex items-center justify-center shrink-0">
+                                                        <span className="material-symbols-outlined text-xl">
+                                                            {s.type === 'loan' ? 'account_balance' : 'shield'}
+                                                        </span>
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <p className="font-bold text-primary text-sm capitalize">
+                                                                {s.type === 'loan' ? 'Car Loan File' : 'Car Insurance Contract'}
+                                                            </p>
+                                                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase border ${statusColors[s.status] || 'bg-slate-100 text-slate-500'}`}>
+                                                                {s.status.replace('_', ' ')}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-400 mt-1">
+                                                            Registered name: <span className="font-semibold text-slate-600">{s.full_name}</span>
+                                                        </p>
+                                                        {s.provider_name && (
+                                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                                Provider: <span className="font-semibold">{s.provider_name}</span>
+                                                                {s.policy_number && ` • Policy: ${s.policy_number}`}
+                                                            </p>
+                                                        )}
+                                                        {s.car && (
+                                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                                Vehicle: <span className="font-semibold">{s.car.year} {s.car.make} {s.car.model}</span>
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="text-left md:text-right border-t md:border-t-0 pt-3 md:pt-0 border-slate-100">
+                                                    {s.type === 'loan' ? (
+                                                        <>
+                                                            <p className="text-[10px] text-slate-400 font-bold uppercase">Requested Loan</p>
+                                                            <p className="text-lg font-black text-primary font-display">₹{Number(s.amount || 0).toLocaleString('en-IN')}</p>
+                                                            {s.interest_rate && (
+                                                                <p className="text-xs text-slate-400 mt-0.5">
+                                                                    Rate: {s.interest_rate}% • Tenure: {s.tenure_months}M
+                                                                </p>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <p className="text-[10px] text-slate-400 font-bold uppercase">Insurance Premium</p>
+                                                            <p className="text-lg font-black text-primary font-display">{s.premium_amount ? `₹${Number(s.premium_amount).toLocaleString('en-IN')}` : '—'}</p>
+                                                            {s.amount && (
+                                                                <p className="text-xs text-slate-400 mt-0.5">IDV Cover: ₹{Number(s.amount).toLocaleString('en-IN')}</p>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </section>

@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Heart, MessageCircle, Share2, ChevronLeft, ChevronRight, Check, Copy, ShoppingBag, Send } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Heart, MessageCircle, Share2, ChevronLeft, ChevronRight, Check, Copy, ShoppingBag, Send, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getPrimaryImage, formatPriceLakh } from '../../lib/utils';
 
@@ -36,6 +37,8 @@ interface FeedPostProps {
     directLink: string;
     onAddComment: (carId: string, comment: string) => void;
     comments: string[];
+    onShowToast?: (msg: string, type: 'success' | 'error') => void;
+    onDownloadClick?: () => void;
 }
 
 export const FeedPost: React.FC<FeedPostProps> = ({
@@ -49,7 +52,9 @@ export const FeedPost: React.FC<FeedPostProps> = ({
     whatsappUrl,
     directLink,
     onAddComment,
-    comments
+    comments,
+    onShowToast,
+    onDownloadClick
 }) => {
     const [currentImgIndex, setCurrentImgIndex] = useState(0);
     const [copied, setCopied] = useState(false);
@@ -57,6 +62,35 @@ export const FeedPost: React.FC<FeedPostProps> = ({
     const [commentInput, setCommentInput] = useState('');
     const [likeCountSim, setLikeCountSim] = useState(Math.floor(Math.random() * 15) + 3);
     const lastTap = useRef<number>(0);
+
+    const [touchStartX, setTouchStartX] = useState<number | null>(null);
+    const [touchEndX, setTouchEndX] = useState<number | null>(null);
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        setTouchStartX(e.targetTouches[0].clientX);
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        setTouchEndX(e.targetTouches[0].clientX);
+    };
+
+    const handleTouchEnd = () => {
+        if (touchStartX === null || touchEndX === null) return;
+        const distance = touchStartX - touchEndX;
+        const isLeftSwipe = distance > 50;
+        const isRightSwipe = distance < -50;
+        if (isLeftSwipe) {
+            if (car.images.length > 0) {
+                setCurrentImgIndex((prev) => (prev + 1) % car.images.length);
+            }
+        } else if (isRightSwipe) {
+            if (car.images.length > 0) {
+                setCurrentImgIndex((prev) => (prev - 1 + car.images.length) % car.images.length);
+            }
+        }
+        setTouchStartX(null);
+        setTouchEndX(null);
+    };
 
     const nextImage = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -89,25 +123,39 @@ export const FeedPost: React.FC<FeedPostProps> = ({
     const handleCopyLink = (e: React.MouseEvent) => {
         e.stopPropagation();
         let success = false;
+        
+        const fallbackCopy = () => {
+            try {
+                const el = document.createElement('textarea');
+                el.value = directLink;
+                el.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+                document.body.appendChild(el);
+                el.focus();
+                el.select();
+                success = document.execCommand('copy');
+                document.body.removeChild(el);
+                if (success) {
+                    setCopied(true);
+                    if (onShowToast) onShowToast('Car link copied to clipboard!', 'success');
+                    setTimeout(() => setCopied(false), 2000);
+                } else {
+                    if (onShowToast) onShowToast('Failed to copy link. Please manually copy the URL.', 'error');
+                }
+            } catch (err) {
+                if (onShowToast) onShowToast('Failed to copy link.', 'error');
+            }
+        };
+
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(directLink).then(() => {
                 setCopied(true);
+                if (onShowToast) onShowToast('Car link copied to clipboard!', 'success');
                 setTimeout(() => setCopied(false), 2000);
-            }).catch(() => {});
+            }).catch(() => {
+                fallbackCopy();
+            });
         } else {
-            // fallback
-            const el = document.createElement('textarea');
-            el.value = directLink;
-            el.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
-            document.body.appendChild(el);
-            el.focus();
-            el.select();
-            success = document.execCommand('copy');
-            document.body.removeChild(el);
-            if (success) {
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-            }
+            fallbackCopy();
         }
     };
 
@@ -153,10 +201,13 @@ export const FeedPost: React.FC<FeedPostProps> = ({
                 </div>
             </div>
 
-            {/* Media Area (Double Tap to Like) */}
+            {/* Media Area (Double Tap to Like & Swipe) */}
             <div 
                 className="relative aspect-[4/3] bg-slate-50 select-none cursor-pointer"
                 onClick={handleImageTap}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
             >
                 {car.images && car.images.length > 0 ? (
                     <img 
@@ -177,15 +228,15 @@ export const FeedPost: React.FC<FeedPostProps> = ({
                     <>
                         <button 
                             onClick={prevImage}
-                            className="absolute left-3 top-1/2 -translate-y-1/2 size-8 rounded-full bg-black/40 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/60 active:scale-95 transition-all"
+                            className="absolute left-3 top-1/2 -translate-y-1/2 size-10 rounded-full bg-black/40 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/60 active:scale-95 transition-all"
                         >
-                            <ChevronLeft size={16} />
+                            <ChevronLeft size={20} />
                         </button>
                         <button 
                             onClick={nextImage}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 size-8 rounded-full bg-black/40 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/60 active:scale-95 transition-all"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 size-10 rounded-full bg-black/40 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/60 active:scale-95 transition-all"
                         >
-                            <ChevronRight size={16} />
+                            <ChevronRight size={20} />
                         </button>
                         
                         {/* Dot indicator */}
@@ -253,6 +304,20 @@ export const FeedPost: React.FC<FeedPostProps> = ({
                             <Share2 size={22} />
                         )}
                     </button>
+
+                    {/* Download photos action */}
+                    {onDownloadClick && (
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDownloadClick();
+                            }}
+                            className="text-slate-700 hover:text-blue-500 active:scale-75 transition-all"
+                            title="Download Photos"
+                        >
+                            <Download size={22} />
+                        </button>
+                    )}
                 </div>
 
                 {/* WhatsApp Chat button */}
@@ -276,9 +341,9 @@ export const FeedPost: React.FC<FeedPostProps> = ({
 
                 {/* Caption description */}
                 <div>
-                    <span className="font-extrabold text-slate-800 text-sm mr-2">
+                    <Link to={directLink} className="font-extrabold text-slate-800 text-sm mr-2 hover:text-primary hover:underline transition-all">
                         {car.year} {car.make} {car.model}
-                    </span>
+                    </Link>
                     <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600 inline-block mr-1.5">
                         ₹ {formatPriceLakh(car.price)} Lakh
                     </span>

@@ -27,6 +27,36 @@ const EMICalculator = () => {
     const [budgetCars, setBudgetCars] = useState<Car[]>([]);
     const [carsLoading, setCarsLoading] = useState(false);
 
+    // ─── Apply Form State ─────────────────────────────────────────────────────
+    const [isApplying, setIsApplying] = useState(false);
+    const [applyForm, setApplyForm] = useState({ full_name: '', phone: '', email: '', preferred_bank: '' });
+    const [applyLoading, setApplyLoading] = useState(false);
+    const [applySubmitted, setApplySubmitted] = useState(false);
+    const [applyError, setApplyError] = useState('');
+
+    const handleApply = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setApplyError('');
+        setApplyLoading(true);
+
+        const { error: err } = await supabase.from('leads').insert({
+            type: 'finance',
+            full_name: applyForm.full_name.trim(),
+            phone: applyForm.phone.trim(),
+            email: applyForm.email.trim() || null,
+            budget: `₹${(loanAmount / 100000).toFixed(2)}L`,
+            message: `EMI Calculator Request: Loan of ₹${loanAmount.toLocaleString('en-IN')} over ${tenureYears} years at ${interestRate}%. Preferred Bank: ${applyForm.preferred_bank || 'No Preference'}. Estimated EMI: ₹${Math.round(emi).toLocaleString('en-IN')}/mo.`,
+            source: 'website_finance',
+        });
+
+        if (err) {
+            setApplyError('Failed to submit application. Please call us directly.');
+        } else {
+            setApplySubmitted(true);
+        }
+        setApplyLoading(false);
+    };
+
     const tenureMonths = tenureMode === 'years' ? tenureYears * 12 : tenureYears;
     const monthlyRate = interestRate / 100 / 12;
     const emi = monthlyRate > 0
@@ -176,12 +206,56 @@ const EMICalculator = () => {
                         </div>
                     </div>
 
-                    <Link
-                        to="/contact?subject=finance"
-                        className="w-full h-12 bg-gradient-to-r from-accent to-amber-400 text-primary font-bold rounded-xl hover:opacity-90 transition-all shadow-lg text-sm flex items-center justify-center gap-2"
-                    >
-                        Apply for Finance <span className="material-symbols-outlined text-lg">arrow_forward</span>
-                    </Link>
+                    {applySubmitted ? (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 text-center">
+                            <span className="material-symbols-outlined text-emerald-600 text-3xl mb-2 font-bold">check_circle</span>
+                            <h4 className="font-bold text-primary text-sm mb-1 font-display">Application Submitted!</h4>
+                            <p className="text-xs text-slate-500 mb-3">Our financial advisor will contact you on +91 {applyForm.phone} shortly.</p>
+                            <button 
+                                onClick={() => { setApplySubmitted(false); setApplyForm({ full_name: '', phone: '', email: '', preferred_bank: '' }); }}
+                                className="text-xs font-semibold text-primary underline"
+                            >
+                                Calculate Another Loan
+                            </button>
+                        </div>
+                    ) : isApplying ? (
+                        <form onSubmit={handleApply} className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                            <h4 className="font-bold text-primary text-sm font-display">Apply for Finance</h4>
+                            {applyError && <div className="text-xs text-red-600 bg-red-50 p-2 rounded-lg border border-red-100">{applyError}</div>}
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Full Name *</label>
+                                <input required type="text" placeholder="Your Name" value={applyForm.full_name} onChange={e => setApplyForm(f => ({ ...f, full_name: e.target.value }))} className="w-full h-10 border border-slate-200 bg-white rounded-xl px-3 text-xs outline-none focus:border-primary" />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Phone Number *</label>
+                                <div className="flex">
+                                    <span className="h-10 px-3 bg-slate-100 border border-r-0 border-slate-200 rounded-l-xl flex items-center text-xs text-slate-500 font-medium">+91</span>
+                                    <input required type="tel" placeholder="10-Digit Mobile" value={applyForm.phone} onChange={e => setApplyForm(f => ({ ...f, phone: e.target.value }))} className="flex-1 h-10 border border-slate-200 bg-white rounded-r-xl px-3 text-xs outline-none focus:border-primary" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Email Address</label>
+                                <input type="email" placeholder="you@example.com (optional)" value={applyForm.email} onChange={e => setApplyForm(f => ({ ...f, email: e.target.value }))} className="w-full h-10 border border-slate-200 bg-white rounded-xl px-3 text-xs outline-none focus:border-primary" />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Preferred Bank</label>
+                                <input type="text" placeholder="e.g. HDFC, ICICI, SBI (optional)" value={applyForm.preferred_bank} onChange={e => setApplyForm(f => ({ ...f, preferred_bank: e.target.value }))} className="w-full h-10 border border-slate-200 bg-white rounded-xl px-3 text-xs outline-none focus:border-primary" />
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                                <button type="button" onClick={() => setIsApplying(false)} className="flex-1 h-10 bg-slate-200 text-slate-600 font-bold rounded-xl text-xs hover:bg-slate-300 transition-colors">Cancel</button>
+                                <button type="submit" disabled={applyLoading} className="flex-1 h-10 bg-primary text-white font-bold rounded-xl text-xs hover:bg-primary-light transition-colors flex items-center justify-center gap-1">
+                                    {applyLoading ? <span className="size-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Submit App'}
+                                </button>
+                            </div>
+                        </form>
+                    ) : (
+                        <button
+                            onClick={() => setIsApplying(true)}
+                            className="w-full h-12 bg-gradient-to-r from-accent to-amber-400 text-primary font-bold rounded-xl hover:opacity-90 transition-all shadow-lg text-sm flex items-center justify-center gap-2"
+                        >
+                            Apply for Finance <span className="material-symbols-outlined text-lg">arrow_forward</span>
+                        </button>
+                    )}
                     <p className="text-xs text-slate-400 text-center flex items-center justify-center gap-1">
                         <span className="material-symbols-outlined text-xs">bolt</span> Approval in as fast as 30 minutes
                     </p>

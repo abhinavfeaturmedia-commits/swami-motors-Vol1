@@ -41,3 +41,33 @@ CREATE INDEX IF NOT EXISTS idx_catalog_views_catalog_id
 -- 7. Index for fast is_active filtering on shared_catalogs
 CREATE INDEX IF NOT EXISTS idx_shared_catalogs_is_active
     ON shared_catalogs (is_active);
+
+-- 8. Add is_liked and comments to shared_catalog_items
+ALTER TABLE shared_catalog_items
+    ADD COLUMN IF NOT EXISTS is_liked boolean NOT NULL DEFAULT false;
+
+ALTER TABLE shared_catalog_items
+    ADD COLUMN IF NOT EXISTS comments text[] NOT NULL DEFAULT '{}';
+
+-- 9. Enable UPDATE policy on shared_catalog_items for customer feedback loops
+DROP POLICY IF EXISTS "Public can update shared catalog items interaction" ON shared_catalog_items;
+CREATE POLICY "Public can update shared catalog items interaction"
+    ON shared_catalog_items
+    FOR UPDATE
+    TO public
+    USING (
+        EXISTS (
+            SELECT 1 FROM shared_catalogs
+            WHERE shared_catalogs.id = shared_catalog_items.catalog_id
+              AND shared_catalogs.is_active = true
+              AND (shared_catalogs.expires_at IS NULL OR shared_catalogs.expires_at > now())
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM shared_catalogs
+            WHERE shared_catalogs.id = shared_catalog_items.catalog_id
+              AND shared_catalogs.is_active = true
+              AND (shared_catalogs.expires_at IS NULL OR shared_catalogs.expires_at > now())
+        )
+    );

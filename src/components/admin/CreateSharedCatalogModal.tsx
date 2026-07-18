@@ -42,6 +42,7 @@ const CreateSharedCatalogModal: React.FC<CreateSharedCatalogModalProps> = ({
     
     // General form states
     const [customMessage, setCustomMessage] = useState('');
+    const [expiryDays, setExpiryDays] = useState<string>('7');
     const [loading, setLoading] = useState(false);
     const [generatedLink, setGeneratedLink] = useState('');
     const [generatedPhone, setGeneratedPhone] = useState('');
@@ -188,6 +189,14 @@ const CreateSharedCatalogModal: React.FC<CreateSharedCatalogModalProps> = ({
                 finalLeadId = newLead.id;
             }
 
+            let expiresAt: string | null = null;
+            if (expiryDays !== 'never') {
+                const days = parseInt(expiryDays);
+                const date = new Date();
+                date.setDate(date.getDate() + days);
+                expiresAt = date.toISOString();
+            }
+
             // 1. Insert into shared_catalogs
             const { data: catalog, error: catError } = await supabase
                 .from('shared_catalogs')
@@ -197,7 +206,8 @@ const CreateSharedCatalogModal: React.FC<CreateSharedCatalogModalProps> = ({
                     created_by: user?.id || null,
                     lead_id: finalLeadId,
                     customer_id: finalCustomerId,
-                    customer_phone: finalPhone || null
+                    customer_phone: finalPhone || null,
+                    expires_at: expiresAt
                 })
                 .select()
                 .single();
@@ -289,6 +299,7 @@ const CreateSharedCatalogModal: React.FC<CreateSharedCatalogModalProps> = ({
         setOutsiderName('');
         setOutsiderPhone('');
         setCustomMessage('');
+        setExpiryDays('7');
         setGeneratedLink('');
         setGeneratedPhone('');
         setCopied(false);
@@ -503,6 +514,21 @@ const CreateSharedCatalogModal: React.FC<CreateSharedCatalogModalProps> = ({
                                     </div>
                                 </div>
                             )}
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 mb-1.5">Expiry Duration *</label>
+                                <select
+                                    value={expiryDays}
+                                    onChange={e => setExpiryDays(e.target.value)}
+                                    className="w-full h-11 px-3 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-primary/20 outline-none bg-white mb-4"
+                                >
+                                    <option value="1">24 Hours (1 day)</option>
+                                    <option value="7">7 Days</option>
+                                    <option value="30">30 Days</option>
+                                    <option value="90">90 Days</option>
+                                    <option value="never">No Expiry</option>
+                                </select>
+                            </div>
 
                             <div>
                                 <label className="block text-xs font-bold text-slate-600 mb-1.5">Personal Message / Remarks (Optional)</label>

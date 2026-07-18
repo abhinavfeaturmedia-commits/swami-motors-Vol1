@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { formatPriceLakh } from '../lib/utils';
-import { Loader2, Phone, Mail, User, CheckCircle, Calendar, MessageSquare, ArrowLeft, X, ShoppingBag, Grid, Layers, Heart } from 'lucide-react';
+import { Loader2, Phone, Mail, User, CheckCircle, Calendar, MessageSquare, ArrowLeft, X, ShoppingBag, Grid, Layers, Heart, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FeedPost, Car } from '../components/shared_catalog/FeedPost';
+import DownloadPhotosModal from '../components/admin/DownloadPhotosModal';
 
 interface Profile {
     full_name: string | null;
@@ -49,6 +50,13 @@ const SharedCatalog: React.FC = () => {
     const [submitting, setSubmitting] = useState(false);
     const [success, setSuccess] = useState(false);
     const [isExpired, setIsExpired] = useState(false);
+    const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+    const [downloadCar, setDownloadCar] = useState<Car | null>(null);
+
+    const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+        setToast({ msg, type });
+        setTimeout(() => setToast(null), 3000);
+    };
 
     // 1. Fetch catalog metadata & cars
     useEffect(() => {
@@ -75,11 +83,41 @@ const SharedCatalog: React.FC = () => {
                     expires_at: catData.expires_at ?? null,
                 });
 
-                // Fire-and-forget view log
-                supabase.from('catalog_views').insert({
-                    catalog_id: id,
-                    user_agent: navigator.userAgent,
-                }).then(() => {});
+                // Log catalog view with deduplication and admin exclusion
+                const logCatalogView = async () => {
+                    try {
+                        const sessionKey = `viewed_catalog_${id}`;
+                        // 1. Exclude if already viewed in this browser session
+                        if (sessionStorage.getItem(sessionKey)) {
+                            return;
+                        }
+
+                        // 2. Exclude if viewer is an authenticated admin/staff member
+                        const { data: { session } } = await supabase.auth.getSession();
+                        if (session?.user) {
+                            console.log('Skipping view count logging for authenticated admin/staff user.');
+                            return;
+                        }
+
+                        // 3. Insert view record
+                        const { error: viewError } = await supabase
+                            .from('catalog_views')
+                            .insert({
+                                catalog_id: id,
+                                user_agent: navigator.userAgent,
+                            });
+
+                        if (viewError) {
+                            console.error('Failed to log catalog view:', viewError);
+                        } else {
+                            sessionStorage.setItem(sessionKey, 'true');
+                        }
+                    } catch (err) {
+                        console.error('Error logging catalog view:', err);
+                    }
+                };
+
+                logCatalogView();
 
                 const expiredByDate = catData.expires_at && new Date(catData.expires_at) < new Date();
                 if (!(catData.is_active ?? true) || expiredByDate) {
@@ -89,10 +127,35 @@ const SharedCatalog: React.FC = () => {
                 // Fetch catalog items
                 const { data: itemData, error: itemsError } = await supabase
                     .from('shared_catalog_items')
-                    .select('inventory_id')
+                    .select('inventory_id, is_liked, comments')
                     .eq('catalog_id', id);
 
                 if (itemsError) throw itemsError;
+
+                const likesMap: Record<string, boolean> = {};
+                const commentsMap: Record<string, string[]> = {};
+                
+                // Read from local storage first to initialize fallbacks
+                const storedLikes = localStorage.getItem(`likes_${id}`);
+                if (storedLikes) {
+                    try { Object.assign(likesMap, JSON.parse(storedLikes)); } catch (e) {}
+                }
+                const storedComments = localStorage.getItem(`comments_${id}`);
+                if (storedComments) {
+                    try { Object.assign(commentsMap, JSON.parse(storedComments)); } catch (e) {}
+                }
+
+                // Override with database values (the source of truth)
+                itemData.forEach(item => {
+                    likesMap[item.inventory_id] = item.is_liked || false;
+                    commentsMap[item.inventory_id] = item.comments || [];
+                });
+                setLikedCarIds(likesMap);
+                setCarComments(commentsMap);
+
+                // Also update local storage to keep them in sync
+                localStorage.setItem(`likes_${id}`, JSON.stringify(likesMap));
+                localStorage.setItem(`comments_${id}`, JSON.stringify(commentsMap));
 
                 const carIds = itemData.map(item => item.inventory_id);
 
@@ -116,32 +179,35 @@ const SharedCatalog: React.FC = () => {
         fetchCatalogData();
     }, [id]);
 
-    // 2. Load Local Storage Likes and Comments
-    useEffect(() => {
-        if (!id) return;
-        const storedLikes = localStorage.getItem(`likes_${id}`);
-        if (storedLikes) {
-            try { setLikedCarIds(JSON.parse(storedLikes)); } catch (e) {}
-        }
-        const storedComments = localStorage.getItem(`comments_${id}`);
-        if (storedComments) {
-            try { setCarComments(JSON.parse(storedComments)); } catch (e) {}
-        }
-    }, [id]);
-
     // Toggle like
-    const handleLikeToggle = (carId: string) => {
-        const updated = { ...likedCarIds, [carId]: !likedCarIds[carId] };
+    const handleLikeToggle = async (carId: string) => {
+        const nextState = !likedCarIds[carId];
+        const updated = { ...likedCarIds, [carId]: nextState };
         setLikedCarIds(updated);
         localStorage.setItem(`likes_${id}`, JSON.stringify(updated));
+
+        // Save to Supabase
+        await supabase
+            .from('shared_catalog_items')
+            .update({ is_liked: nextState })
+            .eq('catalog_id', id)
+            .eq('inventory_id', carId);
     };
 
     // Add comment
-    const handleAddComment = (carId: string, comment: string) => {
+    const handleAddComment = async (carId: string, comment: string) => {
         const current = carComments[carId] || [];
-        const updated = { ...carComments, [carId]: [...current, comment] };
+        const nextComments = [...current, comment];
+        const updated = { ...carComments, [carId]: nextComments };
         setCarComments(updated);
         localStorage.setItem(`comments_${id}`, JSON.stringify(updated));
+
+        // Save to Supabase
+        await supabase
+            .from('shared_catalog_items')
+            .update({ comments: nextComments })
+            .eq('catalog_id', id)
+            .eq('inventory_id', carId);
     };
 
     // Basket management
@@ -225,10 +291,10 @@ const SharedCatalog: React.FC = () => {
     };
 
     const getWhatsAppUrl = (car: Car) => {
-        const phoneNo = catalog?.salesperson?.phone?.replace(/\D/g, '') || import.meta.env.VITE_BUSINESS_WHATSAPP || '919823237975';
+        const phoneNo = import.meta.env.VITE_BUSINESS_WHATSAPP || '919823237975';
         const formattedPhone = phoneNo.startsWith('91') ? phoneNo : `91${phoneNo}`;
         
-        let text = `Hello ${catalog?.salesperson?.full_name || 'Shree Swami Samarth Motors'},\n`;
+        let text = `Hello,\n`;
         text += `I was looking at the custom catalog you shared for me (*${catalog?.customer_name}*).\n`;
         text += `I'm interested in the *${car.year} ${car.make} ${car.model}* priced at *₹ ${formatPriceLakh(car.price)} Lakh*.\n`;
         text += `Let's discuss this model.`;
@@ -240,7 +306,7 @@ const SharedCatalog: React.FC = () => {
         const envPublicUrl = import.meta.env.VITE_PUBLIC_URL?.replace(/\/$/, '');
         const isLocal = window.location.hostname === 'localhost' || /^192\.168\./.test(window.location.hostname);
         const origin = (envPublicUrl && !isLocal) ? envPublicUrl : window.location.origin;
-        return `${origin}/car/${carId}`;
+        return `${origin}/car/${carId}?catalogId=${id}`;
     };
 
     if (loading) {
@@ -253,7 +319,7 @@ const SharedCatalog: React.FC = () => {
     }
 
     if (isExpired && catalog) {
-        const salespersonPhone = catalog.salesperson?.phone?.replace(/\D/g, '') || import.meta.env.VITE_BUSINESS_WHATSAPP || '919823237975';
+        const salespersonPhone = import.meta.env.VITE_BUSINESS_WHATSAPP || '919823237975';
         const formattedSalespersonPhone = salespersonPhone.startsWith('91') ? salespersonPhone : `91${salespersonPhone}`;
         return (
             <div className="bg-slate-50 min-h-screen py-24">
@@ -397,6 +463,8 @@ const SharedCatalog: React.FC = () => {
                                 directLink={getDirectCarLink(car.id)}
                                 onAddComment={handleAddComment}
                                 comments={carComments[car.id] || []}
+                                onShowToast={showToast}
+                                onDownloadClick={() => setDownloadCar(car)}
                             />
                         ))}
                     </div>
@@ -409,14 +477,16 @@ const SharedCatalog: React.FC = () => {
                             return (
                                 <article key={car.id} className="bg-white rounded-3xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-md transition-all flex flex-col justify-between p-4">
                                     <div className="relative aspect-[16/11] rounded-2xl overflow-hidden bg-slate-100">
-                                        <img 
-                                            src={car.images?.[0]} 
-                                            alt="" 
-                                            className="w-full h-full object-cover" 
-                                        />
+                                        <Link to={`/car/${car.id}?catalogId=${id}`} className="w-full h-full block">
+                                            <img 
+                                                src={car.images?.[0]} 
+                                                alt="" 
+                                                className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" 
+                                            />
+                                        </Link>
                                         
                                         {/* Badges on image */}
-                                        <div className="absolute top-3 left-3 flex gap-1">
+                                        <div className="absolute top-3 left-3 flex gap-1 pointer-events-none">
                                             {(car.status === 'sold' || car.status === 'archived') && (
                                                 <span className="bg-red-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md uppercase">Sold</span>
                                             )}
@@ -424,7 +494,7 @@ const SharedCatalog: React.FC = () => {
 
                                         <button 
                                             onClick={() => handleLikeToggle(car.id)}
-                                            className="absolute top-3 right-3 size-8 rounded-full bg-white/80 backdrop-blur-md flex items-center justify-center text-slate-700 hover:text-rose-500 transition-colors shadow-xs"
+                                            className="absolute top-3 right-3 size-8 rounded-full bg-white/80 backdrop-blur-md flex items-center justify-center text-slate-700 hover:text-rose-500 transition-colors shadow-xs z-10"
                                         >
                                             <Heart size={16} fill={isLiked ? '#f43f5e' : 'none'} className={isLiked ? 'text-rose-500' : ''} />
                                         </button>
@@ -432,7 +502,9 @@ const SharedCatalog: React.FC = () => {
 
                                     <div className="mt-4 space-y-2">
                                         <h3 className="font-extrabold text-slate-800 text-base leading-snug">
-                                            {car.year} {car.make} {car.model}
+                                            <Link to={`/car/${car.id}?catalogId=${id}`} className="hover:underline hover:text-primary transition-all">
+                                                {car.year} {car.make} {car.model}
+                                            </Link>
                                         </h3>
                                         <p className="text-xs text-slate-400 font-semibold">{car.transmission} • {car.fuel_type} • {car.mileage?.toLocaleString('en-IN') || 0} km</p>
                                         <p className="text-lg font-black text-primary font-display pt-1">₹ {formatPriceLakh(car.price)} Lakh</p>
@@ -455,6 +527,13 @@ const SharedCatalog: React.FC = () => {
                                             className="h-9 px-3 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold hover:bg-slate-200 transition-colors"
                                         >
                                             Inquire
+                                        </button>
+                                        <button
+                                            onClick={() => setDownloadCar(car)}
+                                            className="h-9 w-9 shrink-0 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors"
+                                            title="Download Photos"
+                                        >
+                                            <Download size={14} />
                                         </button>
                                     </div>
                                 </article>
@@ -603,6 +682,30 @@ const SharedCatalog: React.FC = () => {
                     </>
                 )}
             </AnimatePresence>
+
+            {/* Custom Premium Toast Alerts */}
+            {toast && (
+                <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-semibold transition-all ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+                    {toast.type === 'success' ? <CheckCircle size={18} /> : <X size={18} />}
+                    {toast.msg}
+                </div>
+            )}
+
+            {downloadCar && (
+                <DownloadPhotosModal
+                    car={{
+                        id: downloadCar.id,
+                        make: downloadCar.make,
+                        model: downloadCar.model,
+                        variant: downloadCar.condition || null,
+                        year: downloadCar.year,
+                        images: downloadCar.images,
+                        thumbnail: downloadCar.images?.[0] || null
+                    }}
+                    isOpen={!!downloadCar}
+                    onClose={() => setDownloadCar(null)}
+                />
+            )}
         </div>
     );
 };

@@ -58,6 +58,7 @@ import ConsignmentTracker from './pages/admin/ConsignmentTracker';
 import Accounts from './pages/admin/Accounts';
 import Commissions from './pages/admin/Commissions';
 import TaxCompliance from './pages/admin/TaxCompliance';
+import FinanceServices from './pages/admin/FinanceServices';
 
 // Admin — Schedule
 import NotificationsCenter from './pages/admin/NotificationsCenter';
@@ -148,6 +149,7 @@ const App: React.FC = () => {
                             <Route path="accounts" element={<ModuleRoute module="finance"><Accounts /></ModuleRoute>} />
                             <Route path="commissions" element={<ModuleRoute module="finance"><Commissions /></ModuleRoute>} />
                             <Route path="tax" element={<ModuleRoute module="finance"><TaxCompliance /></ModuleRoute>} />
+                            <Route path="finance-services" element={<ModuleRoute module="finance"><FinanceServices /></ModuleRoute>} />
 
                             {/* Schedule */}
                             <Route path="calendar" element={<ModuleRoute module="schedule"><CalendarView /></ModuleRoute>} />

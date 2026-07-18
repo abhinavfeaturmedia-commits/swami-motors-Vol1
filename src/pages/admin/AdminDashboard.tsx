@@ -155,7 +155,7 @@ const AdminDashboard = () => {
             <div className="grid grid-cols-3 gap-4">
                 {[
                     { label: 'Consignments Active', value: stats.consignmentActive, icon: '🤝', sub: `Fee this month: ${fmt(stats.consignmentFeesMonth)}`, link: '/admin/consignments', border: 'border-purple-200', bg: 'bg-purple-50' },
-                    { label: 'Dealer Cars',          value: stats.dealerCars,        icon: '🏪', sub: 'Available from dealers',                               link: '/admin/inventory',    border: 'border-amber-200',  bg: 'bg-amber-50' },
+                    { label: 'Dealer Cars',          value: stats.dealerCars,        icon: '🏪', sub: 'Available from dealers',                               link: '/admin/inventory?tab=available&dealer=dealer',    border: 'border-amber-200',  bg: 'bg-amber-50' },
                     { label: 'Expiring Soon',        value: stats.expiringConsignments, icon: '⏰', sub: 'Consignments ≤ 7 days',                              link: '/admin/consignments', border: stats.expiringConsignments > 0 ? 'border-red-200' : 'border-slate-100', bg: stats.expiringConsignments > 0 ? 'bg-red-50' : 'bg-slate-50' },
                 ].map(s => (
                     <Link key={s.label} to={s.link} className={`rounded-2xl border ${s.border} ${s.bg} p-4 shadow-sm hover:shadow-md transition-shadow`}>

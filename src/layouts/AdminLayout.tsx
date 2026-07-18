@@ -73,6 +73,7 @@ const NAV_GROUPS: NavGroup[] = [
             { name: 'Accounts', href: '/admin/accounts', icon: 'account_balance', module: 'finance' },
             { name: 'Commissions', href: '/admin/commissions', icon: 'payments', module: 'finance' },
             { name: 'Tax & GST', href: '/admin/tax', icon: 'receipt', module: 'finance' },
+            { name: 'Services Manager', href: '/admin/finance-services', icon: 'handshake', module: 'finance' },
         ],
     },
     {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
@@ -12,6 +12,8 @@ interface CatalogInventory {
 
 interface CatalogItem {
     inventory_id: string;
+    is_liked: boolean;
+    comments: string[];
     inventory: CatalogInventory | null;
 }
 
@@ -51,29 +53,85 @@ const SharedCatalogsAdmin: React.FC = () => {
     const [hasMore, setHasMore] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
 
+    // Global stats states
+    const [totalCatalogsCount, setTotalCatalogsCount] = useState(0);
+    const [activeCatalogsCount, setActiveCatalogsCount] = useState(0);
+    const [inactiveCatalogsCount, setInactiveCatalogsCount] = useState(0);
+    const [totalViewsCount, setTotalViewsCount] = useState(0);
+
     const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
         setToast({ msg, type });
         setTimeout(() => setToast(null), 3000);
     };
 
-    const fetchCatalogs = async (pageNum = 0, append = false) => {
+    const fetchStats = async () => {
+        try {
+            const [totalRes, activeRes, viewsRes] = await Promise.all([
+                supabase
+                    .from('shared_catalogs')
+                    .select('*', { count: 'exact', head: true }),
+                supabase
+                    .from('shared_catalogs')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('is_active', true)
+                    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`),
+                supabase
+                    .from('catalog_views')
+                    .select('*', { count: 'exact', head: true })
+            ]);
+
+            const total = totalRes.count || 0;
+            const active = activeRes.count || 0;
+            const views = viewsRes.count || 0;
+
+            setTotalCatalogsCount(total);
+            setActiveCatalogsCount(active);
+            setInactiveCatalogsCount(total - active);
+            setTotalViewsCount(views);
+        } catch (err) {
+            console.error('Error fetching global shared catalog stats:', err);
+        }
+    };
+
+    const fetchCatalogs = async (pageNum = 0, append = false, searchStr = '') => {
         if (pageNum === 0) setLoading(true);
         else setLoadingMore(true);
 
         const from = pageNum * PAGE_SIZE;
         const to = from + PAGE_SIZE - 1;
 
-        const { data, error } = await supabase
+        let query = supabase
             .from('shared_catalogs')
             .select(`
                 *,
                 salesperson:profiles!shared_catalogs_created_by_fkey(full_name, phone, avatar_url),
                 items:shared_catalog_items(
                     inventory_id,
+                    is_liked,
+                    comments,
                     inventory:inventory_id(make, model, year, thumbnail, price)
                 ),
                 catalog_views(id)
-            `)
+            `, { count: 'exact' });
+
+        if (searchStr.trim()) {
+            const cleanSearch = searchStr.trim();
+            // 1. Search matching profile IDs first
+            const { data: matchedProfiles } = await supabase
+                .from('profiles')
+                .select('id')
+                .ilike('full_name', `%${cleanSearch}%`);
+
+            const profileIds = matchedProfiles?.map(p => p.id) || [];
+
+            let orCondition = `customer_name.ilike.%${cleanSearch}%,customer_phone.ilike.%${cleanSearch}%`;
+            if (profileIds.length > 0) {
+                orCondition += `,created_by.in.(${profileIds.map(id => `"${id}"`).join(',')})`;
+            }
+            query = query.or(orCondition);
+        }
+
+        const { data, error, count } = await query
             .order('created_at', { ascending: false })
             .range(from, to);
 
@@ -84,19 +142,38 @@ const SharedCatalogsAdmin: React.FC = () => {
             } else {
                 setCatalogs(typed);
             }
-            setHasMore(data.length === PAGE_SIZE);
+            if (count !== null) {
+                setHasMore(from + data.length < count);
+            } else {
+                setHasMore(data.length === PAGE_SIZE);
+            }
         }
 
         if (pageNum === 0) setLoading(false);
         else setLoadingMore(false);
     };
 
-    useEffect(() => { fetchCatalogs(0); }, []);
+    const isMounted = useRef(false);
+
+    useEffect(() => {
+        if (!isMounted.current) {
+            isMounted.current = true;
+            fetchCatalogs(0, false, '');
+            fetchStats();
+            return;
+        }
+        const delayDebounceFn = setTimeout(() => {
+            setPage(0);
+            fetchCatalogs(0, false, search);
+        }, 350);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [search]);
 
     const handleLoadMore = () => {
         const nextPage = page + 1;
         setPage(nextPage);
-        fetchCatalogs(nextPage, true);
+        fetchCatalogs(nextPage, true, search);
     };
 
     const getOrigin = () => {
@@ -149,16 +226,25 @@ const SharedCatalogsAdmin: React.FC = () => {
 
     const handleToggleActive = async (catalog: SharedCatalog) => {
         setTogglingId(catalog.id);
+        const newActive = !catalog.is_active;
+        const updatePayload: any = { is_active: newActive };
+        
+        // Reactivating resets/clears expires_at so it doesn't stay expired
+        if (newActive) {
+            updatePayload.expires_at = null;
+        }
+
         const { error } = await supabase
             .from('shared_catalogs')
-            .update({ is_active: !catalog.is_active })
+            .update(updatePayload)
             .eq('id', catalog.id);
 
         if (!error) {
             setCatalogs(prev => prev.map(c =>
-                c.id === catalog.id ? { ...c, is_active: !c.is_active } : c
+                c.id === catalog.id ? { ...c, is_active: newActive, expires_at: newActive ? null : c.expires_at } : c
             ));
             showToast(catalog.is_active ? 'Catalog deactivated — link is now inactive.' : 'Catalog activated — link is live again.');
+            fetchStats();
         } else {
             showToast('Failed to update catalog status.', 'error');
         }
@@ -176,6 +262,7 @@ const SharedCatalogsAdmin: React.FC = () => {
         if (!error) {
             setCatalogs(prev => prev.filter(c => c.id !== id));
             showToast('Catalog deleted successfully.');
+            fetchStats();
         } else {
             showToast('Failed to delete catalog.', 'error');
         }
@@ -188,18 +275,7 @@ const SharedCatalogsAdmin: React.FC = () => {
         return false;
     };
 
-    const filtered = catalogs.filter(c => {
-        const q = search.toLowerCase().trim();
-        return !q
-            || c.customer_name.toLowerCase().includes(q)
-            || (c.customer_phone || '').includes(q)
-            || (c.salesperson?.full_name || '').toLowerCase().includes(q);
-    });
-
-    // Derived stats
-    const activeCatalogs = catalogs.filter(c => !isCatalogExpired(c));
-    const inactiveCatalogs = catalogs.filter(c => isCatalogExpired(c));
-    const totalViews = catalogs.reduce((sum, c) => sum + (c.catalog_views?.length || 0), 0);
+    const filtered = catalogs;
 
     const formatDate = (iso: string) =>
         new Date(iso).toLocaleString('en-IN', {
@@ -212,10 +288,10 @@ const SharedCatalogsAdmin: React.FC = () => {
     const publicBase = getOrigin();
 
     const STATS = [
-        { label: 'Total Catalogs', value: catalogs.length, icon: 'folder_shared', color: 'text-primary bg-primary/5' },
-        { label: 'Active Links', value: activeCatalogs.length, icon: 'link', color: 'text-green-600 bg-green-50' },
-        { label: 'Inactive / Expired', value: inactiveCatalogs.length, icon: 'link_off', color: 'text-red-500 bg-red-50' },
-        { label: 'Total Views', value: totalViews, icon: 'visibility', color: 'text-blue-600 bg-blue-50' },
+        { label: 'Total Catalogs', value: totalCatalogsCount, icon: 'folder_shared', color: 'text-primary bg-primary/5' },
+        { label: 'Active Links', value: activeCatalogsCount, icon: 'link', color: 'text-green-600 bg-green-50' },
+        { label: 'Inactive / Expired', value: inactiveCatalogsCount, icon: 'link_off', color: 'text-red-500 bg-red-50' },
+        { label: 'Total Views', value: totalViewsCount, icon: 'visibility', color: 'text-blue-600 bg-blue-50' },
     ];
 
     return (
@@ -251,7 +327,7 @@ const SharedCatalogsAdmin: React.FC = () => {
                         New Catalog
                     </Link>
                     <button
-                        onClick={() => { setPage(0); fetchCatalogs(0); }}
+                        onClick={() => { setPage(0); fetchCatalogs(0, false, search); fetchStats(); }}
                         className="h-9 w-9 flex items-center justify-center border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-50 transition-colors"
                         title="Refresh"
                     >
@@ -504,27 +580,45 @@ const SharedCatalogsAdmin: React.FC = () => {
                                                             </div>
                                                             <div className="flex flex-wrap gap-2">
                                                                 {(catalog.items || []).map((item, i) => (
-                                                                    <div key={i} className="flex items-center gap-2.5 bg-white border border-slate-100 rounded-xl px-3 py-2 shadow-sm hover:shadow-md transition-shadow">
-                                                                        <div className="size-11 rounded-lg overflow-hidden bg-slate-100 shrink-0">
-                                                                            {item.inventory?.thumbnail ? (
-                                                                                <img src={item.inventory.thumbnail} alt="" className="w-full h-full object-cover" />
-                                                                            ) : (
-                                                                                <div className="w-full h-full flex items-center justify-center">
-                                                                                    <span className="material-symbols-outlined text-slate-300 text-2xl">directions_car</span>
-                                                                                </div>
-                                                                            )}
+                                                                    <div key={i} className="flex flex-col gap-2 bg-white border border-slate-100 rounded-xl p-3.5 shadow-sm hover:shadow-md transition-shadow min-w-[240px] max-w-sm">
+                                                                        <div className="flex items-center gap-2.5">
+                                                                            <div className="size-11 rounded-lg overflow-hidden bg-slate-100 shrink-0 relative border border-slate-100">
+                                                                                {item.inventory?.thumbnail ? (
+                                                                                    <img src={item.inventory.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                                                ) : (
+                                                                                    <div className="w-full h-full flex items-center justify-center">
+                                                                                        <span className="material-symbols-outlined text-slate-300 text-2xl">directions_car</span>
+                                                                                    </div>
+                                                                                )}
+                                                                                {item.is_liked && (
+                                                                                    <div className="absolute top-0 right-0 bg-rose-500 text-white rounded-bl-lg p-0.5 shadow-sm flex items-center justify-center">
+                                                                                        <span className="material-symbols-outlined text-[10px] block font-bold">favorite</span>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="min-w-0 flex-1">
+                                                                                <p className="text-xs font-bold text-slate-800 truncate">
+                                                                                    {item.inventory
+                                                                                        ? `${item.inventory.year} ${item.inventory.make} ${item.inventory.model}`
+                                                                                        : 'Vehicle Deleted'
+                                                                                    }
+                                                                                </p>
+                                                                                {item.inventory && (
+                                                                                    <p className="text-[11px] text-slate-400 mt-0.5">₹ {formatPrice(item.inventory.price)} Lakh</p>
+                                                                                )}
+                                                                            </div>
                                                                         </div>
-                                                                        <div>
-                                                                            <p className="text-xs font-bold text-slate-800">
-                                                                                {item.inventory
-                                                                                    ? `${item.inventory.year} ${item.inventory.make} ${item.inventory.model}`
-                                                                                    : 'Vehicle Deleted'
-                                                                                }
-                                                                            </p>
-                                                                            {item.inventory && (
-                                                                                <p className="text-[11px] text-slate-400 mt-0.5">₹ {formatPrice(item.inventory.price)} Lakh</p>
-                                                                            )}
-                                                                        </div>
+                                                                        
+                                                                        {item.comments && item.comments.length > 0 && (
+                                                                            <div className="mt-1 pt-1.5 border-t border-slate-50 space-y-1">
+                                                                                <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Comments</p>
+                                                                                {item.comments.map((comment: string, idx: number) => (
+                                                                                    <div key={idx} className="bg-slate-50 rounded-lg px-2 py-1 text-[11px] text-slate-600 border border-slate-100 leading-snug">
+                                                                                        {comment}
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 ))}
                                                                 {carCount === 0 && (
@@ -549,7 +643,7 @@ const SharedCatalogsAdmin: React.FC = () => {
                         <p className="text-xs text-slate-400">
                             Showing {filtered.length} catalog{filtered.length !== 1 ? 's' : ''}
                             {hasMore && '+'}
-                            {totalViews > 0 && ` · ${totalViews} total views`}
+                            {totalViewsCount > 0 && ` · ${totalViewsCount} total views`}
                         </p>
                         {hasMore && (
                             <button
