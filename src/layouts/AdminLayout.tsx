@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useLocation, Link, useNavigate } from 'react-router-dom';
-import { Menu, X, Bell, Plus, ChevronDown, LogOut, Home } from 'lucide-react';
+import { Menu, X, Bell, Plus, ChevronDown, LogOut, Home, Target, Phone, TrendingUp, BarChart2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../contexts/AuthContext';
 import { DataProvider, useData } from '../contexts/DataContext';
@@ -45,6 +45,7 @@ const NAV_GROUPS: NavGroup[] = [
             { name: 'Analytics', href: '/admin/analytics', icon: 'analytics', module: 'analytics' },
             { name: 'Reports', href: '/admin/reports', icon: 'description', module: 'analytics' },
             { name: 'Performance', href: '/admin/performance', icon: 'leaderboard', module: 'analytics' },
+            { name: 'Accountability', href: '/admin/accountability', icon: 'fact_check', module: 'analytics' },
         ],
     },
     {
@@ -513,6 +514,8 @@ const AdminLayout: React.FC = () => {
                     </div>
                     {/* Smart Toast Engine */}
                     <SmartToastEngine />
+                    {/* Staff Accountability Popups */}
+                    <StaffAccountabilityModals />
                 </main>
             </div>
             </div>
@@ -520,6 +523,290 @@ const AdminLayout: React.FC = () => {
             </NotificationProvider>
         </DataProvider>
     );
+};
+
+// ─── Staff Accountability Modals ───────────────────────────────────────────
+const StaffAccountabilityModals: React.FC = () => {
+    const { profile } = useAuth();
+    const [showCommitmentModal, setShowCommitmentModal] = useState(false);
+    const [showReportModal, setShowReportModal] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    
+    // commitment states
+    const [commForm, setCommForm] = useState({
+        deal: 0,
+        calls: 0,
+        crm_lead: 0,
+        crm_car_post: 0,
+        olx_car_post: 0,
+        fb_marketplace: 0,
+        reel_creation: 0,
+        visits: 0,
+        add_new_dealer_list: 0,
+        add_new_club_member: 0
+    });
+    
+    // report states
+    const [repForm, setRepForm] = useState({
+        calling: 0,
+        follow_up: 0,
+        walking: 0,
+        hot: 0,
+        total_success: 0
+    });
+
+    const checkLogs = async () => {
+        if (!profile || !['admin', 'staff'].includes(profile.role)) return;
+        const todayStr = new Date().toLocaleDateString('en-CA');
+        
+        try {
+            // Check commitment first
+            const { data: commData } = await supabase
+                .from('staff_commitments')
+                .select('id')
+                .eq('user_id', profile.id)
+                .eq('date', todayStr)
+                .maybeSingle();
+                
+            if (!commData) {
+                setShowCommitmentModal(true);
+                setShowReportModal(false);
+                return;
+            }
+            
+            setShowCommitmentModal(false);
+            
+            // If commitment is logged, check report (after 6 PM)
+            const currentHour = new Date().getHours();
+            if (currentHour >= 18) {
+                const { data: repData } = await supabase
+                    .from('staff_daily_reports')
+                    .select('id')
+                    .eq('user_id', profile.id)
+                    .eq('date', todayStr)
+                    .maybeSingle();
+                    
+                if (!repData) {
+                    // Fetch today's commitments to pre-fill actuals
+                    const { data: commToday } = await supabase
+                        .from('staff_commitments')
+                        .select('actual_calls, actual_deal, actual_visits')
+                        .eq('user_id', profile.id)
+                        .eq('date', todayStr)
+                        .maybeSingle();
+
+                    setRepForm({
+                        calling: commToday?.actual_calls || 0,
+                        follow_up: 0,
+                        walking: commToday?.actual_visits || 0,
+                        hot: 0,
+                        total_success: commToday?.actual_deal || 0
+                    });
+                    setShowReportModal(true);
+                } else {
+                    setShowReportModal(false);
+                }
+            } else {
+                setShowReportModal(false);
+            }
+        } catch (err) {
+            console.error("Error in checkLogs:", err);
+        }
+    };
+
+    useEffect(() => {
+        checkLogs();
+        // check every minute
+        const interval = setInterval(checkLogs, 60000);
+        return () => clearInterval(interval);
+    }, [profile]);
+
+    const handleCommSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!profile) return;
+        setSubmitting(true);
+        const todayStr = new Date().toLocaleDateString('en-CA');
+        try {
+            const { error } = await supabase
+                .from('staff_commitments')
+                .insert({
+                    user_id: profile.id,
+                    date: todayStr,
+                    ...commForm
+                });
+            if (error) throw error;
+            setShowCommitmentModal(false);
+            // Re-trigger checks to see if report is needed (e.g. if logged in after 6pm)
+            checkLogs();
+        } catch (err) {
+            console.error("Error submitting commitments:", err);
+            alert("Failed to submit commitments. Please try again.");
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleRepSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!profile) return;
+        setSubmitting(true);
+        const todayStr = new Date().toLocaleDateString('en-CA');
+        try {
+            const { error } = await supabase
+                .from('staff_daily_reports')
+                .insert({
+                    user_id: profile.id,
+                    date: todayStr,
+                    ...repForm
+                });
+            if (error) throw error;
+            setShowReportModal(false);
+        } catch (err) {
+            console.error("Error submitting daily report:", err);
+            alert("Failed to submit daily report. Please try again.");
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    if (showCommitmentModal) {
+        return (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+                    <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-6 py-5 flex items-center gap-3">
+                        <div className="size-10 bg-white/20 rounded-xl flex items-center justify-center text-white shrink-0">
+                            <Target size={20} />
+                        </div>
+                        <div>
+                            <h2 className="text-base font-black text-white">Daily Morning Commitments</h2>
+                            <p className="text-white/60 text-xs">Please set your commitments and targets before starting work today.</p>
+                        </div>
+                    </div>
+                    
+                    <form onSubmit={handleCommSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5">
+                            {[
+                                { key: 'deal', label: 'Deals Commitment', icon: 'handshake' },
+                                { key: 'calls', label: 'Calls Target', icon: 'phone' },
+                                { key: 'crm_lead', label: 'CRM Leads Target', icon: 'person_search' },
+                                { key: 'crm_car_post', label: 'CRM Car Posts', icon: 'directions_car' },
+                                { key: 'olx_car_post', label: 'OLX Car Posts', icon: 'upload' },
+                                { key: 'fb_marketplace', label: 'FB Marketplace Posts', icon: 'storefront' },
+                                { key: 'reel_creation', label: 'Reel Creation', icon: 'video_library' },
+                                { key: 'visits', label: 'Visits Target', icon: 'explore' },
+                                { key: 'add_new_dealer_list', label: 'Add Dealer List', icon: 'contact_page' },
+                                { key: 'add_new_club_member', label: 'Add Club Member', icon: 'badge' },
+                            ].map(item => (
+                                <div key={item.key} className="space-y-1">
+                                    <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
+                                        <span className="material-symbols-outlined text-sm text-indigo-500">{item.icon}</span>
+                                        {item.label}
+                                    </label>
+                                    <input
+                                        required
+                                        type="number"
+                                        min="0"
+                                        value={commForm[item.key as keyof typeof commForm]}
+                                        onChange={e => setCommForm({
+                                            ...commForm,
+                                            [item.key]: parseInt(e.target.value) || 0
+                                        })}
+                                        className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-primary font-bold outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                        <div className="pt-4 border-t border-slate-100 flex justify-end">
+                            <button
+                                type="submit"
+                                disabled={submitting}
+                                className="h-11 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-colors shadow-md shadow-indigo-600/10 flex items-center justify-center"
+                            >
+                                {submitting ? 'Submitting Targets...' : 'Submit Commitment & Start Day'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        );
+    }
+
+    if (showReportModal) {
+        return (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+                    <div className="bg-gradient-to-r from-amber-600 to-orange-600 px-6 py-5 flex items-center gap-3">
+                        <div className="size-10 bg-white/20 rounded-xl flex items-center justify-center text-white shrink-0">
+                            <BarChart2 size={20} />
+                        </div>
+                        <div>
+                            <h2 className="text-base font-black text-white">Evening Sales Report</h2>
+                            <p className="text-white/60 text-xs">It is after 6:00 PM. Please log your performance statistics achieved today.</p>
+                        </div>
+                    </div>
+                    
+                    <form onSubmit={handleRepSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                        <div className="space-y-3.5">
+                            {[
+                                { key: 'calling', label: 'Calling (Total Calls Made)', icon: 'phone' },
+                                { key: 'follow_up', label: 'Follow Up (Follow-Ups Completed)', icon: 'event_repeat' },
+                                { key: 'walking', label: 'Walking (Walk-ins Met)', icon: 'directions_walk' },
+                                { key: 'hot', label: 'Hot (Hot Leads Worked)', icon: 'local_fire_department' },
+                            ].map(item => (
+                                <div key={item.key} className="space-y-1">
+                                    <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
+                                        <span className="material-symbols-outlined text-sm text-amber-500">{item.icon}</span>
+                                        {item.label}
+                                    </label>
+                                    <input
+                                        required
+                                        type="number"
+                                        min="0"
+                                        value={repForm[item.key as keyof typeof repForm]}
+                                        onChange={e => setRepForm({
+                                            ...repForm,
+                                            [item.key]: parseInt(e.target.value) || 0
+                                        })}
+                                        className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-primary font-bold outline-none focus:ring-2 focus:ring-orange-500/20"
+                                    />
+                                </div>
+                            ))}
+                            
+                            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl space-y-1">
+                                <label className="text-xs font-bold text-emerald-800 flex items-center gap-1.5 uppercase tracking-wider">
+                                    <span className="material-symbols-outlined text-sm text-emerald-600">done_all</span>
+                                    Total Success (Deals Closed/Won Today)
+                                </label>
+                                <input
+                                    required
+                                    type="number"
+                                    min="0"
+                                    value={repForm.total_success}
+                                    onChange={e => setRepForm({
+                                        ...repForm,
+                                        total_success: parseInt(e.target.value) || 0
+                                    })}
+                                    className="w-full h-11 bg-white border border-emerald-200 rounded-xl px-4 text-sm text-primary font-black outline-none focus:ring-2 focus:ring-emerald-500/20 text-center"
+                                />
+                            </div>
+                        </div>
+                        
+                        <div className="pt-4 border-t border-slate-100 flex justify-end">
+                            <button
+                                type="submit"
+                                disabled={submitting}
+                                className="h-11 px-6 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-colors shadow-md shadow-orange-600/10 flex items-center justify-center"
+                            >
+                                {submitting ? 'Submitting Report...' : 'Submit Sales Report & Complete Day'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        );
+    }
+
+    return null;
 };
 
 export default AdminLayout;

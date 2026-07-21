@@ -328,6 +328,7 @@ const ClubMembers: React.FC = () => {
                 home_address: addForm.home_address.trim() || null,
                 business_address: addForm.business_address.trim() || null,
                 points: 0, 
+                added_by: profile?.id || null,
             };
 
             const { data: newMember, error: memberError } = await supabase

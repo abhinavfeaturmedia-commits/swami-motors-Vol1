@@ -38,6 +38,7 @@ import AdminLogin from './pages/admin/AdminLogin';
 import Analytics from './pages/admin/Analytics';
 import Reports from './pages/admin/Reports';
 import PerformanceScorecard from './pages/admin/PerformanceScorecard';
+import StaffAccountabilityDashboard from './pages/admin/StaffAccountabilityDashboard';
 
 // Admin — CRM
 import Customers from './pages/admin/Customers';
@@ -129,6 +130,7 @@ const App: React.FC = () => {
                             <Route path="analytics" element={<ModuleRoute module="analytics"><Analytics /></ModuleRoute>} />
                             <Route path="reports" element={<ModuleRoute module="analytics"><Reports /></ModuleRoute>} />
                             <Route path="performance" element={<ModuleRoute module="analytics"><PerformanceScorecard /></ModuleRoute>} />
+                            <Route path="accountability" element={<ModuleRoute module="analytics"><StaffAccountabilityDashboard /></ModuleRoute>} />
 
                             {/* CRM */}
                             <Route path="customers" element={<ModuleRoute module="crm"><Customers /></ModuleRoute>} />
