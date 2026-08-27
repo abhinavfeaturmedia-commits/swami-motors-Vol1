@@ -528,20 +528,46 @@ const StaffAccountabilityDashboard: React.FC = () => {
 
     // Daily historical log grouping
     const dailyHistoryLog = useMemo(() => {
-        const datesMap: Record<string, { date: string; commitment?: Commitment; report?: DailyReport }> = {};
+        const datesMap: Record<string, Record<string, { commitment?: Commitment; report?: DailyReport }>> = {};
         
         commitments.forEach(c => {
-            if (!datesMap[c.date]) datesMap[c.date] = { date: c.date };
-            datesMap[c.date].commitment = c;
+            if (!datesMap[c.date]) datesMap[c.date] = {};
+            if (!datesMap[c.date][c.user_id]) datesMap[c.date][c.user_id] = {};
+            datesMap[c.date][c.user_id].commitment = c;
         });
         
         reports.forEach(r => {
-            if (!datesMap[r.date]) datesMap[r.date] = { date: r.date };
-            datesMap[r.date].report = r;
+            if (!datesMap[r.date]) datesMap[r.date] = {};
+            if (!datesMap[r.date][r.user_id]) datesMap[r.date][r.user_id] = {};
+            datesMap[r.date][r.user_id].report = r;
         });
         
-        return Object.values(datesMap).sort((a, b) => b.date.localeCompare(a.date));
-    }, [commitments, reports]);
+        const daysArray: { 
+            date: string; 
+            logs: { 
+                staffId: string; 
+                staffName: string; 
+                commitment?: Commitment; 
+                report?: DailyReport 
+            }[] 
+        }[] = [];
+        
+        Object.entries(datesMap).forEach(([date, userMap]) => {
+            const logs = Object.entries(userMap).map(([userId, logData]) => {
+                const staff = staffList.find(s => s.id === userId) || 
+                              (userId === profile?.id ? { full_name: profile.full_name || 'Admin', role: 'admin' } : { full_name: 'Staff Member', role: 'staff' });
+                return {
+                    staffId: userId,
+                    staffName: staff.full_name || 'Staff Member',
+                    commitment: logData.commitment,
+                    report: logData.report
+                };
+            });
+            daysArray.push({ date, logs });
+        });
+        
+        return daysArray.sort((a, b) => b.date.localeCompare(a.date));
+    }, [commitments, reports, staffList, profile]);
 
     // Period aggregations
     const stats = useMemo(() => {
@@ -753,9 +779,9 @@ const StaffAccountabilityDashboard: React.FC = () => {
 
         const maxVal = Math.max(
             ...chartData.map(d => {
-                const autos = getAutoSyncedValues(targetUserId!, d.date);
-                const actCalls = Math.max(d.commitment?.actual_calls || 0, d.report?.calling || 0);
-                return Math.max(d.commitment?.calls || 0, actCalls);
+                const activeLog = d.logs.find(l => l.staffId === targetUserId);
+                const actCalls = Math.max(activeLog?.commitment?.actual_calls || 0, activeLog?.report?.calling || 0);
+                return Math.max(activeLog?.commitment?.calls || 0, actCalls);
             }),
             10 // default min height scale
         );
@@ -768,9 +794,10 @@ const StaffAccountabilityDashboard: React.FC = () => {
         const points = chartData.map((d, index) => {
             const x = padX + (index / (chartData.length - 1)) * (width - padX * 2);
             
-            const tgtCalls = d.commitment?.calls || 0;
-            const repCalls = d.report?.calling || 0;
-            const actCalls = Math.max(d.commitment?.actual_calls || 0, repCalls);
+            const activeLog = d.logs.find(l => l.staffId === targetUserId);
+            const tgtCalls = activeLog?.commitment?.calls || 0;
+            const repCalls = activeLog?.report?.calling || 0;
+            const actCalls = Math.max(activeLog?.commitment?.actual_calls || 0, repCalls);
 
             const yTgt = height - padY - (tgtCalls / maxVal) * (height - padY * 2);
             const yAct = height - padY - (actCalls / maxVal) * (height - padY * 2);
@@ -1558,157 +1585,174 @@ const StaffAccountabilityDashboard: React.FC = () => {
                             weekday: 'short'
                         });
                         
-                        const dateAutos = targetUserId ? getAutoSyncedValues(targetUserId, day.date) : { autoCrmLeads: 0, autoDeals: 0, autoVisits: 0, autoClubMembers: 0 };
-                        
-                        // Check locked status
-                        const isVerified = day.commitment?.is_verified || day.report?.is_verified || false;
-                        const staffIdForVerify = day.commitment?.user_id || day.report?.user_id;
-
                         return (
-                            <div key={day.date} className="p-5 hover:bg-slate-50/30 transition-colors space-y-3">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div key={day.date} className="p-5 hover:bg-slate-50/30 transition-colors space-y-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-2">
                                     <span className="text-xs font-black text-slate-700 bg-slate-100 px-3 py-1 rounded-full uppercase tracking-wider w-fit">
                                         {dateFormatted}
                                     </span>
-                                    
-                                    {/* Admin Verification lock toggle */}
-                                    {isAdmin && staffIdForVerify && (
-                                        <button
-                                            onClick={() => handleToggleVerification(day.date, staffIdForVerify, isVerified)}
-                                            disabled={verifyingId === `${staffIdForVerify}-${day.date}`}
-                                            className={`h-8 px-4 border rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
-                                                isVerified 
-                                                    ? 'border-indigo-100 bg-indigo-50 text-indigo-600 hover:bg-indigo-100/50' 
-                                                    : 'border-slate-200 text-slate-500 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            {isVerified ? <Lock size={12} /> : <Unlock size={12} />}
-                                            {verifyingId === `${staffIdForVerify}-${day.date}` 
-                                                ? 'Updating...' 
-                                                : isVerified 
-                                                    ? 'Locked & Verified' 
-                                                    : 'Verify & Lock Logs'
-                                            }
-                                        </button>
-                                    )}
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {/* Commitment detail card */}
-                                    <div className="bg-slate-50/70 border border-slate-100 rounded-xl p-4 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1">
-                                                <Target size={12} /> Target Commitment vs Actuals
-                                            </span>
-                                            {day.commitment ? (
-                                                <span className="text-[10px] text-slate-400 font-semibold">
-                                                    Logged {new Date(day.commitment.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                                                </span>
-                                            ) : (
-                                                <span className="text-[10px] text-red-500 font-bold">⏳ Missed Morning Commit</span>
-                                            )}
-                                        </div>
-                                        {day.commitment ? (
-                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-600">
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>Deals Closed:</span>
-                                                    <span className="font-bold text-primary">
-                                                        {Math.max(day.commitment.actual_deal, dateAutos.autoDeals)} / {day.commitment.deal}
-                                                    </span>
+                                <div className="space-y-6">
+                                    {day.logs.map(log => {
+                                        const dateAutos = getAutoSyncedValues(log.staffId, day.date);
+                                        const isVerified = log.commitment?.is_verified || log.report?.is_verified || false;
+                                        
+                                        return (
+                                            <div key={log.staffId} className="border border-slate-100 rounded-2xl p-4 bg-white shadow-xs space-y-3">
+                                                {/* Staff Info Line */}
+                                                <div className="flex items-center justify-between border-b border-slate-50 pb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="size-6 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-[10px] font-black text-white uppercase">
+                                                            {log.staffName.charAt(0)}
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-xs font-bold text-primary">{log.staffName}</span>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {/* Admin Verification lock toggle */}
+                                                    {isAdmin && (
+                                                        <button
+                                                            onClick={() => handleToggleVerification(day.date, log.staffId, isVerified)}
+                                                            disabled={verifyingId === `${log.staffId}-${day.date}`}
+                                                            className={`h-7 px-3 border rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-colors ${
+                                                                isVerified 
+                                                                    ? 'border-indigo-100 bg-indigo-50 text-indigo-600 hover:bg-indigo-100/50' 
+                                                                    : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                                                            }`}
+                                                        >
+                                                            {isVerified ? <Lock size={10} /> : <Unlock size={10} />}
+                                                            {verifyingId === `${log.staffId}-${day.date}` 
+                                                                ? 'Updating...' 
+                                                                : isVerified 
+                                                                    ? 'Locked & Verified' 
+                                                                    : 'Verify & Lock Logs'
+                                                            }
+                                                        </button>
+                                                    )}
                                                 </div>
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>Calls Target:</span>
-                                                    <span className="font-bold text-primary">
-                                                        {day.commitment.actual_calls} / {day.commitment.calls}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>CRM Leads:</span>
-                                                    <span className="font-bold text-primary">
-                                                        {Math.max(day.commitment.actual_crm_lead, dateAutos.autoCrmLeads)} / {day.commitment.crm_lead}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>CRM Car Posts:</span>
-                                                    <span className="font-bold text-primary">
-                                                        {day.commitment.actual_crm_car_post} / {day.commitment.crm_car_post}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>OLX Posts:</span>
-                                                    <span className="font-bold text-primary">
-                                                        {day.commitment.actual_olx_car_post} / {day.commitment.olx_car_post}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>FB Marketplace:</span>
-                                                    <span className="font-bold text-primary">
-                                                        {day.commitment.actual_fb_marketplace} / {day.commitment.fb_marketplace}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>Reels Created:</span>
-                                                    <span className="font-bold text-primary">
-                                                        {day.commitment.actual_reel_creation} / {day.commitment.reel_creation}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>Visits Planning:</span>
-                                                    <span className="font-bold text-primary">
-                                                        {Math.max(day.commitment.actual_visits, dateAutos.autoVisits)} / {day.commitment.visits}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <p className="text-xs text-slate-400 italic">No targets were set for this day.</p>
-                                        )}
-                                    </div>
 
-                                    {/* Report detail card */}
-                                    <div className="bg-slate-50/70 border border-slate-100 rounded-xl p-4 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs font-bold text-orange-700 uppercase tracking-wider flex items-center gap-1">
-                                                <BarChart2 size={12} /> Daily Performance Actuals
-                                            </span>
-                                            {day.report ? (
-                                                <span className="text-[10px] text-slate-400 font-semibold">
-                                                    Logged {new Date(day.report.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                                                </span>
-                                            ) : (
-                                                <span className="text-[10px] text-amber-500 font-bold">⏳ Missed Sales Report</span>
-                                            )}
-                                        </div>
-                                        {day.report ? (
-                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-600">
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>Calling Done:</span>
-                                                    <span className="font-bold text-primary">
-                                                        {day.report.calling}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>Deals Closed:</span>
-                                                    <span className="font-bold text-emerald-600">
-                                                        {day.report.total_success}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>Follow-Ups:</span>
-                                                    <span className="font-bold text-primary">{day.report.follow_up}</span>
-                                                </div>
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>Walk-ins (Walking):</span>
-                                                    <span className="font-bold text-primary">{day.report.walking}</span>
-                                                </div>
-                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
-                                                    <span>Hot Leads Met:</span>
-                                                    <span className="font-bold text-red-600">{day.report.hot}</span>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    {/* Commitment detail card */}
+                                                    <div className="bg-slate-50/70 border border-slate-100 rounded-xl p-4 space-y-2">
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1">
+                                                                <Target size={12} /> Target Commitment vs Actuals
+                                                            </span>
+                                                            {log.commitment ? (
+                                                                <span className="text-[10px] text-slate-400 font-semibold">
+                                                                    Logged {new Date(log.commitment.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-[10px] text-red-500 font-bold">⏳ Missed Morning Commit</span>
+                                                            )}
+                                                        </div>
+                                                        {log.commitment ? (
+                                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-600">
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>Deals Closed:</span>
+                                                                    <span className="font-bold text-primary">
+                                                                        {Math.max(log.commitment.actual_deal, dateAutos.autoDeals)} / {log.commitment.deal}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>Calls Target:</span>
+                                                                    <span className="font-bold text-primary">
+                                                                        {log.commitment.actual_calls} / {log.commitment.calls}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>CRM Leads:</span>
+                                                                    <span className="font-bold text-primary">
+                                                                        {Math.max(log.commitment.actual_crm_lead, dateAutos.autoCrmLeads)} / {log.commitment.crm_lead}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>CRM Car Posts:</span>
+                                                                    <span className="font-bold text-primary">
+                                                                        {log.commitment.actual_crm_car_post} / {log.commitment.crm_car_post}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>OLX Posts:</span>
+                                                                    <span className="font-bold text-primary">
+                                                                        {log.commitment.actual_olx_car_post} / {log.commitment.olx_car_post}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>FB Marketplace:</span>
+                                                                    <span className="font-bold text-primary">
+                                                                        {log.commitment.actual_fb_marketplace} / {log.commitment.fb_marketplace}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>Reels Created:</span>
+                                                                    <span className="font-bold text-primary">
+                                                                        {log.commitment.actual_reel_creation} / {log.commitment.reel_creation}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>Visits Planning:</span>
+                                                                    <span className="font-bold text-primary">
+                                                                        {Math.max(log.commitment.actual_visits, dateAutos.autoVisits)} / {log.commitment.visits}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-xs text-slate-400 italic">No targets were set for this day.</p>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Report detail card */}
+                                                    <div className="bg-slate-50/70 border border-slate-100 rounded-xl p-4 space-y-2">
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-xs font-bold text-orange-700 uppercase tracking-wider flex items-center gap-1">
+                                                                <BarChart2 size={12} /> Daily Performance Actuals
+                                                            </span>
+                                                            {log.report ? (
+                                                                <span className="text-[10px] text-slate-400 font-semibold">
+                                                                    Logged {new Date(log.report.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-[10px] text-amber-500 font-bold">⏳ Missed Sales Report</span>
+                                                            )}
+                                                        </div>
+                                                        {log.report ? (
+                                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-600">
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>Calling Done:</span>
+                                                                    <span className="font-bold text-primary">
+                                                                        {log.report.calling}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>Deals Closed:</span>
+                                                                    <span className="font-bold text-emerald-600">
+                                                                        {log.report.total_success}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>Follow-Ups:</span>
+                                                                    <span className="font-bold text-primary">{log.report.follow_up}</span>
+                                                                </div>
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>Walk-ins (Walking):</span>
+                                                                    <span className="font-bold text-primary">{log.report.walking}</span>
+                                                                </div>
+                                                                <div className="flex justify-between border-b border-slate-100/50 pb-1">
+                                                                    <span>Hot Leads Met:</span>
+                                                                    <span className="font-bold text-red-600">{log.report.hot}</span>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-xs text-slate-400 italic">No report was logged for this day.</p>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        ) : (
-                                            <p className="text-xs text-slate-400 italic">No report was logged for this day.</p>
-                                        )}
-                                    </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         );

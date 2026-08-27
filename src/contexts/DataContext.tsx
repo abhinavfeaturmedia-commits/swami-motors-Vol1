@@ -15,6 +15,15 @@ export interface DataContextType {
     visits: any[];
     clubMembers: any[];
     clubTransactions: any[];
+    clubs: any[];
+    chapters: any[];
+    clubAttendance: any[];
+    clubPresentations: any[];
+    clubOneToOne: any[];
+    clubOneToMany: any[];
+    clubReferrals: any[];
+    clubBusinessDeals: any[];
+    clubGifts: any[];
     financeServices: any[];
     settings: Record<string, any>;
     loading: boolean;
@@ -39,6 +48,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [visits, setVisits] = useState<any[]>([]);
     const [clubMembers, setClubMembers] = useState<any[]>([]);
     const [clubTransactions, setClubTransactions] = useState<any[]>([]);
+    const [clubs, setClubs] = useState<any[]>([]);
+    const [chapters, setChapters] = useState<any[]>([]);
+    const [clubAttendance, setClubAttendance] = useState<any[]>([]);
+    const [clubPresentations, setClubPresentations] = useState<any[]>([]);
+    const [clubOneToOne, setClubOneToOne] = useState<any[]>([]);
+    const [clubOneToMany, setClubOneToMany] = useState<any[]>([]);
+    const [clubReferrals, setClubReferrals] = useState<any[]>([]);
+    const [clubBusinessDeals, setClubBusinessDeals] = useState<any[]>([]);
+    const [clubGifts, setClubGifts] = useState<any[]>([]);
     const [financeServices, setFinanceServices] = useState<any[]>([]);
     const [settings, setSettings] = useState<Record<string, any>>({});
     
@@ -89,7 +107,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 { data: settingsData },
                 { data: clubMembersData },
                 { data: clubTransactionsData },
-                { data: financeServicesData }
+                { data: financeServicesData },
+                { data: clubsData },
+                { data: chaptersData },
+                { data: attendanceData },
+                { data: presentationsData },
+                { data: oneToOneData },
+                { data: oneToManyData },
+                { data: referralsData },
+                { data: businessDealsData },
+                { data: giftsData }
             ] = await Promise.all([
                 safeFetchAll(() => supabase.from('leads').select('*').order('created_at', { ascending: false })),
                 safeFetchAll(() => supabase.from('customers').select('*').order('created_at', { ascending: false })),
@@ -107,7 +134,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 safeFetchAll(() => supabase.from('dealership_settings').select('*')),
                 safeFetchAll(() => supabase.from('club_members').select('*, customer:customers(*)').order('created_at', { ascending: false })),
                 safeFetchAll(() => supabase.from('club_service_exchanges').select('*, added_by_profile:profiles!added_by(full_name)').order('transaction_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('finance_services').select('*, customer:customers(*), car:inventory(*)').order('created_at', { ascending: false }))
+                safeFetchAll(() => supabase.from('finance_services').select('*, customer:customers(*), car:inventory(*)').order('created_at', { ascending: false })),
+                safeFetchAll(() => supabase.from('networking_clubs').select('*').order('name', { ascending: true })),
+                safeFetchAll(() => supabase.from('club_chapters').select('*').order('name', { ascending: true })),
+                safeFetchAll(() => supabase.from('club_attendance').select('*').order('meeting_date', { ascending: false })),
+                safeFetchAll(() => supabase.from('club_presentations').select('*').order('presentation_date', { ascending: false })),
+                safeFetchAll(() => supabase.from('club_one_to_one').select('*').order('meeting_date', { ascending: false })),
+                safeFetchAll(() => supabase.from('club_one_to_many').select('*').order('meeting_date', { ascending: false })),
+                safeFetchAll(() => supabase.from('club_referrals').select('*').order('referral_date', { ascending: false })),
+                safeFetchAll(() => supabase.from('club_business_deals').select('*').order('deal_date', { ascending: false })),
+                safeFetchAll(() => supabase.from('club_gifts').select('*').order('gift_date', { ascending: false }))
             ]);
 
             setLeads(leadsData || []);
@@ -125,6 +161,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setClubMembers(clubMembersData || []);
             setClubTransactions(clubTransactionsData || []);
             setFinanceServices(financeServicesData || []);
+            setClubs(clubsData || []);
+            setChapters(chaptersData || []);
+            setClubAttendance(attendanceData || []);
+            setClubPresentations(presentationsData || []);
+            setClubOneToOne(oneToOneData || []);
+            setClubOneToMany(oneToManyData || []);
+            setClubReferrals(referralsData || []);
+            setClubBusinessDeals(businessDealsData || []);
+            setClubGifts(giftsData || []);
             
             // Format settings from array of K/V to standard object
             // Supports both column naming conventions (setting_key/setting_value from v2, key/value from v1)
@@ -150,7 +195,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, []);
 
     return (
-        <DataContext.Provider value={{ leads, customers, inventory, sales, bookings, activities, tasks, followUps, expenses, inspections, visits, clubMembers, clubTransactions, financeServices, settings, loading, refreshData }}>
+        <DataContext.Provider value={{ 
+            leads, customers, inventory, sales, bookings, activities, tasks, followUps, expenses, inspections, visits, 
+            clubMembers, clubTransactions, clubs, chapters, clubAttendance, clubPresentations, clubOneToOne, clubOneToMany, 
+            clubReferrals, clubBusinessDeals, clubGifts, financeServices, settings, loading, refreshData 
+        }}>
             {children}
         </DataContext.Provider>
     );
