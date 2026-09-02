@@ -933,7 +933,7 @@ const CarDetails = () => {
                                         className="w-full h-10 flex items-center justify-center gap-2 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-colors text-xs shadow-sm cursor-pointer"
                                     >
                                         <span className="material-symbols-outlined text-base">download</span>
-                                        Download Photos (ZIP / Single)
+                                        Download Photos
                                     </button>
                                     {hasPermission('inventory', 'manage') && (
                                         <Link 

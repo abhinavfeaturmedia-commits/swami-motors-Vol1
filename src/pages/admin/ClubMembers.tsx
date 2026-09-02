@@ -87,6 +87,21 @@ const ClubMembers: React.FC = () => {
         refreshData 
     } = useData();
 
+    // ─── High-Speed Local Attendance State (0ms Instant Feedback) ─────────────
+    const [localAttendance, setLocalAttendance] = useState<any[]>([]);
+    useEffect(() => {
+        setLocalAttendance(clubAttendance || []);
+    }, [clubAttendance]);
+
+    // ─── Multi-Member / Bulk Attendance State ─────────────────────────────────
+    const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+    const [isBulkAttendanceOpen, setIsBulkAttendanceOpen] = useState(false);
+    const [bulkMeetingDate, setBulkMeetingDate] = useState(new Date().toISOString().slice(0, 10));
+    const [bulkStatus, setBulkStatus] = useState<'Present' | 'Absent' | 'Late' | 'Substitute'>('Present');
+    const [bulkChapterFilter, setBulkChapterFilter] = useState('all');
+    const [bulkSaving, setBulkSaving] = useState(false);
+    const [bulkSuccessMessage, setBulkSuccessMessage] = useState<string | null>(null);
+
     // ─── Filters & Search ─────────────────────────────────────────────────────
     const [search, setSearch] = useState('');
     const [selectedClub, setSelectedClub] = useState<string>('all');
@@ -245,7 +260,7 @@ const ClubMembers: React.FC = () => {
 
             // Attendance filter
             if (attendanceFilter !== 'all') {
-                const memberAttCount = clubAttendance.filter(a => a.member_id === m.id && a.status === 'Present').length;
+                const memberAttCount = localAttendance.filter(a => a.member_id === m.id && a.status === 'Present').length;
                 if (attendanceFilter === 'attended_any' && memberAttCount === 0) return false;
                 if (attendanceFilter === 'zero_attendance' && memberAttCount > 0) return false;
             }
@@ -269,18 +284,18 @@ const ClubMembers: React.FC = () => {
                 m.business_address?.toLowerCase().includes(q)
             );
         });
-    }, [clubMembers, search, selectedClub, selectedChapter, statusFilter, attendanceFilter, clubAttendance]);
+    }, [clubMembers, search, selectedClub, selectedChapter, statusFilter, attendanceFilter, localAttendance]);
 
     // ─── Statistics Calculation ───────────────────────────────────────────────
     const stats = useMemo(() => {
         const total = clubMembers.length;
         const active = clubMembers.filter((m: ClubMember) => m.status === 'Active').length;
-        const totalAttendance = clubAttendance.filter(a => a.status === 'Present').length;
+        const totalAttendance = localAttendance.filter(a => a.status === 'Present').length;
         const totalOneToOne = clubOneToOne.length;
         const totalOneToMany = clubOneToMany.length;
         const totalBusinessVolume = clubBusinessDeals.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
         return { total, active, totalAttendance, totalOneToOne, totalOneToMany, totalBusinessVolume };
-    }, [clubMembers, clubAttendance, clubOneToOne, clubOneToMany, clubBusinessDeals]);
+    }, [clubMembers, localAttendance, clubOneToOne, clubOneToMany, clubBusinessDeals]);
 
     // ─── Quick Member Stats Map ───────────────────────────────────────────────
     const memberMetricsMap = useMemo(() => {
@@ -319,7 +334,7 @@ const ClubMembers: React.FC = () => {
         });
 
         // Attendance
-        clubAttendance.forEach(a => {
+        localAttendance.forEach(a => {
             if (map[a.member_id] && a.status === 'Present') {
                 map[a.member_id].attendanceTotal += 1;
                 if (a.is_home_chapter) map[a.member_id].homeAttendance += 1;
@@ -371,7 +386,7 @@ const ClubMembers: React.FC = () => {
         });
 
         return map;
-    }, [clubMembers, clubAttendance, clubPresentations, clubOneToOne, clubOneToMany, clubBusinessDeals, clubReferrals, clubTransactions]);
+    }, [clubMembers, localAttendance, clubPresentations, clubOneToOne, clubOneToMany, clubBusinessDeals, clubReferrals, clubTransactions]);
 
     // ─── Customer Selection Logic (Link existing Customer) ────────────────────
     const matchedCustomers = useMemo(() => {
@@ -448,19 +463,44 @@ const ClubMembers: React.FC = () => {
         setBusinessDealForm(prev => ({ ...prev, chapter_name: chName }));
     };
 
-    // ─── Quick Attendance Toggle (Tick Mark ✅ / ❌) ──────────────────────────
+    // ─── Instant Quick Attendance Toggle (0ms Optimistic Update) ─────────────
     const handleQuickAttendanceToggle = async (e: React.MouseEvent, member: ClubMember) => {
         e.stopPropagation();
         const today = new Date().toISOString().slice(0, 10);
-        const existing = clubAttendance.find(a => a.member_id === member.id && a.meeting_date === today);
+        const existing = localAttendance.find(a => a.member_id === member.id && a.meeting_date === today);
 
-        try {
-            if (existing) {
-                // Delete / toggle off
-                await supabase.from('club_attendance').delete().eq('id', existing.id);
-            } else {
-                // Mark present for today
-                await supabase.from('club_attendance').insert({
+        // Snapshot state for rollback on error
+        const prevAttendance = [...localAttendance];
+
+        if (existing) {
+            // Optimistically remove immediately (circle clears in 0ms)
+            setLocalAttendance(prev => prev.filter(a => a.id !== existing.id && !(a.member_id === member.id && a.meeting_date === today)));
+
+            try {
+                const { error } = await supabase.from('club_attendance').delete().eq('id', existing.id);
+                if (error) throw error;
+            } catch (err: any) {
+                console.error('Quick attendance delete error:', err);
+                setLocalAttendance(prevAttendance);
+                alert('Failed to update attendance: ' + (err.message || err));
+            }
+        } else {
+            // Optimistically add immediately (circle turns green in 0ms)
+            const tempId = 'temp-' + Date.now();
+            const newRecord = {
+                id: tempId,
+                member_id: member.id,
+                meeting_date: today,
+                club_name: member.club_name || 'GBN Club',
+                chapter_name: member.chapter_name || 'Megha Chapter',
+                is_home_chapter: true,
+                status: 'Present',
+                marked_by: profile?.id || null,
+            };
+            setLocalAttendance(prev => [newRecord, ...prev]);
+
+            try {
+                const { data, error } = await supabase.from('club_attendance').insert({
                     member_id: member.id,
                     meeting_date: today,
                     club_name: member.club_name || 'GBN Club',
@@ -468,12 +508,110 @@ const ClubMembers: React.FC = () => {
                     is_home_chapter: true,
                     status: 'Present',
                     marked_by: profile?.id || null,
-                });
+                }).select().single();
+
+                if (error) throw error;
+                if (data) {
+                    setLocalAttendance(prev => prev.map(a => a.id === tempId ? data : a));
+                }
+            } catch (err: any) {
+                console.error('Quick attendance insert error:', err);
+                setLocalAttendance(prevAttendance);
+                alert('Failed to update attendance: ' + (err.message || err));
             }
-            refreshData();
+        }
+    };
+
+    // ─── Multi-Member / Bulk Attendance Handlers ──────────────────────────────
+    const handleBulkAttendanceSubmit = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        if (selectedMemberIds.length === 0) {
+            alert('Please select at least one member.');
+            return;
+        }
+
+        setBulkSaving(true);
+        const targetDate = bulkMeetingDate;
+        const targetStatus = bulkStatus;
+        const membersToMark = clubMembers.filter(m => selectedMemberIds.includes(m.id));
+
+        try {
+            // 1. Delete previous records for these members on that date
+            await supabase.from('club_attendance')
+                .delete()
+                .eq('meeting_date', targetDate)
+                .in('member_id', selectedMemberIds);
+
+            // 2. Batch insert in a single request
+            const batchRecords = membersToMark.map(m => ({
+                member_id: m.id,
+                meeting_date: targetDate,
+                club_name: m.club_name || 'GBN Club',
+                chapter_name: m.chapter_name || 'Megha Chapter',
+                is_home_chapter: true,
+                status: targetStatus,
+                marked_by: profile?.id || null,
+            }));
+
+            const { data, error } = await supabase.from('club_attendance').insert(batchRecords).select();
+            if (error) throw error;
+
+            // 3. Immediately update local state without global refetch
+            setLocalAttendance(prev => {
+                const cleaned = prev.filter(a => !(a.meeting_date === targetDate && selectedMemberIds.includes(a.member_id)));
+                return [...(data || batchRecords), ...cleaned];
+            });
+
+            setBulkSuccessMessage(`Marked ${selectedMemberIds.length} members as ${targetStatus} on ${formatDate(targetDate)}!`);
+            setTimeout(() => {
+                setBulkSuccessMessage(null);
+                setIsBulkAttendanceOpen(false);
+                setSelectedMemberIds([]);
+            }, 1200);
         } catch (err: any) {
-            console.error('Quick attendance error:', err);
-            alert('Failed to update attendance: ' + (err.message || err));
+            console.error('Bulk attendance error:', err);
+            alert('Failed to save bulk attendance: ' + (err.message || err));
+        } finally {
+            setBulkSaving(false);
+        }
+    };
+
+    const handleQuickMarkSelectedPresentToday = async () => {
+        if (selectedMemberIds.length === 0) return;
+        const today = new Date().toISOString().slice(0, 10);
+        setBulkSaving(true);
+        const membersToMark = clubMembers.filter(m => selectedMemberIds.includes(m.id));
+
+        try {
+            await supabase.from('club_attendance')
+                .delete()
+                .eq('meeting_date', today)
+                .in('member_id', selectedMemberIds);
+
+            const batchRecords = membersToMark.map(m => ({
+                member_id: m.id,
+                meeting_date: today,
+                club_name: m.club_name || 'GBN Club',
+                chapter_name: m.chapter_name || 'Megha Chapter',
+                is_home_chapter: true,
+                status: 'Present',
+                marked_by: profile?.id || null,
+            }));
+
+            const { data, error } = await supabase.from('club_attendance').insert(batchRecords).select();
+            if (error) throw error;
+
+            setLocalAttendance(prev => {
+                const cleaned = prev.filter(a => !(a.meeting_date === today && selectedMemberIds.includes(a.member_id)));
+                return [...(data || batchRecords), ...cleaned];
+            });
+
+            setSelectedMemberIds([]);
+        } catch (err: any) {
+            console.error('Quick bulk attendance error:', err);
+            alert('Failed to mark attendance: ' + (err.message || err));
+        } finally {
+            setBulkSaving(false);
         }
     };
 
@@ -620,7 +758,7 @@ const ClubMembers: React.FC = () => {
         if (!detail) return;
         setSaving(true);
         try {
-            const { error } = await supabase.from('club_attendance').insert({
+            const { data, error } = await supabase.from('club_attendance').insert({
                 member_id: detail.id,
                 meeting_date: attendanceForm.meeting_date,
                 club_name: detail.club_name || 'GBN Club',
@@ -630,10 +768,12 @@ const ClubMembers: React.FC = () => {
                 substitute_name: attendanceForm.status === 'Substitute' ? attendanceForm.substitute_name : null,
                 notes: attendanceForm.notes.trim() || null,
                 marked_by: profile?.id || null,
-            });
+            }).select().single();
             if (error) throw error;
+            if (data) {
+                setLocalAttendance(prev => [data, ...prev]);
+            }
             setAttendanceForm(prev => ({ ...prev, notes: '', substitute_name: '' }));
-            refreshData();
         } catch (err: any) {
             alert('Failed to log attendance: ' + (err.message || err));
         } finally {
@@ -1044,6 +1184,14 @@ const ClubMembers: React.FC = () => {
                     </button>
 
                     <button 
+                        onClick={() => setIsBulkAttendanceOpen(true)}
+                        className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                        title="Mark Attendance for Multiple Members for Any Date"
+                    >
+                        <span className="material-symbols-outlined text-base">event_available</span> Mark Bulk Attendance
+                    </button>
+
+                    <button 
                         onClick={() => setIsAdding(true)} 
                         className="h-10 px-4 bg-primary text-white font-bold rounded-xl text-xs flex items-center gap-1.5 hover:bg-primary-light transition shadow-sm"
                     >
@@ -1221,6 +1369,21 @@ const ClubMembers: React.FC = () => {
                     <table className="w-full min-w-[980px]">
                         <thead>
                             <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 bg-slate-50/60">
+                                <th className="w-10 px-4 py-3.5 text-center">
+                                    <input 
+                                        type="checkbox"
+                                        checked={filteredMembers.length > 0 && selectedMemberIds.length === filteredMembers.length}
+                                        onChange={(e) => {
+                                            if (e.target.checked) {
+                                                setSelectedMemberIds(filteredMembers.map(m => m.id));
+                                            } else {
+                                                setSelectedMemberIds([]);
+                                            }
+                                        }}
+                                        className="size-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer accent-primary"
+                                        title="Select all members"
+                                    />
+                                </th>
                                 <th className="text-left px-5 py-3.5">ID / Joined</th>
                                 <th className="text-left px-5 py-3.5">Member Name & Contact</th>
                                 <th className="text-left px-5 py-3.5">Club & Chapter</th>
@@ -1236,14 +1399,14 @@ const ClubMembers: React.FC = () => {
                         <tbody className="divide-y divide-slate-50">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={10} className="py-16 text-center text-slate-400">
+                                    <td colSpan={11} className="py-16 text-center text-slate-400">
                                         <div className="animate-spin size-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2"></div>
                                         Loading membership & networking records...
                                     </td>
                                 </tr>
                             ) : filteredMembers.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="py-16 text-center">
+                                    <td colSpan={11} className="py-16 text-center">
                                         <span className="material-symbols-outlined text-4xl text-slate-200 mb-2 block">groups_3</span>
                                         <p className="text-slate-500 font-bold text-sm">No members found matching your filters</p>
                                         <p className="text-xs text-slate-400 mt-1">Add a new member or adjust your filter selection.</p>
@@ -1262,7 +1425,7 @@ const ClubMembers: React.FC = () => {
                                         businessVolume: 0,
                                     };
 
-                                    const isAttendedToday = clubAttendance.some(
+                                    const isAttendedToday = localAttendance.some(
                                         a => a.member_id === m.id && a.meeting_date === todayDateStr && a.status === 'Present'
                                     );
 
@@ -1272,6 +1435,23 @@ const ClubMembers: React.FC = () => {
                                             onClick={() => handleOpenDetail(m)}
                                             className="hover:bg-slate-50/70 cursor-pointer transition-colors group"
                                         >
+                                            {/* Row Selection Checkbox */}
+                                            <td className="w-10 px-4 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                                                <input 
+                                                    type="checkbox"
+                                                    checked={selectedMemberIds.includes(m.id)}
+                                                    onChange={(e) => {
+                                                        e.stopPropagation();
+                                                        if (e.target.checked) {
+                                                            setSelectedMemberIds(prev => [...prev, m.id]);
+                                                        } else {
+                                                            setSelectedMemberIds(prev => prev.filter(id => id !== m.id));
+                                                        }
+                                                    }}
+                                                    className="size-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer accent-primary"
+                                                />
+                                            </td>
+
                                             {/* Membership ID & Joined */}
                                             <td className="px-5 py-4">
                                                 <span className="text-[11px] font-black bg-slate-100 text-slate-700 px-2 py-1 rounded-lg border border-slate-200 tracking-wide font-mono block w-max">
@@ -1420,6 +1600,260 @@ const ClubMembers: React.FC = () => {
                     </table>
                 </div>
             </div>
+
+            {/* Sticky Multi-Member Action Bar */}
+            {selectedMemberIds.length > 0 && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white rounded-2xl px-6 py-3.5 flex items-center gap-4 sm:gap-6 shadow-2xl border border-slate-800 animate-slide-up">
+                    <span className="text-xs sm:text-sm font-semibold whitespace-nowrap flex items-center gap-2">
+                        <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
+                        {selectedMemberIds.length} {selectedMemberIds.length === 1 ? 'member' : 'members'} selected
+                    </span>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleQuickMarkSelectedPresentToday}
+                            disabled={bulkSaving}
+                            className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
+                            title="Mark selected members present for today"
+                        >
+                            <span className="material-symbols-outlined text-base">check_circle</span>
+                            Mark Present Today
+                        </button>
+                        <button
+                            onClick={() => setIsBulkAttendanceOpen(true)}
+                            disabled={bulkSaving}
+                            className="h-9 px-3.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition border border-white/15 cursor-pointer disabled:opacity-50"
+                            title="Mark attendance for a specific date"
+                        >
+                            <span className="material-symbols-outlined text-base">calendar_month</span>
+                            Mark for Date...
+                        </button>
+                        <button
+                            onClick={() => setSelectedMemberIds([])}
+                            className="text-xs text-slate-400 hover:text-white px-2 py-1 transition cursor-pointer"
+                        >
+                            Clear
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════════════
+                MODAL: BULK ATTENDANCE FOR MULTIPLE MEMBERS & ANY PARTICULAR DATE
+               ══════════════════════════════════════════════════════════════════════════ */}
+            {isBulkAttendanceOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md overflow-y-auto">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden my-8 text-left animate-in fade-in zoom-in-95 duration-200 border border-slate-100 flex flex-col max-h-[88vh]">
+                        {/* Header */}
+                        <div className="bg-gradient-to-r from-emerald-600 to-teal-700 px-6 py-4 flex items-center justify-between text-white shrink-0">
+                            <div className="flex items-center gap-2.5">
+                                <div className="size-10 rounded-xl bg-white/15 flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-2xl font-black">event_available</span>
+                                </div>
+                                <div>
+                                    <h2 className="text-base font-black">Mark Bulk Attendance</h2>
+                                    <p className="text-[11px] text-white/80">Record meeting attendance for multiple members in one step</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => { setIsBulkAttendanceOpen(false); setBulkSuccessMessage(null); }} 
+                                disabled={bulkSaving}
+                                className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition disabled:opacity-50"
+                            >
+                                <span className="material-symbols-outlined text-lg">close</span>
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                            {bulkSuccessMessage && (
+                                <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-2xl flex items-center gap-2 font-bold animate-in fade-in">
+                                    <span className="material-symbols-outlined text-emerald-600">check_circle</span>
+                                    {bulkSuccessMessage}
+                                </div>
+                            )}
+
+                            {/* Meeting Controls: Date & Status */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5 flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-sm text-emerald-600">calendar_today</span>
+                                        Meeting Date *
+                                    </label>
+                                    <input 
+                                        type="date"
+                                        value={bulkMeetingDate}
+                                        onChange={(e) => setBulkMeetingDate(e.target.value)}
+                                        className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5 flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-sm text-emerald-600">how_to_reg</span>
+                                        Attendance Status *
+                                    </label>
+                                    <div className="flex gap-1.5">
+                                        {(['Present', 'Absent', 'Late', 'Substitute'] as const).map(st => (
+                                            <button
+                                                key={st}
+                                                type="button"
+                                                onClick={() => setBulkStatus(st)}
+                                                className={`flex-1 h-10 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                                                    bulkStatus === st
+                                                        ? st === 'Present'
+                                                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                                            : st === 'Absent'
+                                                            ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                                                            : 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                {st}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Member Selection Toolbar */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-slate-700">Select Members:</span>
+                                    <span className="text-[11px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
+                                        {selectedMemberIds.length} of {
+                                            bulkChapterFilter === 'all' 
+                                                ? clubMembers.length 
+                                                : clubMembers.filter(m => (m.chapter_name || '').toLowerCase() === bulkChapterFilter.toLowerCase()).length
+                                        } selected
+                                    </span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    {/* Chapter Filter in Modal */}
+                                    <select
+                                        value={bulkChapterFilter}
+                                        onChange={(e) => setBulkChapterFilter(e.target.value)}
+                                        className="h-8 px-2.5 bg-slate-100 border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-700"
+                                    >
+                                        <option value="all">All Chapters</option>
+                                        {Array.from(new Set(clubMembers.map(m => m.chapter_name).filter(Boolean))).map(ch => (
+                                            <option key={ch as string} value={ch as string}>{ch as string}</option>
+                                        ))}
+                                    </select>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const selectableMembers = bulkChapterFilter === 'all'
+                                                ? clubMembers
+                                                : clubMembers.filter(m => (m.chapter_name || '').toLowerCase() === bulkChapterFilter.toLowerCase());
+                                            setSelectedMemberIds(selectableMembers.map(m => m.id));
+                                        }}
+                                        className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200/60 transition cursor-pointer"
+                                    >
+                                        Select All
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedMemberIds([])}
+                                        className="text-[11px] font-bold text-slate-500 hover:text-slate-700 bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer"
+                                    >
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Member Checklist */}
+                            <div className="border border-slate-200 rounded-2xl divide-y divide-slate-100 max-h-64 overflow-y-auto scrollbar-thin">
+                                {clubMembers
+                                    .filter(m => bulkChapterFilter === 'all' || (m.chapter_name || '').toLowerCase() === bulkChapterFilter.toLowerCase())
+                                    .map(m => {
+                                        const isSelected = selectedMemberIds.includes(m.id);
+                                        const hasAttendanceOnDate = localAttendance.some(
+                                            a => a.member_id === m.id && a.meeting_date === bulkMeetingDate && a.status === 'Present'
+                                        );
+
+                                        return (
+                                            <label 
+                                                key={m.id}
+                                                className={`flex items-center justify-between p-3 cursor-pointer hover:bg-slate-50 transition ${
+                                                    isSelected ? 'bg-emerald-50/40' : ''
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => {
+                                                            setSelectedMemberIds(prev => 
+                                                                prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]
+                                                            );
+                                                        }}
+                                                        className="size-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                                                    />
+                                                    <div className="size-8 rounded-xl bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-xs">
+                                                        {m.full_name?.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                                            {m.full_name}
+                                                            {hasAttendanceOnDate && (
+                                                                <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100/70 px-1.5 py-0.2 rounded">
+                                                                    Already Present
+                                                                </span>
+                                                            )}
+                                                        </p>
+                                                        <p className="text-[10px] text-slate-400">
+                                                            {m.membership_no} • {m.chapter_name || 'General'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] font-mono font-semibold text-slate-400">
+                                                    {m.phone}
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-4 sm:px-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
+                            <p className="text-[11px] text-slate-400">
+                                Applies to date: <span className="font-bold text-slate-600">{formatDate(bulkMeetingDate)}</span>
+                            </p>
+                            <div className="flex items-center gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={() => { setIsBulkAttendanceOpen(false); setBulkSuccessMessage(null); }}
+                                    disabled={bulkSaving}
+                                    className="px-4 py-2 border border-slate-200 text-slate-600 font-bold rounded-xl text-xs hover:bg-white transition"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleBulkAttendanceSubmit()}
+                                    disabled={selectedMemberIds.length === 0 || bulkSaving}
+                                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm disabled:opacity-50 cursor-pointer"
+                                >
+                                    {bulkSaving ? (
+                                        <>
+                                            <div className="size-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            Saving...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-outlined text-base">done_all</span>
+                                            Save Attendance ({selectedMemberIds.length})
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ══════════════════════════════════════════════════════════════════════════
                 MODAL: ADD CLUB MEMBER (WITH CHAPTER MANUAL / AUTO LOGIC)
@@ -1998,9 +2432,6 @@ const ClubMembers: React.FC = () => {
                                             <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${getStatusBadge(detail.status)}`}>
                                                 {detail.status.toUpperCase()}
                                             </span>
-                                            <span className="text-[10px] font-bold bg-amber-400/10 text-amber-300 border border-amber-400/30 px-2.5 py-0.5 rounded-full">
-                                                ★ VIP MEMBER
-                                            </span>
                                         </div>
                                         <div className="flex items-center gap-2 text-white/70 text-xs font-semibold mt-1 flex-wrap">
                                             <span className="font-mono bg-white/10 px-2 py-0.5 rounded-md text-white/90">{detail.membership_no}</span>
@@ -2108,7 +2539,7 @@ const ClubMembers: React.FC = () => {
                                                     <div className="flex items-center gap-1.5">
                                                         <span className="size-2 rounded-full bg-amber-400 animate-pulse"></span>
                                                         <p className="text-[9px] font-bold text-amber-300 uppercase tracking-widest">
-                                                            {detail.club_name || 'GBN CLUB'} VIP CARD
+                                                            {detail.club_name || 'GBN CLUB'} MEMBER CARD
                                                         </p>
                                                     </div>
                                                     <p className="text-base font-black tracking-wide mt-1.5">{detail.full_name}</p>
@@ -2416,12 +2847,12 @@ const ClubMembers: React.FC = () => {
                                     <div className="space-y-3">
                                         <p className="text-xs font-black text-slate-600 uppercase tracking-wider">Attendance Logs</p>
                                         <div className="space-y-2 max-h-[320px] overflow-y-auto scrollbar-thin">
-                                            {clubAttendance.filter(a => a.member_id === detail.id).length === 0 ? (
+                                            {localAttendance.filter(a => a.member_id === detail.id).length === 0 ? (
                                                 <p className="text-xs text-slate-400 italic py-6 text-center bg-white rounded-2xl border border-slate-100">
                                                     No attendance records logged yet for this member.
                                                 </p>
                                             ) : (
-                                                clubAttendance.filter(a => a.member_id === detail.id).map(a => (
+                                                localAttendance.filter(a => a.member_id === detail.id).map(a => (
                                                     <div key={a.id} className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-sm flex items-center justify-between hover:bg-slate-50 transition">
                                                         <div className="flex items-center gap-3">
                                                             <span className={`size-8 rounded-xl flex items-center justify-center font-bold text-xs ${
