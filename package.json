@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "node execution/deploy_ssh.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
@@ -29,6 +30,8 @@
     "autoprefixer": "^10.4.27",
     "dotenv": "^17.4.2",
     "postcss": "^8.5.6",
+    "ssh2": "^1.17.0",
+    "ssh2-sftp-client": "^12.1.1",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
     "vite": "^7.3.1"

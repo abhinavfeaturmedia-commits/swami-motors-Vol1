@@ -22,3 +22,12 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Database dumps & archives
+*.sql
+*.zip
+
+# Backend build staging & uploads
+backend/public/
+backend/uploads/**/*
+!backend/uploads/**/.gitkeep
