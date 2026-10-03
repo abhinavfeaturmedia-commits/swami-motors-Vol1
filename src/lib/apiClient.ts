@@ -325,8 +325,38 @@ export const hostingerAuth = {
     },
 
     async signUp({ email, password, options }: any) {
-        // Fallback for public sign ups
-        return { data: { user: null, session: null }, error: null };
+        try {
+            const res = await fetch(`${API_BASE}/api/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email,
+                    password,
+                    full_name: options?.data?.full_name || '',
+                    phone: options?.data?.phone || ''
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                return { data: { user: null, session: null }, error: new Error(data.error || 'Registration failed') };
+            }
+            if (data.access_token && data.user) {
+                localStorage.setItem('swami_token', data.access_token);
+                localStorage.setItem('swami_user', JSON.stringify(data.user));
+                localStorage.setItem('swami_profile', JSON.stringify(data.profile));
+                authListeners.forEach(cb => cb('SIGNED_IN', { user: data.user, access_token: data.access_token }));
+                return {
+                    data: {
+                        user: data.user,
+                        session: { user: data.user, access_token: data.access_token }
+                    },
+                    error: null
+                };
+            }
+            return { data: { user: null, session: null }, error: new Error('Registration failed') };
+        } catch (e: any) {
+            return { data: { user: null, session: null }, error: e };
+        }
     },
 
     async resetPasswordForEmail(_email: string, _options?: any) {
@@ -445,10 +475,30 @@ export const hostingerClient = {
     getChannels() {
         return [];
     },
-    rpc(fnName: string, _args?: any) {
+    rpc(fnName: string, args?: any) {
         return {
-            then(resolve: any) {
-                resolve({ data: [], error: null });
+            async then(resolve: (result: { data: any; error: any }) => void) {
+                try {
+                    const token = localStorage.getItem('swami_auth_token');
+                    const headers: Record<string, string> = {
+                        'Content-Type': 'application/json'
+                    };
+                    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                    const res = await fetch(`${API_BASE}/api/data/rpc`, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ fnName, args: args || {} })
+                    });
+                    if (!res.ok) {
+                        resolve({ data: null, error: new Error(`RPC error: ${res.statusText}`) });
+                        return;
+                    }
+                    const result = await res.json();
+                    resolve(result);
+                } catch (err: any) {
+                    resolve({ data: null, error: err });
+                }
             }
         };
     }

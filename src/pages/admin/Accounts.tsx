@@ -60,13 +60,14 @@ const Accounts = () => {
         inventory
             .filter((i: any) => i.source === 'purchased' || (!i.source && !i.dealer_id && !i.consignment_owner_name))
             .forEach((i: any) => {
-                if (!i.price) return;
+                const cost = Number(i.purchase_cost || i.price || 0);
+                if (!cost) return;
                 arr.push({
                     id: `inv_purc_${i.id}`,
                     desc: `Capital Purchase — ${i.year} ${i.make} ${i.model}`,
                     type: 'Expense',
-                    amountNum: Number(i.price),
-                    amountStr: `-${formatCurrency(i.price)}`,
+                    amountNum: cost,
+                    amountStr: `-${formatCurrency(cost)}`,
                     date: new Date(i.created_at).toLocaleDateString('en-IN'),
                     rawDate: new Date(i.created_at).getTime(),
                     mode: 'Own Purchase',

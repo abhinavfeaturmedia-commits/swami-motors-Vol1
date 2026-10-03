@@ -126,7 +126,7 @@ const AdminLogin = () => {
                         <div className="size-11 bg-primary rounded-xl flex items-center justify-center text-white">
                             <span className="material-symbols-outlined text-xl">directions_car</span>
                         </div>
-                        <span className="text-lg font-bold text-primary font-display">SS Motors Admin</span>
+                        <span className="text-lg font-bold text-primary font-display">Shree Swami Samarth Admin</span>
                     </div>
 
                     <Link

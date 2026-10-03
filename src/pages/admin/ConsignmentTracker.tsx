@@ -110,9 +110,30 @@ const ConsignmentTracker = () => {
             if (car.consignment_fee_type === 'fixed') fee = car.consignment_fee_value || 0;
             else if (car.consignment_fee_type === 'percentage' && car.consignment_fee_value) fee = Math.round(salePrice * car.consignment_fee_value / 100);
 
+            // Upsert / Link buyer to customers CRM
+            let customerId: string | null = null;
+            if (saleForm.buyer_name) {
+                const { data: existingCust } = await supabase
+                    .from('customers')
+                    .select('id')
+                    .eq('full_name', saleForm.buyer_name.trim())
+                    .maybeSingle();
+
+                if (existingCust) {
+                    customerId = existingCust.id;
+                } else {
+                    const { data: newCust } = await supabase.from('customers').insert({
+                        full_name: saleForm.buyer_name.trim(),
+                        notes: `Consignment buyer of ${car.year} ${car.make} ${car.model}`
+                    }).select('id').single();
+                    if (newCust) customerId = newCust.id;
+                }
+            }
+
             // Insert sale record
             const { error: saleErr } = await supabase.from('sales').insert({
                 inventory_id: car.id,
+                customer_id: customerId,
                 sale_date: new Date().toISOString().split('T')[0],
                 final_price: salePrice,
                 sale_type: 'consignment',

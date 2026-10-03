@@ -24,8 +24,19 @@ const Insurance = () => {
             source: 'website_insurance',
         });
 
-        if (err) setError('Something went wrong. Please call us directly.');
-        else setSubmitted(true);
+        if (err) {
+            setError('Something went wrong. Please call us directly.');
+        } else {
+            // Also populate structured finance_services application for finance team
+            await supabase.from('finance_services').insert({
+                type: 'insurance',
+                full_name: form.full_name.trim(),
+                phone: form.phone.trim(),
+                status: 'pending',
+                notes: `Online Insurance Quote Request for ${form.car_model.trim() || 'Pre-owned Vehicle'}`
+            });
+            setSubmitted(true);
+        }
         setLoading(false);
     };
 

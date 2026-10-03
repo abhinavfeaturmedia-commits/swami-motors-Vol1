@@ -14,7 +14,7 @@ export function getPool() {
             password: process.env.DB_PASSWORD || '',
             database: process.env.DB_NAME || 'swami_motors',
             waitForConnections: true,
-            connectionLimit: 10,
+            connectionLimit: 25,
             queueLimit: 0,
             charset: 'utf8mb4',
             dateStrings: true // Return date/time as strings to prevent timezone distortion
@@ -25,8 +25,27 @@ export function getPool() {
 
 export async function query(sql, params = []) {
     const p = getPool();
-    const [rows, fields] = await p.execute(sql, params);
+    const [rows] = await p.execute(sql, params);
     return rows;
+}
+
+/**
+ * Execute multiple database operations inside an atomic SQL transaction
+ */
+export async function withTransaction(callback) {
+    const p = getPool();
+    const conn = await p.getConnection();
+    try {
+        await conn.beginTransaction();
+        const result = await callback(conn);
+        await conn.commit();
+        return result;
+    } catch (err) {
+        await conn.rollback();
+        throw err;
+    } finally {
+        conn.release();
+    }
 }
 
 export async function checkConnection() {

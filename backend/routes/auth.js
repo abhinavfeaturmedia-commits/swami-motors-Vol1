@@ -1,6 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { query } from '../db.js';
 
 const router = express.Router();
@@ -42,6 +43,77 @@ export function requireAdmin(req, res, next) {
     }
     next();
 }
+
+// POST /api/auth/register
+router.post('/register', async (req, res) => {
+    try {
+        const { email, password, full_name, phone } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+
+        // Check if user already exists
+        const existingUsers = await query('SELECT id FROM profiles WHERE email = ? LIMIT 1', [normalizedEmail]);
+        if (existingUsers && existingUsers.length > 0) {
+            return res.status(400).json({ error: 'An account with this email already exists.' });
+        }
+
+        // Hash password
+        const salt = await bcrypt.genSalt(10);
+        const password_hash = await bcrypt.hash(password, salt);
+
+        const newUserId = crypto.randomUUID();
+        const userName = (full_name || email.split('@')[0]).trim();
+        const userPhone = phone ? phone.trim() : null;
+
+        await query(
+            'INSERT INTO profiles (id, email, password_hash, full_name, phone, role, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [newUserId, normalizedEmail, password_hash, userName, userPhone, 'customer', 1]
+        );
+
+        // Issue JWT token
+        const tokenPayload = {
+            id: newUserId,
+            email: normalizedEmail,
+            role: 'customer',
+            full_name: userName
+        };
+
+        const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+
+        const profile = {
+            id: newUserId,
+            email: normalizedEmail,
+            full_name: userName,
+            phone: userPhone,
+            role: 'customer',
+            is_active: 1
+        };
+
+        return res.json({
+            access_token: token,
+            token_type: 'bearer',
+            expires_in: 7 * 24 * 3600,
+            user: {
+                id: newUserId,
+                email: normalizedEmail,
+                role: 'customer',
+                user_metadata: {
+                    full_name: userName,
+                    role: 'customer'
+                }
+            },
+            profile,
+            permissions: {}
+        });
+    } catch (err) {
+        console.error('Registration error:', err);
+        return res.status(500).json({ error: 'Internal server error during registration' });
+    }
+});
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
@@ -174,9 +246,92 @@ router.get('/me', async (req, res) => {
     }
 });
 
+// POST /api/auth/staff-create (Admin creates staff user)
+router.post('/staff-create', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const { email, password, full_name, phone, role = 'sales', department = 'Sales' } = req.body;
+
+        if (!email || !password || !full_name) {
+            return res.status(400).json({ error: 'Email, password, and full name are required' });
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+
+        // Check if user already exists
+        const existingUsers = await query('SELECT id FROM profiles WHERE email = ? LIMIT 1', [normalizedEmail]);
+        if (existingUsers && existingUsers.length > 0) {
+            return res.status(400).json({ error: 'An account with this email already exists.' });
+        }
+
+        // Hash password
+        const salt = await bcrypt.genSalt(10);
+        const password_hash = await bcrypt.hash(password, salt);
+
+        const newUserId = crypto.randomUUID();
+        const userName = full_name.trim();
+        const userPhone = phone ? phone.trim() : null;
+
+        await query(
+            'INSERT INTO profiles (id, email, password_hash, full_name, phone, role, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [newUserId, normalizedEmail, password_hash, userName, userPhone, role, 1, new Date()]
+        );
+
+        // Default permissions for staff
+        const defaultModules = ['leads', 'inventory', 'customers', 'bookings', 'calendar', 'planner', 'attendance'];
+        for (const mod of defaultModules) {
+            const canManage = role === 'admin' ? 1 : (['leads', 'bookings'].includes(mod) ? 1 : 0);
+            await query(
+                'INSERT INTO user_permissions (id, user_id, module, can_view, can_manage, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                [crypto.randomUUID(), newUserId, mod, 1, canManage, new Date()]
+            );
+        }
+
+        return res.json({
+            success: true,
+            user: {
+                id: newUserId,
+                email: normalizedEmail,
+                full_name: userName,
+                role,
+                department
+            }
+        });
+    } catch (err) {
+        console.error('Staff creation error:', err);
+        return res.status(500).json({ error: 'Internal server error creating staff member: ' + err.message });
+    }
+});
+
+// POST /api/auth/staff-reset-password (Admin or user resets password)
+router.post('/staff-reset-password', requireAuth, async (req, res) => {
+    try {
+        const { user_id, new_password } = req.body;
+
+        if (!user_id || !new_password) {
+            return res.status(400).json({ error: 'user_id and new_password are required' });
+        }
+
+        // If not admin, user can only reset their own password
+        if (req.user.role !== 'admin' && req.user.id !== user_id) {
+            return res.status(403).json({ error: 'Forbidden: You cannot change another user\'s password' });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const password_hash = await bcrypt.hash(new_password, salt);
+
+        await query('UPDATE profiles SET password_hash = ?, updated_at = ? WHERE id = ?', [password_hash, new Date(), user_id]);
+
+        return res.json({ success: true, message: 'Password updated successfully' });
+    } catch (err) {
+        console.error('Password reset error:', err);
+        return res.status(500).json({ error: 'Internal server error updating password: ' + err.message });
+    }
+});
+
 // POST /api/auth/logout
 router.post('/logout', (req, res) => {
     return res.json({ success: true });
 });
 
 export default router;
+

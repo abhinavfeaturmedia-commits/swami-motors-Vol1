@@ -96,31 +96,38 @@ async function deploy() {
     await sftp.end();
 
     // 5. Restart Node.js application via Passenger restart.txt
-    console.log('\n🔄 [5/5] Restarting Hostinger Node.js Application...');
+    console.log('\n🔄 [5/5] Installing patched dependencies and restarting Hostinger Node.js Application...');
     await new Promise((resolve) => {
         const timeout = setTimeout(() => {
-            console.log('   ⚠️ Restart wait timed out, continuing to health check...');
+            console.log('   ⚠️ Remote command wait timed out, continuing to health check...');
             resolve();
-        }, 8000);
+        }, 90000);
 
         const conn = new SshClient();
         conn.on('ready', () => {
-            const restartCmd = `mkdir -p ${REMOTE_DIR}/tmp && touch ${REMOTE_DIR}/tmp/restart.txt`;
-            conn.exec(restartCmd, (err, stream) => {
+            console.log('   📦 Running remote npm install and updating Passenger restart trigger...');
+            const remoteCmd = `export PATH=/opt/alt/alt-nodejs20/root/usr/bin:$PATH && cd ${REMOTE_DIR} && npm install --omit=dev && mkdir -p tmp && touch tmp/restart.txt`;
+            conn.exec(remoteCmd, (err, stream) => {
                 if (err) {
+                    console.warn('   ⚠️ Remote exec error:', err.message);
                     clearTimeout(timeout);
                     conn.end();
                     return resolve();
                 }
-                stream.on('close', () => {
+                stream.on('close', (code) => {
                     clearTimeout(timeout);
                     conn.end();
+                    console.log(`   ✅ Remote npm install completed (exit code ${code}).`);
                     resolve();
-                }).on('data', () => {}).stderr.on('data', () => {});
+                }).on('data', (data) => {
+                    process.stdout.write('   [hostinger] ' + data);
+                }).stderr.on('data', (data) => {
+                    process.stderr.write('   [hostinger] ' + data);
+                });
             });
         }).on('error', (err) => {
             clearTimeout(timeout);
-            console.warn('   ⚠️ SSH restart warning:', err.message);
+            console.warn('   ⚠️ SSH connection warning:', err.message);
             resolve();
         }).connect({
             host: SSH_HOST,

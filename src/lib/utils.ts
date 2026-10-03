@@ -32,9 +32,23 @@ export const getPrimaryImage = (images: string[] | null | undefined): string => 
 
 export const resolveImage = (img: string | null | undefined): string => {
     if (!img) return 'https://placehold.co/800x500/e2e8f0/94a3b8?text=No+Photo';
-    if (img.startsWith('http')) return img;
+    if (img.startsWith('http://') || img.startsWith('https://') || img.startsWith('data:')) return img;
+    
+    // Check if it is a local upload path on Hostinger Express server
+    if (img.startsWith('/uploads/')) {
+        const apiBase = import.meta.env.VITE_API_URL || '';
+        return `${apiBase}${img}`;
+    }
+    if (img.startsWith('uploads/')) {
+        const apiBase = import.meta.env.VITE_API_URL || '';
+        return `${apiBase}/${img}`;
+    }
+
     const base = import.meta.env.VITE_SUPABASE_URL as string;
-    return `${base}/storage/v1/object/public/car-images/${img}`;
+    if (base && !base.includes('missing-url')) {
+        return `${base}/storage/v1/object/public/car-images/${img}`;
+    }
+    return img;
 };
 
 // ─── Date Formatting ──────────────────────────────────────────────────────────

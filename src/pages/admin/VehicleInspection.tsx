@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useData } from '../../contexts/DataContext';
+import { useToast } from '../../contexts/ToastContext';
 import { supabase } from '../../lib/supabase';
 
 const CATEGORIES = [
@@ -14,6 +15,7 @@ type Status = 'Pass' | 'Fail' | 'NA' | '';
 
 const VehicleInspection = () => {
     const { inventory, refreshData } = useData();
+    const toast = useToast();
     const availableInventory = inventory.filter(c => c.status !== 'sold');
     
     const [selectedVehicleId, setSelectedVehicleId] = useState(availableInventory.length > 0 ? availableInventory[0].id : '');
@@ -46,10 +48,10 @@ const VehicleInspection = () => {
             });
 
             if (error) {
-                alert('Error saving inspection report.');
+                toast.error('Error saving inspection report.');
                 console.error(error);
             } else {
-                alert('Inspection saved successfully!');
+                toast.success('Inspection saved successfully!');
                 setStatuses({});
                 setNotes('');
                 refreshData();
@@ -81,7 +83,7 @@ const VehicleInspection = () => {
                         {availableInventory.length === 0 && <option value="">No available inventory</option>}
                         {availableInventory.map(car => (
                             <option key={car.id} value={car.id}>
-                                {car.year} {car.make} {car.model} — {car.license_plate}
+                                {car.year} {car.make} {car.model} — {car.registration_no || 'No Plate'}
                             </option>
                         ))}
                     </select>

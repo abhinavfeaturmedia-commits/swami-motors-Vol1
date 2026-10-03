@@ -7,5 +7,17 @@ export default defineConfig({
     server: {
         host: true,
         port: 3000,
+    },
+    build: {
+        chunkSizeWarningLimit: 800,
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+                    'motion': ['framer-motion'],
+                    'lucide-icons': ['lucide-react']
+                }
+            }
+        }
     }
 });

@@ -124,18 +124,40 @@ const BookTestDrive = () => {
         if (err) setError('Something went wrong. Please call us directly.');
         else {
             if (leadData?.id) {
-                // Generate chronological date ISO string
-                const d = new Date(calYear, calMonth, selectedDate);
-                const isoDate = d.toISOString().split('T')[0];
+                // Compute local calendar date string (avoiding UTC timezone shift)
+                const yyyy = calYear;
+                const mm = String(calMonth + 1).padStart(2, '0');
+                const dd = String(selectedDate).padStart(2, '0');
+                const isoDate = `${yyyy}-${mm}-${dd}`;
+
+                // Convert 12-hour AM/PM string to MySQL TIME 24-hour format
+                const matchTime = selectedTime.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+                let time24 = '10:30:00';
+                if (matchTime) {
+                    let h = parseInt(matchTime[1], 10);
+                    const m = matchTime[2];
+                    const meridiem = matchTime[3].toUpperCase();
+                    if (meridiem === 'PM' && h < 12) h += 12;
+                    if (meridiem === 'AM' && h === 12) h = 0;
+                    time24 = `${String(h).padStart(2, '0')}:${m}:00`;
+                }
 
                 await supabase.from('bookings').insert({
                     lead_id: leadData.id,
                     inventory_id: car?.id || null,
                     booking_type: 'test_drive',
                     booking_date: isoDate,
-                    booking_time: selectedTime,
+                    booking_time: time24,
                     status: 'scheduled'
                 });
+
+                // Link car to customer interest
+                if (car?.id) {
+                    await supabase.from('lead_car_interests').insert({
+                        lead_id: leadData.id,
+                        inventory_id: car.id
+                    });
+                }
             }
             setSubmitted(true);
         }

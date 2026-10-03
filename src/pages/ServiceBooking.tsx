@@ -57,6 +57,18 @@ const ServiceBooking = () => {
             .filter(Boolean)
             .join(', ');
 
+        // Convert 12-hour AM/PM string to MySQL TIME 24-hour format
+        const matchTime = selectedTime.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        let time24 = '10:00:00';
+        if (matchTime) {
+            let h = parseInt(matchTime[1], 10);
+            const m = matchTime[2];
+            const meridiem = matchTime[3].toUpperCase();
+            if (meridiem === 'PM' && h < 12) h += 12;
+            if (meridiem === 'AM' && h === 12) h = 0;
+            time24 = `${String(h).padStart(2, '0')}:${m}:00`;
+        }
+
         const { data: leadData, error } = await supabase.from('leads').insert({
             full_name: name.trim(),
             phone: phone.trim(),
@@ -64,7 +76,7 @@ const ServiceBooking = () => {
             secondary_phone: secondaryPhone.trim() || null,
             whatsapp_number: whatsappNumber.trim() || null,
             personal_address: personalAddress.trim() || null,
-            type: 'service',
+            type: 'car_service',
             source: 'website',
             status: 'new',
             message: `Services: ${selectedServiceTitles} | Vehicle: ${vehicleDesc || 'Not specified'} | Date: ${selectedDate} | Time: ${selectedTime}`,
@@ -77,7 +89,7 @@ const ServiceBooking = () => {
                     lead_id: leadData.id,
                     booking_type: 'service',
                     booking_date: selectedDate,
-                    booking_time: selectedTime,
+                    booking_time: time24,
                     status: 'scheduled'
                 });
             }

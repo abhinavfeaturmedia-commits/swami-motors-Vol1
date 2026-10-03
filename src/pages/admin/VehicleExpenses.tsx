@@ -85,8 +85,8 @@ const VehicleExpenses = () => {
             const saleRec = sales.find(s => s.inventory_id === car.id);
             const sellingPrice = saleRec ? Number(saleRec.final_price) : 0;
             
-            // Assume the standard 'price' column in inventory is what the dealer paid for it initially.
-            const purchasePrice = Number(car.price);
+            // Use actual dealer acquisition cost, with fallback to snapshot or retail price
+            const purchasePrice = Number(saleRec?.purchase_cost_snapshot || car.purchase_cost || car.price || 0);
             
             const carExpenses = expenses.filter(e => e.car_id === car.id)
                                         .reduce((acc, curr) => acc + Number(curr.amount), 0);

@@ -1,0 +1,18 @@
+User-agent: *
+Allow: /
+Allow: /inventory
+Allow: /accessories
+Allow: /car/*
+Allow: /finance
+Allow: /insurance
+Allow: /sell
+Allow: /compare
+Allow: /about
+Allow: /contact
+Allow: /faq
+
+Disallow: /admin/
+Disallow: /api/
+Disallow: /dashboard
+
+Sitemap: https://autokundali.com/sitemap.xml

@@ -4,7 +4,15 @@ import { Star, ArrowRight, ChevronRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const SellCar = () => {
-    const [form, setForm] = useState({ full_name: '', phone: '', car_make: '', car_model: '', car_year: String(new Date().getFullYear()), car_mileage: '' });
+    const [form, setForm] = useState({
+        full_name: '',
+        phone: '',
+        registration_no: '',
+        car_make: '',
+        car_model: '',
+        car_year: String(new Date().getFullYear()),
+        car_mileage: ''
+    });
     const [loading, setLoading] = useState(false);
     const [submitted, setSubmitted] = useState(false);
     const [error, setError] = useState('');
@@ -12,6 +20,14 @@ const SellCar = () => {
     const [openFaq, setOpenFaq] = useState<number | null>(null);
 
     const set = (f: string, v: string) => setForm(prev => ({ ...prev, [f]: v }));
+
+    const handleHeroSubmit = (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        if (heroReg.trim()) {
+            set('registration_no', heroReg.trim().toUpperCase());
+        }
+        document.getElementById('sell-form')?.scrollIntoView({ behavior: 'smooth' });
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -23,6 +39,12 @@ const SellCar = () => {
         }
 
         setLoading(true);
+        const regPlate = form.registration_no?.trim().toUpperCase();
+        const details = [
+            regPlate ? `Reg No: ${regPlate}` : null,
+            form.car_mileage ? `${Number(form.car_mileage).toLocaleString('en-IN')} KMs` : null
+        ].filter(Boolean).join(' | ');
+
         const { error: err } = await supabase.from('leads').insert({
             type: 'sell_car',
             full_name: form.full_name.trim(),
@@ -31,6 +53,8 @@ const SellCar = () => {
             car_model: form.car_model.trim() || null,
             car_year: form.car_year ? Number(form.car_year) : null,
             car_mileage: form.car_mileage ? Number(form.car_mileage) : null,
+            notes: regPlate ? `Vehicle Reg: ${regPlate}` : null,
+            message: details ? `Selling Car Inquiry: ${form.car_make} ${form.car_model} (${details})` : `Selling Car Inquiry: ${form.car_make} ${form.car_model}`,
             source: 'website_sell_car',
         });
         if (err) setError('Something went wrong. Please call us directly.');
@@ -48,12 +72,21 @@ const SellCar = () => {
                     <span className="inline-flex items-center gap-2 bg-accent text-primary text-xs font-bold px-3 py-1.5 rounded-lg mb-6 uppercase"><span className="material-symbols-outlined text-sm">verified</span> Best Price Guaranteed</span>
                     <h1 className="text-4xl lg:text-6xl font-black text-white font-display leading-tight mb-4">Sell your car in <span className="text-accent">30 minutes</span></h1>
                     <p className="text-slate-400 text-lg max-w-lg mb-8">Shree Swami Samarth Motors: Kolhapur's most trusted car buying service. Instant payment, free RC transfer.</p>
-                    <div className="flex gap-3 max-w-lg">
-                        <input type="text" value={heroReg} onChange={e => setHeroReg(e.target.value)} placeholder="MH09 AB 1234" className="flex-1 h-12 bg-white/10 border border-white/20 text-white placeholder:text-white/50 rounded-xl px-5 text-sm outline-none backdrop-blur focus:ring-2 focus:ring-accent/30" />
-                        <button onClick={() => {
-                            document.getElementById('sell-form')?.scrollIntoView({ behavior: 'smooth' });
-                        }} className="h-12 flex items-center justify-center px-6 bg-accent text-primary font-bold rounded-xl hover:bg-accent-hover transition-all text-sm whitespace-nowrap border-0">Get Instant Quote</button>
-                    </div>
+                    <form onSubmit={handleHeroSubmit} className="flex gap-3 max-w-lg">
+                        <input
+                            type="text"
+                            value={heroReg}
+                            onChange={e => setHeroReg(e.target.value.toUpperCase())}
+                            placeholder="MH09 AB 1234"
+                            className="flex-1 h-12 bg-white/10 border border-white/20 text-white placeholder:text-white/50 rounded-xl px-5 text-sm uppercase font-mono outline-none backdrop-blur focus:ring-2 focus:ring-accent/30"
+                        />
+                        <button
+                            type="submit"
+                            className="h-12 flex items-center justify-center px-6 bg-accent text-primary font-bold rounded-xl hover:bg-accent-hover transition-all text-sm whitespace-nowrap border-0 cursor-pointer"
+                        >
+                            Get Instant Quote
+                        </button>
+                    </form>
                     <p className="text-xs text-slate-500 mt-3 flex items-center gap-1"><span className="material-symbols-outlined text-xs text-green-400">check_circle</span> 10,000+ Happy Customers in Kolhapur</p>
                 </div>
             </section>
@@ -122,7 +155,11 @@ const SellCar = () => {
                                 <h3 className="text-2xl font-bold text-primary font-display mb-2">Request Received!</h3>
                                 <p className="text-slate-500 text-sm mb-8">Our evaluation expert will call you shortly on +91 {form.phone} to give you an estimate.</p>
                                 <button
-                                    onClick={() => { setSubmitted(false); setForm({ full_name: '', phone: '', car_make: '', car_model: '', car_year: String(new Date().getFullYear()), car_mileage: '' }); }}
+                                    onClick={() => {
+                                        setSubmitted(false);
+                                        setHeroReg('');
+                                        setForm({ full_name: '', phone: '', registration_no: '', car_make: '', car_model: '', car_year: String(new Date().getFullYear()), car_mileage: '' });
+                                    }}
                                     className="h-11 px-6 bg-primary text-white font-semibold rounded-xl text-sm hover:bg-primary-light transition-colors"
                                 >
                                     Submit Another Car
@@ -160,6 +197,17 @@ const SellCar = () => {
                                     </div>
 
                                     <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 grid md:grid-cols-2 gap-5">
+                                        <div className="md:col-span-2">
+                                            <label className="block text-sm font-medium text-slate-700 mb-1.5">Vehicle Registration Number</label>
+                                            <input
+                                                type="text"
+                                                value={form.registration_no}
+                                                onChange={e => set('registration_no', e.target.value.toUpperCase())}
+                                                disabled={loading}
+                                                className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm uppercase font-mono outline-none focus:ring-2 focus:ring-primary/10 bg-white"
+                                                placeholder="e.g. MH09 AB 1234"
+                                            />
+                                        </div>
                                         <div>
                                             <label className="block text-sm font-medium text-slate-700 mb-1.5">Car Make <span className="text-red-400">*</span></label>
                                             <input type="text" value={form.car_make} onChange={e => set('car_make', e.target.value)} required disabled={loading} className="w-full h-11 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-primary/10 bg-white" placeholder="e.g. Maruti Suzuki" />

@@ -269,7 +269,7 @@ const CarDetails = () => {
                 .from('user_wishlist')
                 .select('inventory_id')
                 .eq('user_id', user.id);
-            setWishlist(data?.map(w => w.inventory_id) || []);
+            setWishlist(data?.map((w: { inventory_id: string }) => w.inventory_id) || []);
         };
         loadWishlist();
     }, [user]);
@@ -325,8 +325,8 @@ const CarDetails = () => {
             });
 
             const sorted = scored
-                .sort((a, b) => b.score - a.score)
-                .map(item => item.car)
+                .sort((a: { car: CarData; score: number }, b: { car: CarData; score: number }) => b.score - a.score)
+                .map((item: { car: CarData; score: number }) => item.car)
                 .slice(0, 4);
 
             setSimilarCars(sorted);
@@ -854,6 +854,9 @@ const CarDetails = () => {
                             <a href={`https://wa.me/919823237975?text=I'm interested in the ${car.year} ${car.make} ${car.model} (ID: ${car.id})`} target="_blank" rel="noreferrer" className="w-full h-12 flex items-center justify-center gap-2 bg-[#25D366] text-white font-bold rounded-xl hover:bg-[#20bd5a] transition-colors text-sm">
                                 <span className="material-symbols-outlined text-lg">forum</span> WhatsApp Inquiry
                             </a>
+                            <Link to={`/book-test-drive?car=${car.id}`} className="w-full h-12 flex items-center justify-center gap-2 bg-accent text-primary font-bold rounded-xl hover:bg-accent-hover transition-colors text-sm shadow-sm">
+                                <span className="material-symbols-outlined text-lg">directions_car</span> Schedule Test Drive
+                            </Link>
                             <button 
                                 onClick={async () => {
                                     const shareUrl = catalogId 

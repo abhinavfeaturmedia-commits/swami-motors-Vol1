@@ -46,20 +46,31 @@ const CalendarView = () => {
         // 2. Process Bookings (Test Drives & Services)
         bookings.forEach(b => {
             if (!b.booking_date) return;
-            const dateObj = new Date(b.booking_date);
-            
-            const offset = dateObj.getTimezoneOffset();
-            const dateStr = new Date(dateObj.getTime() - (offset*60*1000)).toISOString().split('T')[0];
-            const timeStr = dateObj.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+            const dateStr = String(b.booking_date).split('T')[0];
 
             if (!map[dateStr]) map[dateStr] = [];
             
-            const evtType = b.type === 'service' ? 'service' : 'test-drive';
+            const isService = b.booking_type === 'service' || b.type === 'service';
+            const evtType = isService ? 'service' : 'test-drive';
             const customerName = b.lead?.full_name || 'Customer';
-            const carName = b.car ? ` (${b.car.make})` : '';
+            const carName = b.car ? ` (${b.car.make} ${b.car.model || ''})` : '';
+
+            // Format real booking time accurately (e.g. '10:30:00' -> '10:30 AM')
+            let timeStr = '10:00 AM';
+            if (b.booking_time) {
+                const parts = String(b.booking_time).split(':');
+                if (parts.length >= 2) {
+                    let h = parseInt(parts[0], 10);
+                    const m = parts[1];
+                    const ampm = h >= 12 ? 'PM' : 'AM';
+                    if (h > 12) h -= 12;
+                    if (h === 0) h = 12;
+                    timeStr = `${h}:${m} ${ampm}`;
+                }
+            }
 
             map[dateStr].push({ 
-                title: `${evtType.replace('-', ' ').toUpperCase()}: ${customerName}${carName}`, 
+                title: `${isService ? 'SERVICE' : 'TEST DRIVE'}: ${customerName}${carName}`, 
                 time: timeStr, 
                 type: evtType 
             });

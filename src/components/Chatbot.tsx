@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { generateOpenRouterCompletion } from '../lib/openrouter';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Message {
@@ -107,68 +106,30 @@ export const Chatbot: React.FC = () => {
 
         setMessages(prev => [...prev, userMsg]);
         setInput('');
-        setIsTyping(true);
-
-        // Simulate AI thinking delay
+        setIsTyping(true);        // Call secure backend AI proxy
         setTimeout(async () => {
             try {
-                if (isAiOnline) {
-                    // ─── AI MODE (OpenRouter) ───
-                    const carsContext = availableCars.length > 0
-                        ? availableCars.map(c => `- ${c.year} ${c.make} ${c.model} (${c.transmission}, ${c.fuel_type}, Price: ${formatCurrencyLakh(c.price)}, Mileage: ${c.mileage.toLocaleString()} km)`).join('\n')
-                        : 'No specific cars are in stock at the moment, but customers can enquire for ordering.';
-
-                    const profile = settings?.business_profile || {};
-                    const hours = settings?.working_hours || {};
-                    const hoursText = Object.entries(hours).map(([day, val]: [string, any]) => 
-                        `${day}: ${val.status} ${val.status !== 'Closed' ? `(${val.start} - ${val.end})` : ''}`
-                    ).join('\n');
-
-                    const systemPrompt = `You are a friendly, professional AI chatbot assistant for "Shree Swami Samarth Motors" (Swami Motors), a premium pre-owned car dealership in Kolhapur, Maharashtra, India.
-Your goals:
-1. Greet visitors warmly and resolve queries regarding our available cars, services, pricing, timings, and location.
-2. If they are interested in buying, selling, booking a test drive, or request a callback, offer to have a representative call them. Ask them to click the "Request Callback" button in the chat or provide their Name and Phone number.
-3. Keep responses helpful, concise, and structured (use bullet points or emojis where helpful). Do NOT write introductory conversational fillers.
-
-Dealership Details:
-- Name: Shree Swami Samarth Motors
-- Showroom Location: ${profile.address || 'Kasaba Bawada Main Rd, Kasaba Bawada, Kolhapur, Maharashtra - 416006'}
-- City: ${profile.city || 'Kolhapur'}
-- Phone: ${profile.phone || '+91 98232 37975'}
-- Email: ${profile.email || 'contact@sssmotors.com'}
-- GST: ${profile.gst_number || 'N/A'}
-- Timings:\n${hoursText || 'Monday-Saturday (9:30 AM - 7:30 PM), Sunday Closed'}
-
-Available Inventory in Stock:
-${carsContext}
-
-Services Offered:
-- Pre-owned Certified Car Sales (200-point quality check)
-- Car Insurance assistance
-- Showroom Test Drives (free of charge)
-- Vehicle Service Booking (routine maintenance, repairs, detailing)
-- Sell Your Car (instant quote, spot payment, hassle-free transfer)
-- Consignment Sales (sell through our showroom for a small fee)
-
-Conversation Guideline:
-- Keep answers brief and optimized for a small chat widget screen.
-- If a customer shares contact details (Name and Phone), acknowledge it politely and state that a representative will call them shortly.`;
-
-                    const apiKey = orSettings.api_key;
-                    const model = orSettings.default_model === 'custom' 
-                        ? orSettings.custom_model 
-                        : orSettings.default_model;
-
-                    const userPrompt = textToSend;
-                    
-                    // Call OpenRouter
-                    const aiText = await generateOpenRouterCompletion({
-                        apiKey,
-                        model,
-                        systemPrompt,
-                        userPrompt
+                let aiText = '';
+                try {
+                    const apiBase = import.meta.env.VITE_API_URL || '';
+                    const res = await fetch(`${apiBase}/api/ai/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: textToSend,
+                            history: messages.slice(-6).map(m => ({ sender: m.sender, text: m.text })),
+                            cars: availableCars
+                        })
                     });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.reply) aiText = data.reply;
+                    }
+                } catch (netErr) {
+                    console.log('AI proxy offline or unreachable, switching to rule fallback:', netErr);
+                }
 
+                if (aiText) {
                     const botMsg: Message = {
                         id: Math.random().toString(),
                         sender: 'bot',
@@ -177,7 +138,7 @@ Conversation Guideline:
                     };
                     setMessages(prev => [...prev, botMsg]);
                 } else {
-                    // ─── OFFLINE RULE-BASED FALLBACK MODE ───
+                    // ─── OFFLINE RULE-BASED FALLBACK MODE ───ED FALLBACK MODE ───
                     let reply = '';
                     const lowerText = textToSend.toLowerCase();
 
@@ -291,7 +252,7 @@ Conversation Guideline:
                                     <span className="material-symbols-outlined text-accent text-lg">smart_toy</span>
                                 </div>
                                 <div>
-                                    <h3 className="text-sm font-bold font-display leading-tight">SS Motors Assistant</h3>
+                                    <h3 className="text-sm font-bold font-display leading-tight">Swami Samarth Assistant</h3>
                                     <p className="text-[10px] text-green-300 flex items-center gap-1 mt-0.5">
                                         <span className="inline-block size-1.5 rounded-full bg-green-400 animate-ping" />
                                         {isAiOnline ? 'Online (AI Active)' : 'Online (Direct Assist)'}

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Heart, User, Menu, X, Phone, Mail, MapPin, Facebook, Instagram, Twitter, Youtube } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../contexts/AuthContext';
 import { useInquiryCart } from '../contexts/InquiryCartContext';
 import { InquiryCartDrawer } from '../components/ui/InquiryCartDrawer';
 import { Chatbot } from '../components/Chatbot';
@@ -13,6 +14,7 @@ const PublicLayout: React.FC = () => {
     const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
     const [searchVal, setSearchVal] = useState('');
     const { cartItems, setIsCartOpen } = useInquiryCart();
+    const { user, profile } = useAuth();
 
     const navLinks = [
         { name: 'Home', path: '/' },
@@ -37,14 +39,13 @@ const PublicLayout: React.FC = () => {
                 <div className="container-main">
                     <div className="flex items-center justify-between h-16 sm:h-[4.5rem] gap-2 lg:gap-6">
                         {/* Logo */}
-                        <Link to="/" className="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
+                        <Link to="/" className="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0 max-w-[65vw] sm:max-w-none">
                             <div className="size-9 sm:size-10 bg-primary rounded-xl flex items-center justify-center text-white shadow-sm shrink-0">
                                 <span className="material-symbols-outlined text-xl">directions_car</span>
                             </div>
                             <div className="block min-w-0 flex-1">
-                                <h1 className="text-primary text-sm sm:text-lg font-bold leading-tight tracking-tight font-display truncate">
-                                    <span className="xs:hidden">SS Motors</span>
-                                    <span className="hidden xs:inline">Shree Swami Samarth Motors</span>
+                                <h1 className="text-primary text-xs xs:text-sm sm:text-base lg:text-lg font-bold leading-tight tracking-tight font-display truncate">
+                                    Shree Swami Samarth Motors
                                 </h1>
                             </div>
                         </Link>
@@ -85,17 +86,44 @@ const PublicLayout: React.FC = () => {
                                 />
                             </form>
 
-                            <button className="hidden lg:flex size-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 hover:text-primary transition-colors">
-                                <Heart size={20} />
+                            {/* Inquiry Cart Button */}
+                            <button
+                                onClick={() => setIsCartOpen(true)}
+                                title="Inquiry Cart"
+                                className="relative flex size-10 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-primary transition-colors"
+                                aria-label="View Inquiry Cart"
+                            >
+                                <span className="material-symbols-outlined text-xl">shopping_bag</span>
+                                {cartItems.length > 0 && (
+                                    <span className="absolute -top-1 -right-1 size-5 bg-accent text-white text-[11px] font-bold rounded-full flex items-center justify-center shadow-md animate-pulse">
+                                        {cartItems.length}
+                                    </span>
+                                )}
                             </button>
+
+                            <Link 
+                                to={user ? "/dashboard" : "/auth"} 
+                                state={user ? undefined : { from: { pathname: '/dashboard' } }}
+                                title="Wishlist & Garage"
+                                className="hidden lg:flex size-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 hover:text-red-500 transition-colors"
+                            >
+                                <Heart size={20} />
+                            </Link>
                             <Link to="/admin/login" className="hidden lg:flex h-10 px-4 items-center justify-center gap-1.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 hover:text-primary transition-colors">
                                 <span className="material-symbols-outlined text-base">admin_panel_settings</span>
                                 Admin
                             </Link>
-                            <Link to="/auth" className="hidden sm:flex h-10 px-5 items-center justify-center gap-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-light transition-colors shadow-sm">
-                                <User size={16} />
-                                Login
-                            </Link>
+                            {user ? (
+                                <Link to="/dashboard" className="hidden sm:flex h-10 px-4 items-center justify-center gap-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-light transition-colors shadow-sm">
+                                    <User size={16} />
+                                    {profile?.full_name ? profile.full_name.split(' ')[0] : 'Dashboard'}
+                                </Link>
+                            ) : (
+                                <Link to="/auth" className="hidden sm:flex h-10 px-5 items-center justify-center gap-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-light transition-colors shadow-sm">
+                                    <User size={16} />
+                                    Login
+                                </Link>
+                            )}
                             
                             {/* Mobile Actions */}
                             <button 
@@ -108,7 +136,7 @@ const PublicLayout: React.FC = () => {
                             >
                                 <Search size={18} />
                             </button>
-                            <Link to="/auth" className="sm:hidden flex size-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition-colors">
+                            <Link to={user ? "/dashboard" : "/auth"} className="sm:hidden flex size-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition-colors">
                                 <User size={18} />
                             </Link>
 

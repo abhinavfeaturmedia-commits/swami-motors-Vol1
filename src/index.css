@@ -36,6 +36,9 @@
   --font-display: "Outfit", sans-serif;
   --font-body: "Plus Jakarta Sans", "Outfit", sans-serif;
 
+  /* Custom Breakpoints */
+  --breakpoint-xs: 420px;
+
   /* Border Radius */
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;

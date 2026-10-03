@@ -140,8 +140,8 @@ const Customers = () => {
             const [
                 { data: interestsData },
                 { data: leadsData },
-                { data: serviceData },
-                { data: testDriveData },
+                { data: legacyServiceData },
+                { data: legacyTestDriveData },
                 { data: followUpData },
                 { data: visitsData },
             ] = await Promise.all([
@@ -152,6 +152,18 @@ const Customers = () => {
                 safeFetch(supabase.from('follow_ups').select('*').eq('customer_id', detail.id)),
                 safeFetch(supabase.from('visits').select('*, staff:profiles!staff_id(full_name)').eq('customer_id', detail.id).order('visit_date', { ascending: false })),
             ]);
+
+            // Query live unified bookings table matching customer's leads
+            const leadIds = (leadsData || []).map((l: any) => l.id).filter(Boolean);
+            let unifiedBookings: any[] = [];
+            if (leadIds.length > 0) {
+                const { data: bData } = await safeFetch(
+                    supabase.from('bookings')
+                        .select('*, car:inventory(id, make, model, year, registration_no)')
+                        .in('lead_id', leadIds)
+                );
+                unifiedBookings = bData || [];
+            }
 
             setCustomerInterests(interestsData || []);
             setVisits(visitsData as Visit[] || []);
@@ -182,14 +194,35 @@ const Customers = () => {
                     description: l.message || (l.car_make ? `Interested in ${l.car_make} ${l.car_model || ''}` : 'General Enquiry'),
                     date: new Date(l.created_at),
                     status: l.status,
-                    icon: l.type === 'insurance' ? 'shield' : l.type === 'service' ? 'build' : l.type === 'sell_car' ? 'sell' : 'person_search',
-                    color: l.type === 'insurance' ? 'indigo' : l.type === 'service' ? 'orange' : 'primary',
+                    icon: l.type === 'insurance' ? 'shield' : (l.type === 'service' || l.type === 'car_service') ? 'build' : l.type === 'sell_car' ? 'sell' : 'person_search',
+                    color: l.type === 'insurance' ? 'indigo' : (l.type === 'service' || l.type === 'car_service') ? 'orange' : 'primary',
                     data: l
                 });
             });
 
-            // 3. Service Bookings
-            (serviceData || []).forEach((s: any) => {
+            // 3. Unified Live Bookings (Test Drives & Services)
+            unifiedBookings.forEach((b: any) => {
+                const isService = b.booking_type === 'service';
+                const carDesc = b.car ? `${b.car.year || ''} ${b.car.make} ${b.car.model} (${b.car.registration_no || 'Reg Pending'})` : 'Showroom Vehicle';
+                const bookingDateTime = b.booking_date 
+                    ? new Date(`${b.booking_date}T${b.booking_time || '10:00:00'}`) 
+                    : new Date();
+
+                events.push({
+                    id: `booking-${b.id}`,
+                    type: isService ? 'service' : 'test_drive',
+                    title: isService ? 'Service Appointment' : 'Test Drive Appointment',
+                    description: `${carDesc} | Scheduled: ${b.booking_date || 'Date TBD'} at ${b.booking_time || '10:00 AM'}`,
+                    date: bookingDateTime,
+                    status: b.status || 'scheduled',
+                    icon: isService ? 'home_repair_service' : 'drive_eta',
+                    color: isService ? 'orange' : 'blue',
+                    data: b
+                });
+            });
+
+            // 4. Legacy Service Bookings (Fallback)
+            (legacyServiceData || []).forEach((s: any) => {
                 events.push({
                     id: `service-${s.id}`,
                     type: 'service',
@@ -203,8 +236,8 @@ const Customers = () => {
                 });
             });
 
-            // 4. Test Drives
-            (testDriveData || []).forEach((t: any) => {
+            // 5. Legacy Test Drives (Fallback)
+            (legacyTestDriveData || []).forEach((t: any) => {
                 events.push({
                     id: `td-${t.id}`,
                     type: 'test_drive',
@@ -335,7 +368,8 @@ const Customers = () => {
             .from('lead_car_interests')
             .select('customer_id, car:inventory(make, model, registration_no)')
             .not('customer_id', 'is', null)
-            .then(({ data }) => {
+            .then((res: any) => {
+                const data = res?.data;
                 const map = new Map<string, Array<{ make: string; model: string; registration_no: string }>>();
                 (data || []).forEach((r: any) => {
                     if (!r.customer_id || !r.car) return;
@@ -376,13 +410,10 @@ const Customers = () => {
         const q = search.toLowerCase().trim();
         if (!q) return customers;
 
-        // If RPC results are ready, use them as primary filter (searches relations deeply)
-        if (rpcMatchIds !== null) {
-            return customers.filter(c => rpcMatchIds.has(c.id));
-        }
-
-        // Instant local filter while RPC loads (covers all direct customer fields + car lookup maps)
         return customers.filter(c => {
+            // 0. Match from deep database RPC
+            if (rpcMatchIds !== null && rpcMatchIds.has(c.id)) return true;
+
             // 1. Standard personal fields (expanded)
             if ([
                 c.full_name, c.phone, c.email, c.city,
@@ -394,19 +425,19 @@ const Customers = () => {
             // 2. Cars from PURCHASE history (sales → inventory)
             const purchasedCars = customerCarMap.get(c.id) || [];
             if (purchasedCars.some(car =>
-                car.make.includes(q) ||
-                car.model.includes(q) ||
-                car.registration_no.includes(q) ||
-                `${car.make} ${car.model}`.includes(q)
+                (car.make || '').toLowerCase().includes(q) ||
+                (car.model || '').toLowerCase().includes(q) ||
+                (car.registration_no || '').toLowerCase().includes(q) ||
+                `${car.make || ''} ${car.model || ''}`.toLowerCase().includes(q)
             )) return true;
 
             // 3. Cars from INTEREST history (lead_car_interests with customer_id)
             const interestedCars = customerCarInterestMap.get(c.id) || [];
             return interestedCars.some(car =>
-                car.make.includes(q) ||
-                car.model.includes(q) ||
-                car.registration_no.includes(q) ||
-                `${car.make} ${car.model}`.includes(q)
+                (car.make || '').toLowerCase().includes(q) ||
+                (car.model || '').toLowerCase().includes(q) ||
+                (car.registration_no || '').toLowerCase().includes(q) ||
+                `${car.make || ''} ${car.model || ''}`.toLowerCase().includes(q)
             );
         });
     }, [customers, search, rpcMatchIds, customerCarMap, customerCarInterestMap]);

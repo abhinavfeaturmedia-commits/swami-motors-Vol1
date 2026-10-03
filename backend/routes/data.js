@@ -1,8 +1,18 @@
 import express from 'express';
 import crypto from 'crypto';
-import { query } from '../db.js';
+import { query, withTransaction } from '../db.js';
 
 const router = express.Router();
+
+// Tables supporting soft-delete via deleted_at timestamp
+const SOFT_DELETE_TABLES = new Set([
+    'inventory',
+    'leads',
+    'customers',
+    'sales',
+    'bookings',
+    'vehicle_expenses'
+]);
 
 // Whitelist of valid database tables to prevent arbitrary table access
 const ALLOWED_TABLES = new Set([
@@ -21,6 +31,52 @@ const ALLOWED_TABLES = new Set([
     'test_drive_bookings', 'user_permissions', 'user_wishlist', 'vehicle_expenses',
     'video_reviews', 'visits', 'website_events'
 ]);
+
+// Tables that can be queried publicly without a staff/admin login
+const PUBLIC_READ_TABLES = new Set([
+    'inventory',
+    'accessories',
+    'dealership_settings',
+    'shared_catalogs',
+    'shared_catalog_items',
+    'video_reviews',
+    'catalog_views',
+    'lead_car_interests',
+    'lead_accessories',
+    'lead_inventory_items'
+]);
+
+// Tables that public visitors can submit to (inquiries, test drives, wishlist, analytics, finance)
+const PUBLIC_INSERT_TABLES = new Set([
+    'leads',
+    'bookings',
+    'visits',
+    'lead_inventory_items',
+    'lead_activities',
+    'lead_accessories',
+    'lead_car_interests',
+    'website_events',
+    'catalog_views',
+    'user_wishlist',
+    'finance_services'
+]);
+
+// Helper to normalize time strings ('10:30 AM', '2:00 PM') into MySQL TIME format 'HH:MM:SS'
+function normalizeTime(timeStr) {
+    if (!timeStr || typeof timeStr !== 'string') return timeStr;
+    const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+    if (!match) return timeStr;
+    let [_, hours, minutes, seconds, meridiem] = match;
+    let h = parseInt(hours, 10);
+    const m = minutes.padStart(2, '0');
+    const s = (seconds || '00').padStart(2, '0');
+    if (meridiem) {
+        const isPM = meridiem.toUpperCase() === 'PM';
+        if (isPM && h < 12) h += 12;
+        if (!isPM && h === 12) h = 0;
+    }
+    return `${String(h).padStart(2, '0')}:${m}:${s}`;
+}
 
 // Helper to check valid column identifier
 function isValidIdentifier(name) {
@@ -117,30 +173,82 @@ router.post('/select', async (req, res) => {
             return res.status(400).json({ error: `Invalid or disallowed table: ${table}` });
         }
 
+        // Security check: restrict non-public tables to authenticated users
+        if (!PUBLIC_READ_TABLES.has(table)) {
+            if (!req.user) {
+                return res.status(401).json({ error: `Unauthorized: Authentication required to view ${table}` });
+            }
+            if (req.user.role === 'customer') {
+                const customerAllowed = new Set(['user_wishlist', 'leads', 'bookings', 'finance_services', 'profiles']);
+                if (!customerAllowed.has(table)) {
+                    return res.status(403).json({ error: `Forbidden: Staff or admin access required to view ${table}` });
+                }
+            }
+        }
+
+        // Customer automatic scoping: customers can only view their own leads, bookings, finance, and wishlist
+        const activeFilters = Array.isArray(filters) ? [...filters] : [];
+        if (req.user && req.user.role === 'customer') {
+            if (table === 'leads' || table === 'finance_services') {
+                if (req.user.phone) {
+                    activeFilters.push({ column: 'phone', operator: 'eq', value: req.user.phone });
+                } else if (req.user.email) {
+                    activeFilters.push({ column: 'email', operator: 'eq', value: req.user.email });
+                } else {
+                    activeFilters.push({ column: 'user_id', operator: 'eq', value: req.user.id });
+                }
+            } else if (table === 'user_wishlist') {
+                activeFilters.push({ column: 'user_id', operator: 'eq', value: req.user.id });
+            }
+        }
+
+        // Auto-filter soft-deleted records unless explicitly requested
+        if (SOFT_DELETE_TABLES.has(table) && !req.body.include_deleted) {
+            const hasDeletedAt = activeFilters.some(f => f.column === 'deleted_at');
+            if (!hasDeletedAt) {
+                activeFilters.push({ column: 'deleted_at', operator: 'is_null', value: null });
+            }
+        }
+
         // Parse column selection
         let colSql = '*';
         if (columns && columns !== '*') {
             if (Array.isArray(columns)) {
-                const validCols = columns.filter(isValidIdentifier).map(c => `\`${c}\``);
-                colSql = validCols.length > 0 ? validCols.join(', ') : '*';
+                const validCols = columns.filter(c => c === '*' || isValidIdentifier(c)).map(c => c === '*' ? '*' : `\`${c}\``);
+                colSql = validCols.length > 0 ? (validCols.includes('*') ? '*' : validCols.join(', ')) : '*';
             } else if (typeof columns === 'string') {
-                const parts = columns.split(',').map(s => s.trim()).filter(isValidIdentifier).map(c => `\`${c}\``);
-                colSql = parts.length > 0 ? parts.join(', ') : '*';
+                if (columns.includes('*')) {
+                    colSql = '*';
+                } else {
+                    // Strip out relational queries like `car:inventory(...)` or `items(...)` so nested columns don't leak into parent table SELECT
+                    const cleaned = columns.replace(/\w+(?::\w+)?\([^)]*\)/g, '').trim();
+                    const parts = cleaned.split(',')
+                        .map(s => s.trim())
+                        .filter(s => s.length > 0 && isValidIdentifier(s))
+                        .map(c => `\`${c}\``);
+                    colSql = parts.length > 0 ? parts.join(', ') : '*';
+                }
             }
         }
 
         let sql = `SELECT ${colSql} FROM \`${table}\``;
         const params = [];
+        const whereClauses = [];
 
         // Apply filters: [{ column, operator, value }]
-        if (Array.isArray(filters) && filters.length > 0) {
-            const whereClauses = [];
-            for (const f of filters) {
+        if (activeFilters.length > 0) {
+            for (const f of activeFilters) {
                 if (!f.column || !isValidIdentifier(f.column)) continue;
                 const op = f.operator || 'eq';
                 const col = `\`${f.column}\``;
 
                 switch (op) {
+                    case 'is_null':
+                        whereClauses.push(`${col} IS NULL`);
+                        break;
+                    case 'not_null':
+                        whereClauses.push(`${col} IS NOT NULL`);
+                        break;
                     case 'eq':
                         if (f.value === null) {
                             whereClauses.push(`${col} IS NULL`);
@@ -224,15 +332,55 @@ router.post('/select', async (req, res) => {
             }
         }
 
-        const rows = await query(sql, params);
-        const parsedRows = rows.map(parseJsonFields);
-        await expandRelations(table, typeof columns === 'string' ? columns : '', parsedRows);
-
-        if (single) {
-            return res.json({ data: parsedRows.length > 0 ? parsedRows[0] : null, error: null });
+        // Support exact count for server-side pagination
+        let totalCount = null;
+        if (req.body.count === 'exact') {
+            let countSql = `SELECT COUNT(*) AS total_count FROM \`${table}\``;
+            if (whereClauses.length > 0) {
+                countSql += ` WHERE ${whereClauses.join(' AND ')}`;
+            }
+            const countRows = await query(countSql, params);
+            totalCount = countRows[0]?.total_count ?? 0;
         }
 
-        return res.json({ data: parsedRows, error: null, count: parsedRows.length });
+        const rows = await query(sql, params);
+        let parsedRows = rows.map(parseJsonFields);
+        await expandRelations(table, typeof columns === 'string' ? columns : '', parsedRows);
+
+        // Security: Strip password_hash if profiles are queried
+        if (table === 'profiles') {
+            parsedRows.forEach(p => { delete p.password_hash; });
+        }
+
+        // Security: Filter out sensitive keys from dealership_settings unless admin, but preserve safe metadata for openrouter
+        if (table === 'dealership_settings' && (!req.user || req.user.role !== 'admin')) {
+            parsedRows = parsedRows
+                .filter(r => {
+                    const k = r.setting_key ?? r.key;
+                    return k !== 'smtp_settings' && k !== 'api_keys';
+                })
+                .map(r => {
+                    const k = r.setting_key ?? r.key;
+                    if (k === 'openrouter_settings' && r.setting_value) {
+                        const val = typeof r.setting_value === 'object' ? { ...r.setting_value } : {};
+                        return {
+                            ...r,
+                            setting_value: {
+                                ...val,
+                                is_configured: Boolean(val.api_key),
+                                api_key: val.api_key ? 'configured' : ''
+                            }
+                        };
+                    }
+                    return r;
+                });
+        }
+
+        if (single) {
+            return res.json({ data: parsedRows.length > 0 ? parsedRows[0] : null, error: null, count: totalCount !== null ? totalCount : (parsedRows.length > 0 ? 1 : 0) });
+        }
+
+        return res.json({ data: parsedRows, error: null, count: totalCount !== null ? totalCount : parsedRows.length });
     } catch (err) {
         console.error('Select query error:', err);
         return res.status(500).json({ data: null, error: err.message });
@@ -248,6 +396,16 @@ router.post('/insert', async (req, res) => {
             return res.status(400).json({ error: `Invalid or disallowed table: ${table}` });
         }
 
+        // Security check: only allow public insert on permitted lead/inquiry/event tables
+        if (!PUBLIC_INSERT_TABLES.has(table)) {
+            if (!req.user) {
+                return res.status(401).json({ error: `Unauthorized: Authentication required to insert into ${table}` });
+            }
+            if (req.user.role === 'customer' && table !== 'user_wishlist') {
+                return res.status(403).json({ error: `Forbidden: Admin or staff access required to insert into ${table}` });
+            }
+        }
+
         if (!values) {
             return res.status(400).json({ error: 'No values provided to insert' });
         }
@@ -261,6 +419,27 @@ router.post('/insert', async (req, res) => {
             // Auto-generate UUID if table has id and not provided
             if (table !== 'dealership_settings' && !item.id) {
                 item.id = crypto.randomUUID();
+            }
+
+            // Defaults for strict NOT NULL datetime & time fields
+            const now = new Date();
+            if (table === 'bookings' && item.booking_time) {
+                item.booking_time = normalizeTime(item.booking_time);
+            }
+            if (table === 'catalog_views' && !item.viewed_at) {
+                item.viewed_at = now;
+            }
+            if ((table === 'visits' || table === 'finance_services') && !item.created_at) {
+                item.created_at = now;
+            }
+            if ((table === 'visits' || table === 'finance_services') && !item.updated_at) {
+                item.updated_at = now;
+            }
+            if (table === 'staff_announcements' && !item.created_at) {
+                item.created_at = now;
+            }
+            if (table === 'leads' && !item.created_at) {
+                item.created_at = now;
             }
 
             const validEntries = Object.entries(item).filter(([k]) => isValidIdentifier(k));
@@ -299,6 +478,14 @@ router.post('/upsert', async (req, res) => {
             return res.status(400).json({ error: `Invalid or disallowed table: ${table}` });
         }
 
+        // Security check: require authentication for upsert
+        if (!req.user) {
+            return res.status(401).json({ error: `Unauthorized: Authentication required to upsert into ${table}` });
+        }
+        if (req.user.role === 'customer' && table !== 'user_wishlist') {
+            return res.status(403).json({ error: `Forbidden: Admin or staff access required to upsert into ${table}` });
+        }
+
         if (!values) {
             return res.status(400).json({ error: 'No values provided to upsert' });
         }
@@ -309,7 +496,37 @@ router.post('/upsert', async (req, res) => {
         for (const rawItem of items) {
             const item = { ...rawItem };
 
-            if (table !== 'dealership_settings' && !item.id && !onConflict) {
+            if (table === 'bookings' && item.booking_time) {
+                item.booking_time = normalizeTime(item.booking_time);
+            }
+
+            const now = new Date();
+            if (item.updated_at === undefined && ['attendance_records', 'user_permissions', 'finance_services', 'visits', 'leads'].includes(table)) {
+                item.updated_at = now;
+            }
+
+            const conflictKeys = onConflict ? onConflict.split(',').map(s => s.trim()) : ['id'];
+
+            // Intelligent conflict resolution: if id not explicitly passed, check if a row exists matching conflict keys
+            let matchedId = item.id;
+            if (!matchedId && table !== 'dealership_settings' && conflictKeys.length > 0 && !conflictKeys.includes('id')) {
+                const whereCols = conflictKeys.filter(isValidIdentifier);
+                const whereVals = whereCols.map(c => item[c]);
+                if (whereCols.length > 0 && whereVals.every(v => v !== undefined && v !== null)) {
+                    try {
+                        const checkSql = `SELECT \`id\` FROM \`${table}\` WHERE ${whereCols.map(c => `\`${c}\` = ?`).join(' AND ')} LIMIT 1`;
+                        const existing = await query(checkSql, whereVals);
+                        if (existing && existing.length > 0) {
+                            matchedId = existing[0].id;
+                            item.id = matchedId;
+                        }
+                    } catch (e) {
+                        // Table may not have an 'id' column or lookup failed, ignore
+                    }
+                }
+            }
+
+            if (!item.id && table !== 'dealership_settings') {
                 item.id = crypto.randomUUID();
             }
 
@@ -327,9 +544,8 @@ router.post('/upsert', async (req, res) => {
                 return v;
             });
 
-            const conflictKeys = onConflict ? onConflict.split(',').map(s => s.trim()) : ['id'];
             const updateCols = validEntries
-                .filter(([k]) => !conflictKeys.includes(k))
+                .filter(([k]) => !conflictKeys.includes(k) && k !== 'id')
                 .map(([k]) => `\`${k}\` = VALUES(\`${k}\`)`);
 
             let sql = `INSERT INTO \`${table}\` (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`;
@@ -356,6 +572,18 @@ router.post('/update', async (req, res) => {
 
         if (!ALLOWED_TABLES.has(table)) {
             return res.status(400).json({ error: `Invalid or disallowed table: ${table}` });
+        }
+
+        // Security check: require authentication for updates
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized: Authentication required to update records' });
+        }
+        if (req.user.role === 'customer') {
+            if (table === 'profiles') {
+                match.id = req.user.id;
+            } else if (table !== 'user_wishlist') {
+                return res.status(403).json({ error: `Forbidden: Admin or staff access required to update ${table}` });
+            }
         }
 
         if (!values || !match) {
@@ -413,6 +641,18 @@ router.post('/delete', async (req, res) => {
             return res.status(400).json({ error: `Invalid or disallowed table: ${table}` });
         }
 
+        // Security check: require authentication for deletions
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized: Authentication required to delete records' });
+        }
+        if (req.user.role === 'customer') {
+            if (table === 'user_wishlist') {
+                match.user_id = req.user.id;
+            } else {
+                return res.status(403).json({ error: `Forbidden: Admin or staff access required to delete from ${table}` });
+            }
+        }
+
         if (!match || Object.keys(match).length === 0) {
             return res.status(400).json({ error: 'Match criteria required for deletion' });
         }
@@ -426,6 +666,13 @@ router.post('/delete', async (req, res) => {
             params.push(v);
         }
 
+        // Soft delete support: If table supports soft-delete and hard_delete is not explicitly true, mark deleted_at = NOW()
+        if (SOFT_DELETE_TABLES.has(table) && req.body.hard_delete !== true) {
+            const sql = `UPDATE \`${table}\` SET \`deleted_at\` = NOW() WHERE ${whereClauses.join(' AND ')}`;
+            await query(sql, params);
+            return res.json({ success: true, soft_deleted: true, error: null });
+        }
+
         const sql = `DELETE FROM \`${table}\` WHERE ${whereClauses.join(' AND ')}`;
         await query(sql, params);
 
@@ -433,6 +680,210 @@ router.post('/delete', async (req, res) => {
     } catch (err) {
         console.error('Delete query error:', err);
         return res.status(500).json({ data: null, error: err.message });
+    }
+});
+
+// ─── POST /api/data/rpc ───────────────────────────────────────────────────────
+router.post('/rpc', async (req, res) => {
+    try {
+        const { fnName, args = {} } = req.body;
+
+        if (fnName === 'search_leads_by_text') {
+            const term = (args.search_term || '').trim();
+            if (!term) return res.json({ data: [], error: null });
+
+            const likeTerm = `%${term}%`;
+            const sql = `
+                SELECT DISTINCT l.id
+                FROM \`leads\` l
+                LEFT JOIN \`lead_car_interests\` lci ON lci.lead_id = l.id
+                LEFT JOIN \`inventory\` i ON lci.inventory_id = i.id
+                LEFT JOIN \`dealers\` d ON i.dealer_id = d.id
+                LEFT JOIN \`follow_ups\` fu ON fu.lead_id = l.id
+                WHERE 
+                    l.full_name LIKE ? OR
+                    l.phone LIKE ? OR
+                    l.email LIKE ? OR
+                    l.type LIKE ? OR
+                    l.source LIKE ? OR
+                    l.status LIKE ? OR
+                    l.notes LIKE ? OR
+                    l.car_make LIKE ? OR
+                    l.car_model LIKE ? OR
+                    l.budget LIKE ? OR
+                    l.message LIKE ? OR
+                    l.lead_quality LIKE ? OR
+                    l.personal_address LIKE ? OR
+                    l.office_address LIKE ? OR
+                    l.secondary_phone LIKE ? OR
+                    l.whatsapp_number LIKE ? OR
+                    i.make LIKE ? OR
+                    i.model LIKE ? OR
+                    i.registration_no LIKE ? OR
+                    d.name LIKE ? OR
+                    fu.notes LIKE ?
+                ORDER BY l.created_at DESC
+                LIMIT 100
+            `;
+            const params = Array(21).fill(likeTerm);
+            const rows = await query(sql, params);
+            return res.json({ data: rows.map(r => r.id), error: null });
+        }
+
+        if (fnName === 'search_customers_by_text') {
+            const term = (args.search_term || '').trim();
+            if (!term) return res.json({ data: [], error: null });
+
+            const likeTerm = `%${term}%`;
+            const sql = `
+                SELECT DISTINCT c.id
+                FROM \`customers\` c
+                LEFT JOIN \`sales\` s ON s.customer_id = c.id
+                LEFT JOIN \`inventory\` i ON s.inventory_id = i.id
+                WHERE
+                    c.full_name LIKE ? OR
+                    c.phone LIKE ? OR
+                    c.email LIKE ? OR
+                    c.city LIKE ? OR
+                    c.address LIKE ? OR
+                    c.alternate_phone LIKE ? OR
+                    c.whatsapp_number LIKE ? OR
+                    c.occupation LIKE ? OR
+                    c.notes LIKE ? OR
+                    i.make LIKE ? OR
+                    i.model LIKE ? OR
+                    i.registration_no LIKE ?
+                ORDER BY c.created_at DESC
+                LIMIT 100
+            `;
+            const params = Array(12).fill(likeTerm);
+            const rows = await query(sql, params);
+            return res.json({ data: rows.map(r => r.id), error: null });
+        }
+
+        if (fnName === 'search_bookings_by_text') {
+            const term = (args.search_term || '').trim();
+            if (!term) return res.json({ data: [], error: null });
+
+            const likeTerm = `%${term}%`;
+            const sql = `
+                SELECT DISTINCT b.id
+                FROM \`bookings\` b
+                LEFT JOIN \`leads\` l ON b.lead_id = l.id
+                LEFT JOIN \`inventory\` i ON b.inventory_id = i.id
+                WHERE
+                    b.status LIKE ? OR
+                    b.booking_type LIKE ? OR
+                    b.notes LIKE ? OR
+                    l.full_name LIKE ? OR
+                    l.phone LIKE ? OR
+                    l.email LIKE ? OR
+                    l.notes LIKE ? OR
+                    i.make LIKE ? OR
+                    i.model LIKE ? OR
+                    i.registration_no LIKE ?
+                ORDER BY b.booking_date DESC
+                LIMIT 100
+            `;
+            const params = Array(10).fill(likeTerm);
+            const rows = await query(sql, params);
+            return res.json({ data: rows.map(r => r.id), error: null });
+        }
+
+        return res.status(400).json({ error: `Unknown RPC function: ${fnName}` });
+    } catch (err) {
+        console.error('RPC execution error:', err);
+        return res.status(500).json({ data: null, error: err.message });
+    }
+});
+
+// ─── POST /api/data/record-sale-transaction ──────────────────────────────────
+router.post('/record-sale-transaction', async (req, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized: Authentication required to record sales' });
+        }
+        const { inventory_id, final_price, customer_name, customer_phone, customer_email, notes, sale_type = 'purchased' } = req.body;
+
+        if (!inventory_id || !final_price || !customer_name) {
+            return res.status(400).json({ error: 'inventory_id, final_price, and customer_name are required' });
+        }
+
+        const result = await withTransaction(async (conn) => {
+            // 1. Fetch car with row lock to prevent race conditions
+            const [cars] = await conn.execute('SELECT * FROM inventory WHERE id = ? FOR UPDATE', [inventory_id]);
+            if (!cars || cars.length === 0) {
+                throw new Error('Vehicle not found or already deleted');
+            }
+            const car = cars[0];
+            if (car.status === 'sold') {
+                throw new Error('Vehicle is already recorded as sold');
+            }
+
+            const purchaseCost = Number(car.purchase_cost) || 0;
+            const finalPriceNum = Number(final_price);
+            const netProfit = finalPriceNum - purchaseCost;
+
+            // 2. Upsert customer
+            let customerId = crypto.randomUUID();
+            const phone = (customer_phone || '').trim();
+            if (phone) {
+                const [existingCust] = await conn.execute('SELECT id FROM customers WHERE phone = ? LIMIT 1', [phone]);
+                if (existingCust && existingCust.length > 0) {
+                    customerId = existingCust[0].id;
+                    await conn.execute('UPDATE customers SET full_name = ?, updated_at = NOW() WHERE id = ?', [customer_name.trim(), customerId]);
+                } else {
+                    await conn.execute(
+                        'INSERT INTO customers (id, full_name, phone, email, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
+                        [customerId, customer_name.trim(), phone, customer_email || null, notes || 'Walk-in buyer']
+                    );
+                }
+            } else {
+                await conn.execute(
+                    'INSERT INTO customers (id, full_name, phone, email, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
+                    [customerId, customer_name.trim(), null, customer_email || null, notes || 'Walk-in buyer']
+                );
+            }
+
+            // 3. Insert sale ledger entry
+            const saleId = crypto.randomUUID();
+            await conn.execute(
+                `INSERT INTO sales (
+                    id, customer_id, inventory_id, final_price, sale_date, 
+                    purchase_cost_snapshot, profit, sale_type, status, payment_status, notes, sold_by, created_at
+                ) VALUES (?, ?, ?, ?, CURDATE(), ?, ?, ?, 'completed', 'paid', ?, ?, NOW())`,
+                [saleId, customerId, inventory_id, finalPriceNum, purchaseCost, netProfit, sale_type, notes || 'Direct showroom sale', req.user.id]
+            );
+
+            // 4. Update inventory status to 'sold'
+            await conn.execute('UPDATE inventory SET status = "sold", updated_at = NOW() WHERE id = ?', [inventory_id]);
+
+            // 5. Audit log
+            const vehicleTitle = `${car.year} ${car.make} ${car.model} (${car.registration_no || 'No Reg'})`;
+            await conn.execute(
+                `INSERT INTO audit_logs (id, user_id, action, target_type, target_name, details, created_at)
+                 VALUES (?, ?, 'Direct Sale Recorded', 'Vehicle Sale', ?, ?, NOW())`,
+                [
+                    crypto.randomUUID(),
+                    req.user.id,
+                    vehicleTitle,
+                    `Sold to ${customer_name.trim()} for ₹${finalPriceNum.toLocaleString('en-IN')} (Cost: ₹${purchaseCost.toLocaleString('en-IN')}, Net Profit: ₹${netProfit.toLocaleString('en-IN')})`
+                ]
+            );
+
+            return {
+                sale_id: saleId,
+                customer_id: customerId,
+                inventory_id,
+                profit: netProfit,
+                final_price: finalPriceNum
+            };
+        });
+
+        return res.json({ success: true, data: result });
+    } catch (err) {
+        console.error('Transaction error in /record-sale-transaction:', err);
+        return res.status(400).json({ error: err.message || 'Transaction failed' });
     }
 });
 

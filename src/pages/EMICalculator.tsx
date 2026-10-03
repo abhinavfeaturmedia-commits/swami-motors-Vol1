@@ -52,6 +52,19 @@ const EMICalculator = () => {
         if (err) {
             setApplyError('Failed to submit application. Please call us directly.');
         } else {
+            // Also insert structured loan application into finance_services
+            await supabase.from('finance_services').insert({
+                type: 'loan',
+                full_name: applyForm.full_name.trim(),
+                phone: applyForm.phone.trim(),
+                email: applyForm.email.trim() || null,
+                amount: loanAmount,
+                tenure_months: tenureYears * 12,
+                interest_rate: interestRate,
+                provider_name: applyForm.preferred_bank.trim() || 'Pending Assignment',
+                status: 'pending',
+                notes: `Online EMI Calculator Application. Estimated EMI: ₹${Math.round(emi).toLocaleString('en-IN')}/mo.`
+            });
             setApplySubmitted(true);
         }
         setApplyLoading(false);

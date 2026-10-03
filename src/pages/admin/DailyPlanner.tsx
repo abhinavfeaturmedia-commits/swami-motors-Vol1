@@ -20,14 +20,15 @@ const DailyPlanner = () => {
 
     // Live Schedule (Bookings for Today)
     const todayStr = new Date().toISOString().split('T')[0];
-    const todaysBookings = bookings.filter(b => b.booking_date.startsWith(todayStr));
+    const todaysBookings = bookings.filter(b => b.booking_date && String(b.booking_date).startsWith(todayStr));
 
     // Live Monthly Target (from Sales table)
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
     const thisMonthSales = sales.filter(s => {
+        if (!s.sale_date) return false;
         const d = new Date(s.sale_date);
-        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+        return !isNaN(d.getTime()) && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     });
 
     const targetCars = 40; // Target could be fetched from dealership_settings later

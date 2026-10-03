@@ -119,13 +119,17 @@ const UserManagement = () => {
                 return;
             }
 
+            const endpoint = import.meta.env.VITE_USE_NODE_BACKEND !== 'false'
+                ? `${import.meta.env.VITE_API_URL || ''}/api/auth/staff-create`
+                : `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff-user`;
+
             const res = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff-user`,
+                endpoint,
                 {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+                        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
                         Authorization: `Bearer ${freshSession.access_token}`,
                     },
                     body: JSON.stringify({

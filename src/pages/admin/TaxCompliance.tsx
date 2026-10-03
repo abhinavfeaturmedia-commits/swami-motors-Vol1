@@ -22,9 +22,9 @@ const TaxCompliance = () => {
                 monthGroups[monthStr] = { taxable: 0, cgst: 0, sgst: 0, net: 0, monthSort: monthKey };
             }
 
-            // Assume standard 18% GST calculation on margin (Standard for used cars in India)
+            // Standard 18% GST calculation on margin (Sale Price - Purchase Cost)
             const car = inventory.find(c => c.id === s.inventory_id);
-            const purchasePrice = car ? Number(car.price) || 0 : 0;
+            const purchasePrice = Number(s.purchase_cost_snapshot || car?.purchase_cost || car?.price || 0);
             const salePrice = Number(s.final_price) || 0;
             const margin = Math.max(0, salePrice - purchasePrice);
 

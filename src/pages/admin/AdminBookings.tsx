@@ -66,10 +66,8 @@ const AdminBookings = () => {
                 if (dateTab === 'This Week' && (b.booking_date < weekStart || b.booking_date > weekEnd)) return false;
                 if (search) {
                     const q = search.toLowerCase().trim();
-                    // If RPC has returned results, use them as the primary filter
-                    if (rpcMatchIds !== null) {
-                        return rpcMatchIds.has(b.id);
-                    }
+                    if (rpcMatchIds !== null && rpcMatchIds.has(b.id)) return true;
+
                     // Instant client-side filter while RPC is loading (expanded fields)
                     const lead = b.lead || {};
                     const car  = b.car  || {};

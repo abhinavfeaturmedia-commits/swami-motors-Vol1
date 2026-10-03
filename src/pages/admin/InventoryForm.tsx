@@ -593,7 +593,7 @@ Condition: ${form.condition}`;
         for (const file of selectedFiles) {
             const ext = file.name.split('.').pop() || 'jpg';
             const path = `cars/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-            const { error: uploadError } = await supabase.storage
+            const { data: uploadResult, error: uploadError } = await supabase.storage
                 .from('car-images')
                 .upload(path, file, { cacheControl: '3600', upsert: false });
 
@@ -601,6 +601,15 @@ Condition: ${form.condition}`;
                 console.error('Upload error for', file.name, uploadError.message);
                 failed.push(file.name);
                 continue;
+            }
+
+            // If storage returned a concrete file path (e.g. /uploads/cars/... from Hostinger), use it directly
+            if (uploadResult?.path) {
+                const uPath = uploadResult.path;
+                if (uPath.startsWith('http') || uPath.startsWith('/uploads/')) {
+                    urls.push(uPath);
+                    continue;
+                }
             }
 
             const { data: urlData } = supabase.storage.from('car-images').getPublicUrl(path);

@@ -664,7 +664,7 @@ const AdminLeads = () => {
     // ─── Filtering & Pagination ─────────────────────────────────────────────────
 
     const filteredAndSearchedLeads = leads.filter(l => {
-        const matchesTab = activeFilter === 'All Leads' || l.type === activeFilter;
+        const matchesTab = activeFilter === 'All Leads' || l.type === activeFilter || (activeFilter === 'car_service' && l.type === 'service');
         const matchesStatus = activeStatusFilter === 'All Statuses' || l.status === activeStatusFilter;
         const matchesStaff = activeStaffFilter === 'All Staff' || 
                              (activeStaffFilter === 'Unassigned' && !l.assigned_to) ||
