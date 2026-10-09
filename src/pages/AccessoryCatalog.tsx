@@ -314,40 +314,44 @@ const AccessoryCatalog: React.FC = () => {
                                             <div
                                                 key={item.id}
                                                 onClick={() => toggleAccessory(item)}
-                                                className={`bg-white rounded-2xl overflow-hidden border transition-all duration-300 cursor-pointer shadow-sm group flex flex-col ${selected ? 'border-primary ring-2 ring-primary/10' : 'border-slate-100 hover:border-slate-200 hover:shadow-md'}`}
+                                                className={`doppelrand-shell rounded-2xl cursor-pointer group transition-all duration-300 ${
+                                                    selected ? 'ring-2 ring-primary' : 'hover:-translate-y-1'
+                                                }`}
                                             >
-                                                {/* Image */}
-                                                <div className="relative aspect-[16/10] overflow-hidden bg-slate-100">
-                                                    <img
-                                                        src={item.image_url}
-                                                        alt={item.name}
-                                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                                    />
-                                                    <div className="absolute top-3 right-3">
-                                                        <div className={`size-6 rounded-full flex items-center justify-center border shadow-sm transition-all duration-200 ${selected ? 'bg-primary border-primary text-white' : 'bg-white/80 backdrop-blur-sm border-slate-200 text-slate-400'}`}>
-                                                            {selected ? <Check size={14} strokeWidth={3} /> : null}
+                                                <div className="doppelrand-core p-0 overflow-hidden flex flex-col h-full">
+                                                    {/* Image */}
+                                                    <div className="relative aspect-[16/10] overflow-hidden bg-slate-100">
+                                                        <img
+                                                            src={item.image_url}
+                                                            alt={item.name}
+                                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                        />
+                                                        <div className="absolute top-3 right-3">
+                                                            <div className={`size-6 rounded-full flex items-center justify-center border shadow-xs transition-all duration-200 ${selected ? 'bg-primary border-primary text-white' : 'bg-white/80 backdrop-blur-xs border-slate-200 text-slate-400'}`}>
+                                                                {selected ? <Check size={14} strokeWidth={3} /> : null}
+                                                            </div>
+                                                        </div>
+                                                        <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
+                                                            {item.category}
                                                         </div>
                                                     </div>
-                                                    <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded">
-                                                        {item.category}
-                                                    </div>
-                                                </div>
 
-                                                {/* Content */}
-                                                <div className="p-5 flex-1 flex flex-col justify-between">
-                                                    <div className="space-y-1">
-                                                        <h3 className="font-bold text-slate-800 text-sm sm:text-base leading-tight group-hover:text-primary transition-colors">
-                                                            {item.name}
-                                                        </h3>
-                                                        <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">
-                                                            {item.description}
-                                                        </p>
-                                                    </div>
-                                                    <div className="mt-4 pt-3 border-t border-slate-50 flex items-center justify-between">
-                                                        <span className="text-sm font-semibold text-slate-400">Price</span>
-                                                        <span className="text-base sm:text-lg font-black text-primary font-display">
-                                                            ₹ {Number(item.price).toLocaleString('en-IN')}
-                                                        </span>
+                                                    {/* Content */}
+                                                    <div className="p-4 flex-1 flex flex-col justify-between">
+                                                        <div className="space-y-1">
+                                                            <h3 className="font-bold text-slate-800 text-sm sm:text-base leading-tight group-hover:text-primary transition-colors">
+                                                                {item.name}
+                                                            </h3>
+                                                            <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+                                                                {item.description}
+                                                            </p>
+                                                        </div>
+                                                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                                                            <span className="text-xs font-semibold text-slate-400">Package Price</span>
+                                                            <span className="text-base sm:text-lg font-black text-primary font-display">
+                                                                ₹ {Number(item.price).toLocaleString('en-IN')}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -361,7 +365,8 @@ const AccessoryCatalog: React.FC = () => {
                         <div className="lg:col-span-4 lg:sticky lg:top-[5.5rem] space-y-6">
                             
                             {/* Summary & EMI Quote panel */}
-                            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-xl space-y-6">
+                            <div className="doppelrand-shell rounded-3xl shadow-xl">
+                                <div className="doppelrand-core p-6 space-y-6">
                                 <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2 pb-3 border-b border-slate-100">
                                     <span className="material-symbols-outlined text-primary">analytics</span> Quote Summary
                                 </h3>
@@ -518,6 +523,7 @@ const AccessoryCatalog: React.FC = () => {
                                         )}
                                     </button>
                                 </form>
+                                </div>
                             </div>
                         </div>
 

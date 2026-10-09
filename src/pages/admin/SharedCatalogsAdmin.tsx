@@ -122,11 +122,11 @@ const SharedCatalogsAdmin: React.FC = () => {
                 .select('id')
                 .ilike('full_name', `%${cleanSearch}%`);
 
-            const profileIds = matchedProfiles?.map(p => p.id) || [];
+            const profileIds = matchedProfiles?.map((p: any) => p.id) || [];
 
             let orCondition = `customer_name.ilike.%${cleanSearch}%,customer_phone.ilike.%${cleanSearch}%`;
             if (profileIds.length > 0) {
-                orCondition += `,created_by.in.(${profileIds.map(id => `"${id}"`).join(',')})`;
+                orCondition += `,created_by.in.(${profileIds.map((id: any) => `"${id}"`).join(',')})`;
             }
             query = query.or(orCondition);
         }

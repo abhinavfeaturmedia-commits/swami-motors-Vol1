@@ -99,6 +99,48 @@
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-accent to-amber-400;
   }
+
+  /* Doppelrand (Double-Bezel) Machined Nested Architecture */
+  .doppelrand-shell {
+    @apply p-1.5 rounded-3xl bg-slate-100/70 border border-slate-200/80 transition-all duration-300;
+  }
+
+  .doppelrand-core {
+    @apply bg-white rounded-[calc(1.5rem-0.375rem)] shadow-[0_1px_3px_rgba(15,23,41,0.05),inset_0_1px_0_rgba(255,255,255,0.9)];
+  }
+
+  /* Haptic Island Button Architecture */
+  .btn-island {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 font-bold transition-all duration-200 active:scale-[0.98] select-none;
+  }
+
+  .btn-island-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 font-bold transition-all duration-200 active:scale-[0.98] select-none bg-primary text-white hover:bg-primary-light shadow-sm hover:shadow-md;
+  }
+
+  .btn-island-accent {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 font-bold transition-all duration-200 active:scale-[0.98] select-none bg-accent text-primary hover:bg-accent-hover shadow-sm hover:shadow-md;
+  }
+
+  .btn-island-icon {
+    @apply size-7 rounded-full flex items-center justify-center transition-transform duration-200;
+  }
+
+  /* Skeleton Shimmer Loading Effect */
+  .shimmer-bg {
+    background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s infinite ease-in-out;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 /* Accountability Animations */

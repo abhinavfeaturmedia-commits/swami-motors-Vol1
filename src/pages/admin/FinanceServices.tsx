@@ -378,7 +378,7 @@ const FinanceServices = () => {
             }
 
             if (leadsData && leadsData.length > 0) {
-                const leadIds = leadsData.map(l => l.id);
+                const leadIds = leadsData.map((l: any) => l.id);
                 const { data: leadActs } = await supabase
                     .from('lead_activities')
                     .select('*')

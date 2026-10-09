@@ -55,7 +55,7 @@ const Inventory = () => {
                 return;
             }
             const { data } = await supabase.from('user_wishlist').select('inventory_id').eq('user_id', user.id);
-            setWishlist(data?.map(w => w.inventory_id) || []);
+            setWishlist(data?.map((w: any) => w.inventory_id) || []);
         };
         loadWishlist();
 
@@ -503,79 +503,127 @@ const Inventory = () => {
                             <button onClick={() => window.location.reload()} className="mt-3 px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-semibold hover:bg-red-100">Try Again</button>
                         </div>
                     ) : displayCars.length === 0 ? (
-                        <div className="py-20 text-center text-slate-400 font-medium">No cars found matching your criteria.</div>
+                        <div className="py-16 text-center bg-white rounded-3xl border border-slate-100 p-8 shadow-xs max-w-md mx-auto my-8">
+                            <div className="size-16 rounded-2xl bg-amber-50 text-accent flex items-center justify-center mx-auto mb-4 border border-amber-100">
+                                <span className="material-symbols-outlined text-3xl">search_off</span>
+                            </div>
+                            <h3 className="text-base font-bold text-primary font-display mb-1">No Matching Vehicles Found</h3>
+                            <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+                                We couldn't find vehicles matching your active criteria. Try broadening your budget or clearing filters to view our full inventory.
+                            </p>
+                            <button
+                                onClick={() => {
+                                    setSelectedBrands([]);
+                                    setSelectedYears([]);
+                                    setSelectedBudget('');
+                                    setSearchQuery('');
+                                    setSelectedBodyTypes([]);
+                                    setSelectedTransmissions([]);
+                                    const params = new URLSearchParams(window.location.search);
+                                    params.delete('search');
+                                    params.delete('make');
+                                    params.delete('budget');
+                                    params.delete('year');
+                                    params.delete('body_type');
+                                    params.delete('transmission');
+                                    window.history.replaceState({}, '', window.location.pathname);
+                                }}
+                                className="btn-island-primary text-xs px-5 py-2.5 cursor-pointer shadow-sm"
+                            >
+                                Reset All Filters
+                            </button>
+                        </div>
                     ) : (
-                        <div className={`grid gap-4 sm:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'}`}>
+                        <div className={`grid gap-5 sm:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'}`}>
                             {displayCars.map(car => {
                                 const isSaved = wishlist.includes(car.id);
+                                const emiEst = car.price > 0 
+                                    ? Math.round((car.price * 0.8 * (0.095 / 12) * Math.pow(1 + 0.095 / 12, 60)) / (Math.pow(1 + 0.095 / 12, 60) - 1)) 
+                                    : 0;
+
                                 return (
-                                    <article key={car.id} className={`bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all duration-300 group relative ${viewMode === 'list' ? 'flex flex-col sm:flex-row' : 'flex flex-col'}`}>
-                                        <Link to={`/car/${car.id}`} className={`flex flex-col flex-1 ${viewMode === 'list' ? 'sm:flex-row' : ''}`}>
-                                            <div className={`relative overflow-hidden bg-slate-100 ${viewMode === 'list' ? 'w-full sm:w-1/3 aspect-[16/11] sm:aspect-auto sm:h-full' : 'aspect-[16/11]'}`}>
-                                                <img alt={`${car.year} ${car.make} ${car.model}`} src={getPrimaryImage(car.images)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                                <div className="absolute top-3 left-3 flex gap-2">
-                                                    {car.condition === 'Excellent' && (
-                                                        <span className="text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider text-white bg-green-600">
-                                                            <span className="inline-flex items-center gap-1"><span className="material-symbols-outlined text-xs">verified</span>Certified</span>
+                                    <article key={car.id} className={`doppelrand-shell hover:border-accent/40 group relative transition-all duration-300 ${viewMode === 'list' ? 'flex flex-col sm:flex-row' : 'flex flex-col'}`}>
+                                        <div className={`doppelrand-core flex flex-col flex-1 overflow-hidden ${viewMode === 'list' ? 'sm:flex-row' : ''}`}>
+                                            <Link to={`/car/${car.id}`} className={`flex flex-col flex-1 ${viewMode === 'list' ? 'sm:flex-row' : ''}`}>
+                                                <div className={`relative overflow-hidden bg-slate-100 ${viewMode === 'list' ? 'w-full sm:w-1/3 aspect-[16/11] sm:aspect-auto sm:h-full' : 'aspect-[16/11]'}`}>
+                                                    <img 
+                                                        alt={`${car.year} ${car.make} ${car.model}`} 
+                                                        src={getPrimaryImage(car.images)} 
+                                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                                    />
+                                                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider text-white bg-primary/90 backdrop-blur-md flex items-center gap-1 shadow-sm">
+                                                            <span className="material-symbols-outlined text-xs text-accent">verified</span> 200-Pt Checked
                                                         </span>
-                                                    )}
-                                                    {car.status === 'reserved' && (
-                                                        <span className="text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider text-white bg-amber-600">
-                                                            Reserved
-                                                        </span>
-                                                    )}
+                                                        {car.status === 'reserved' && (
+                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider text-white bg-amber-600 shadow-sm">
+                                                                Reserved
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="absolute bottom-2.5 left-2.5 bg-black/60 text-white text-[10px] font-medium px-2 py-0.5 rounded backdrop-blur-sm flex items-center gap-1">
+                                                        <span className="material-symbols-outlined text-xs">photo_library</span> {car.images?.length || 0}
+                                                    </div>
                                                 </div>
-                                                <div className="absolute bottom-3 left-3 bg-black/60 text-white text-[10px] font-medium px-2 py-1 rounded backdrop-blur-sm flex items-center gap-1">
-                                                    <span className="material-symbols-outlined text-xs">photo_library</span> {car.images?.length || 0} Photos
-                                                </div>
-                                            </div>
 
-                                            <div className="p-5 flex flex-col flex-1">
-                                                <h3 className="text-base font-bold text-primary font-display line-clamp-1" title={`${car.year} ${car.make} ${car.model}`}>
-                                                    {car.year} {car.make} {car.model}
-                                                </h3>
-                                                <p className="text-xs text-slate-500 mb-3 line-clamp-1">{car.fuel_type} • {car.transmission}</p>
-                                                
-                                                <div className="flex items-center gap-3 text-xs text-slate-500 mb-4">
-                                                    <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm">speed</span>{(car.mileage || 0).toLocaleString()} km</span>
-                                                    <span className="w-0.5 h-0.5 rounded-full bg-slate-300" />
-                                                    <span>{car.fuel_type}</span>
-                                                    <span className="w-0.5 h-0.5 rounded-full bg-slate-300" />
-                                                    <span>{car.transmission}</span>
-                                                </div>
-                                            </div>
-                                        </Link>
+                                                <div className="p-4 sm:p-5 flex flex-col flex-1">
+                                                    <h3 className="text-sm sm:text-base font-bold text-primary font-display line-clamp-1 group-hover:text-accent transition-colors" title={`${car.year} ${car.make} ${car.model}`}>
+                                                        {car.year} {car.make} {car.model}
+                                                    </h3>
+                                                    <p className="text-xs text-slate-500 mb-2 line-clamp-1">{car.fuel_type} • {car.transmission}</p>
+                                                    
+                                                    <div className="flex items-center gap-2.5 text-xs text-slate-500 mb-3 font-medium">
+                                                        <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm text-slate-400">speed</span>{(car.mileage || 0).toLocaleString()} km</span>
+                                                        <span>•</span>
+                                                        <span>{car.fuel_type}</span>
+                                                        <span>•</span>
+                                                        <span>{car.transmission}</span>
+                                                    </div>
 
-                                        <button 
-                                            className={`absolute top-3 right-3 p-2 bg-white/90 rounded-full transition-colors shadow-sm backdrop-blur-sm z-10 ${isSaved ? 'text-red-500' : 'text-slate-400 hover:text-red-500'}`}
-                                            onClick={(e) => toggleWishlist(e, car.id)}
-                                        >
-                                            <Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />
-                                        </button>
-                                        
-                                        <div className={`px-5 pb-5 mt-auto ${viewMode === 'list' ? 'sm:w-1/3 sm:border-l sm:border-slate-100 sm:flex sm:flex-col sm:justify-center' : ''}`}>
-                                            <div className="flex items-baseline gap-2 mb-4">
-                                                <span className="text-xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)} Lakh</span>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <Link to={`/book-test-drive?car=${car.id}`} className="flex-1 h-10 flex items-center justify-center text-xs font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
-                                                    Test Drive
-                                                </Link>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        if (isInCart(car.id)) {
-                                                            setIsCartOpen(true);
-                                                        } else {
-                                                            addToCart(car);
-                                                        }
-                                                    }}
-                                                    className={`flex-1 h-10 flex items-center justify-center text-xs font-semibold rounded-xl transition-all duration-200 gap-1.5 ${isInCart(car.id) ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100/70' : 'bg-primary text-white hover:bg-primary-light'}`}
-                                                >
-                                                    <span className="material-symbols-outlined text-sm">{isInCart(car.id) ? 'done' : 'folder_special'}</span>
-                                                    {isInCart(car.id) ? 'In Inquiry' : 'Add to Inquiry'}
-                                                </button>
+                                                    {/* Calculated Monthly EMI Badge */}
+                                                    {emiEst > 0 && (
+                                                        <div className="inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200/80 text-[10px] font-bold text-amber-800 mb-3">
+                                                            <span>EMI from ₹{emiEst.toLocaleString('en-IN')}/mo*</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </Link>
+
+                                            <button 
+                                                className={`absolute top-4 right-4 p-2 bg-white/95 rounded-full transition-all shadow-md backdrop-blur-md z-10 cursor-pointer ${isSaved ? 'text-red-500' : 'text-slate-400 hover:text-red-500'}`}
+                                                onClick={(e) => toggleWishlist(e, car.id)}
+                                                aria-label="Save to Wishlist"
+                                            >
+                                                <Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />
+                                            </button>
+                                            
+                                            <div className={`px-4 sm:px-5 pb-4 sm:pb-5 mt-auto ${viewMode === 'list' ? 'sm:w-1/3 sm:border-l sm:border-slate-100 sm:flex sm:flex-col sm:justify-center' : ''}`}>
+                                                <div className="flex items-baseline gap-2 mb-3 pt-2 border-t border-slate-100">
+                                                    <div>
+                                                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Price</span>
+                                                        <span className="text-lg sm:text-xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)} Lakh</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <Link to={`/book-test-drive?car=${car.id}`} className="flex-1 h-9 sm:h-10 flex items-center justify-center text-xs font-semibold text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+                                                        Test Drive
+                                                    </Link>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            if (isInCart(car.id)) {
+                                                                setIsCartOpen(true);
+                                                            } else {
+                                                                addToCart(car);
+                                                            }
+                                                        }}
+                                                        className={`flex-1 h-9 sm:h-10 flex items-center justify-center text-xs font-semibold rounded-xl transition-all duration-200 gap-1 cursor-pointer ${isInCart(car.id) ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100/70' : 'bg-primary text-white hover:bg-primary-light shadow-xs'}`}
+                                                    >
+                                                        <span className="material-symbols-outlined text-sm">{isInCart(car.id) ? 'done' : 'shopping_bag'}</span>
+                                                        {isInCart(car.id) ? 'In Cart' : 'Inquire'}
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </article>

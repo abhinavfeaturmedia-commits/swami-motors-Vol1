@@ -36,11 +36,11 @@ export const resolveImage = (img: string | null | undefined): string => {
     
     // Check if it is a local upload path on Hostinger Express server
     if (img.startsWith('/uploads/')) {
-        const apiBase = import.meta.env.VITE_API_URL || '';
+        const apiBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
         return `${apiBase}${img}`;
     }
     if (img.startsWith('uploads/')) {
-        const apiBase = import.meta.env.VITE_API_URL || '';
+        const apiBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
         return `${apiBase}/${img}`;
     }
 

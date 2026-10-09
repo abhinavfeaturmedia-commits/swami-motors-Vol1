@@ -94,8 +94,8 @@ const CreateSharedCatalogModal: React.FC<CreateSharedCatalogModalProps> = ({
                 .limit(5);
 
             const mergedResults: ContactSearchResult[] = [
-                ...(leadsData || []).map(l => ({ ...l, type: 'lead' as const })),
-                ...(custData || []).map(c => ({ ...c, type: 'customer' as const }))
+                ...((leadsData as any[]) || []).map((l: any) => ({ ...l, type: 'lead' as const })),
+                ...((custData as any[]) || []).map((c: any) => ({ ...c, type: 'customer' as const }))
             ];
             
             setSearchResults(mergedResults);

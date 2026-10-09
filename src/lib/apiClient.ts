@@ -4,12 +4,13 @@
  * Connects directly to the self-hosted Express backend on Hostinger (autokundali.com)
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+// In development, use relative path ('') so Vite proxy routes requests seamlessly without CORS restrictions on LAN/local IPs
+const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
 
 class QueryBuilder {
     private table: string;
     private selectedColumns: string = '*';
-    private filters: Array<{ column: string; operator: string; value: any }> = [];
+    private filters: Array<{ column: string; operator: string; value: any; subOp?: string }> = [];
     private orderConfig: { column: string; ascending: boolean } | null = null;
     private limitCount: number | null = null;
     private offsetCount: number | null = null;
@@ -84,7 +85,31 @@ class QueryBuilder {
     }
 
     is(column: string, value: any) {
-        this.filters.push({ column, operator: 'is', value });
+        if (value === null || value === 'null') {
+            this.filters.push({ column, operator: 'is_null', value: null });
+        } else {
+            this.filters.push({ column, operator: 'is', value });
+        }
+        return this;
+    }
+
+    not(column: string, operator: string, value: any) {
+        if (operator === 'is' && (value === null || value === 'null')) {
+            this.filters.push({ column, operator: 'not_null', value: null });
+        } else if (operator === 'eq') {
+            this.filters.push({ column, operator: 'neq', value });
+        } else if (operator === 'in') {
+            this.filters.push({ column, operator: 'not_in', value });
+        } else if (operator === 'like' || operator === 'ilike') {
+            this.filters.push({ column, operator: 'not_like', value });
+        } else {
+            this.filters.push({ column, operator: 'not', subOp: operator, value });
+        }
+        return this;
+    }
+
+    or(filters: string) {
+        this.filters.push({ column: '__or__', operator: 'or', value: filters });
         return this;
     }
 

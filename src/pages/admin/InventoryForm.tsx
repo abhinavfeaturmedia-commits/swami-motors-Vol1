@@ -71,7 +71,7 @@ const InventoryForm = () => {
 
     // Fetch dealers for dropdown
     useEffect(() => {
-        supabase.from('dealers').select('id, dealer_code, name, status').eq('status', 'active').then(({ data }) => {
+        supabase.from('dealers').select('id, dealer_code, name, status').eq('status', 'active').then(({ data }: { data: any }) => {
             if (data) setDealers(data as Dealer[]);
         });
     }, []);

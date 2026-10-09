@@ -7,6 +7,38 @@ export default defineConfig({
     server: {
         host: true,
         port: 3000,
+        proxy: {
+            '/api': {
+                target: 'https://autokundali.com',
+                changeOrigin: true,
+                secure: false,
+                headers: {
+                    origin: 'https://autokundali.com',
+                    referer: 'https://autokundali.com/'
+                },
+                configure: (proxy) => {
+                    proxy.on('proxyReq', (proxyReq) => {
+                        proxyReq.setHeader('origin', 'https://autokundali.com');
+                        proxyReq.setHeader('referer', 'https://autokundali.com/');
+                    });
+                }
+            },
+            '/uploads': {
+                target: 'https://autokundali.com',
+                changeOrigin: true,
+                secure: false,
+                headers: {
+                    origin: 'https://autokundali.com',
+                    referer: 'https://autokundali.com/'
+                },
+                configure: (proxy) => {
+                    proxy.on('proxyReq', (proxyReq) => {
+                        proxyReq.setHeader('origin', 'https://autokundali.com');
+                        proxyReq.setHeader('referer', 'https://autokundali.com/');
+                    });
+                }
+            },
+        },
     },
     build: {
         chunkSizeWarningLimit: 800,

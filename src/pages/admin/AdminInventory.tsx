@@ -215,7 +215,7 @@ const AdminInventory = () => {
     const [isSharedModalOpen, setIsSharedModalOpen] = useState(false);
 
     useEffect(() => {
-        supabase.from('dealers').select('id, dealer_code, name').then(({ data }) => {
+        supabase.from('dealers').select('id, dealer_code, name').then(({ data }: { data: any }) => {
             if (data) {
                 const sorted = (data as Dealer[]).sort((a, b) => {
                     const numA = parseInt(a.dealer_code.replace(/\D/g, '')) || 0;

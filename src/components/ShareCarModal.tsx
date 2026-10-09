@@ -90,7 +90,7 @@ const ShareCarModal: React.FC<Props> = ({ car, onClose }) => {
             .from('customers')
             .select('id, full_name, phone')
             .order('full_name')
-            .then(({ data }) => {
+            .then(({ data }: { data: any }) => {
                 if (data) setExistingCustomers(data as ExistingCustomer[]);
             });
     }, []);

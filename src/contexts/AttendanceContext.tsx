@@ -254,9 +254,9 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
             if (sessionError) console.error('doRefreshToday sessions error:', sessionError);
 
-            const completedDB = (sessions ?? [])
-                .filter(s => s.id !== sessionIdRef.current)
-                .reduce((s, r) => s + (r.duration_minutes ?? 0), 0);
+            const completedDB = ((sessions as any[]) ?? [])
+                .filter((s: any) => s.id !== sessionIdRef.current)
+                .reduce((acc: number, r: any) => acc + (r.duration_minutes ?? 0), 0);
             setDbSessionMinutes(completedDB);
 
             const liveMins = sessionStartRef.current
@@ -391,7 +391,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                     .eq('user_id', uid)
                     .eq('date', todayDate());
 
-                finalSessionMinutes = (dbSessions ?? []).reduce((sum, s) => {
+                finalSessionMinutes = ((dbSessions as any[]) ?? []).reduce((sum: number, s: any) => {
                     if (s.id === sessionIdRef.current) return sum + finalLiveSession;
                     return sum + (s.duration_minutes ?? 0);
                 }, 0);
@@ -511,9 +511,9 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 .eq('user_id', uid)
                 .eq('date', todayDate());
 
-            const completedDB = (sessions ?? [])
-                .filter(s => s.id !== sid)
-                .reduce((sum, s) => sum + (s.duration_minutes ?? 0), 0);
+            const completedDB = ((sessions as any[]) ?? [])
+                .filter((s: any) => s.id !== sid)
+                .reduce((sum: number, s: any) => sum + (s.duration_minutes ?? 0), 0);
             setDbSessionMinutes(completedDB);
             setTodaySessionMinutes(completedDB + duration);
 

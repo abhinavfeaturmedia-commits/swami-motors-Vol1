@@ -29,5 +29,6 @@ Thumbs.db
 
 # Backend build staging & uploads
 backend/public/
+backend/tmp/
 backend/uploads/**/*
 !backend/uploads/**/.gitkeep

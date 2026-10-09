@@ -317,7 +317,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 event: 'INSERT',
                 schema: 'public',
                 table: 'smart_notifications',
-            }, (payload) => {
+            }, (payload: any) => {
                 const newNotif = payload.new as SmartNotification;
                 // Only surface notifications assigned to this user OR broadcast (null)
                 const isForMe =
@@ -353,7 +353,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 event: 'INSERT',
                 schema: 'public',
                 table: 'staff_incentives',
-            }, async (payload) => {
+            }, async (payload: any) => {
                 const row = payload.new as any;
                 const dedupKey = `incentive_awarded_${row.id}`;
 
@@ -409,7 +409,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 event: 'INSERT',
                 schema: 'public',
                 table: 'staff_announcements',
-            }, async (payload) => {
+            }, async (payload: any) => {
                 const row = payload.new as any;
                 const dedupKey = `announcement_posted_${row.id}`;
 

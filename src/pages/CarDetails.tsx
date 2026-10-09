@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut, Heart, Download, Send, MessageSquare, CheckCircle } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut, Heart, Download, Send, MessageSquare, CheckCircle, Share2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import DownloadPhotosModal from '../components/admin/DownloadPhotosModal';
+import ShareCarModal from '../components/ShareCarModal';
 import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,17 +21,65 @@ const SPECS = [
     { icon: 'verified_user', label: 'Insurance', key: 'insurance', default: 'Valid' },
 ];
 
-const INSPECTION = [
-    { label: 'Engine Sound is Smooth', pass: true },
-    { label: 'No Oil Leakage', pass: true },
-    { label: 'AC Cooling is Effective', pass: true },
-    { label: 'All Electricals Working', pass: true },
+interface InspectionPillar {
+    title: string;
+    icon: string;
+    score: string;
+    items: string[];
+}
+
+const INSPECTION_PILLARS: InspectionPillar[] = [
+    {
+        title: "Engine & Powertrain",
+        icon: "engineering",
+        score: "52/52 Pts",
+        items: [
+            "Smooth engine idling & zero exhaust smoke",
+            "Compression & turbo boost within OEM specs",
+            "Clutch bite & smooth transmission gearshifts",
+            "Zero oil or fluid leakage detected"
+        ]
+    },
+    {
+        title: "Chassis & Non-Accident Body",
+        icon: "verified_user",
+        score: "48/48 Pts",
+        items: [
+            "Non-accidental structural chassis guarantee",
+            "Original factory aprons & radiator core support",
+            "A/B/C pillars and door arches undamaged",
+            "Robotic factory seam sealers verified intact"
+        ]
+    },
+    {
+        title: "Electricals & Climate Control",
+        icon: "tune",
+        score: "50/50 Pts",
+        items: [
+            "Sub-zero AC chilling temperature performance",
+            "Full OBD-II diagnostic computer scan passed",
+            "Battery load test & alternator charging verified",
+            "All power windows, lamps & sensors operating"
+        ]
+    },
+    {
+        title: "Tyres, Brakes & Suspension",
+        icon: "speed",
+        score: "50/50 Pts",
+        items: [
+            "Healthy tyre tread depth (>70% life remaining)",
+            "ABS anti-skid & brake disc response verified",
+            "Shock absorbers & suspension bushings intact",
+            "High-speed dynamic road test completed"
+        ]
+    }
 ];
 
 interface CarData {
     id: string;
     make: string;
     model: string;
+    variant?: string | null;
     year: number;
     price: number;
     original_price?: number;
@@ -43,8 +92,11 @@ interface CarData {
     status: string;
     source?: string;
     body_type?: string;
+    color?: string | null;
+    registration_no?: string | null;
+    description?: string | null;
     insurance?: string;
-    ownership?: string; // Optional field for vehicle details
+    ownership?: string | number | null; // Optional field for vehicle details
     engine?: string;    // Optional field for engine specification
     video_url?: string;
     dealer?: {
@@ -76,7 +128,59 @@ const CarDetails = () => {
     const { user, profile, isAdmin, isStaff, hasPermission } = useAuth();
     const isStaffOrAdmin = isAdmin || isStaff;
     const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [downloadingSingle, setDownloadingSingle] = useState(false);
+
+    const handleShareCar = async () => {
+        if (!car) return;
+        const shareUrl = catalogId 
+            ? `${window.location.origin}/car/${car.id}?catalogId=${catalogId}`
+            : `${window.location.origin}/car/${car.id}`;
+        
+        const shareData = {
+            title: `${car.year} ${car.make} ${car.model} | Shree Swami Samarth Motors`,
+            text: `Check out this certified ${car.year} ${car.make} ${car.model} (₹${formatPriceLakh(car.price)} Lakh) at Shree Swami Samarth Motors, Kolhapur!\n${shareUrl}`,
+            url: shareUrl,
+        };
+
+        const fallbackCopy = () => {
+            try {
+                const el = document.createElement('textarea');
+                el.value = shareUrl;
+                el.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+                document.body.appendChild(el);
+                el.focus();
+                el.select();
+                const success = document.execCommand('copy');
+                document.body.removeChild(el);
+                if (success) {
+                    showToast("Car link copied to clipboard!", "success");
+                } else {
+                    showToast("Failed to copy link.", "error");
+                }
+            } catch {
+                showToast("Failed to copy link.", "error");
+            }
+        };
+
+        if (navigator.share) {
+            try {
+                await navigator.share(shareData);
+            } catch (err: any) {
+                if (err?.name !== 'AbortError') {
+                    fallbackCopy();
+                }
+            }
+        } else {
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(shareUrl)
+                    .then(() => showToast("Car link copied to clipboard!", "success"))
+                    .catch(() => fallbackCopy());
+            } else {
+                fallbackCopy();
+            }
+        }
+    };
 
     const downloadSinglePhoto = async (img: string, index: number) => {
         if (!img || !car || downloadingSingle) return;
@@ -488,7 +592,7 @@ const CarDetails = () => {
     const thumbnails = car.images && car.images.length > 0 ? car.images : [];
 
     return (
-        <div className="container-main py-6 pb-24 lg:pb-6">
+        <div className="container-main py-6 pb-36 lg:pb-8">
             {/* Breadcrumb */}
             <nav className="flex items-center gap-2 text-sm text-slate-500 mb-6">
                 <Link to="/" className="hover:text-primary transition-colors">Home</Link>
@@ -709,25 +813,54 @@ const CarDetails = () => {
                     )}
 
                     {/* Inspection Report */}
-                    <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-[var(--shadow-card)]">
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="size-10 bg-success-light rounded-xl flex items-center justify-center">
-                                <span className="material-symbols-outlined text-success">verified</span>
-                            </div>
-                            <div>
-                                <h3 className="font-bold text-primary font-display">Inspection Report</h3>
-                                <p className="text-xs text-slate-500">150-Point Check Passed</p>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {INSPECTION.map(item => (
-                                <div key={item.label} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-                                    <div className="size-6 rounded-full bg-success-light flex items-center justify-center">
-                                        <Check size={14} className="text-success" />
+                    <div className="doppelrand-shell p-1.5 shadow-[var(--shadow-card)]">
+                        <div className="doppelrand-core p-6 bg-white space-y-6">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="size-11 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center border border-emerald-200/60 shadow-sm shrink-0">
+                                        <span className="material-symbols-outlined text-2xl">verified</span>
                                     </div>
-                                    <span className="text-sm text-slate-700">{item.label}</span>
+                                    <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h3 className="font-extrabold text-primary font-display text-lg">200-Point Inspection Report</h3>
+                                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                Certified 100% Passed
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-0.5">Inspected across 4 core engineering pillars by certified technicians in Kolhapur.</p>
+                                    </div>
                                 </div>
-                            ))}
+                                <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80 text-xs font-bold text-slate-700 self-start sm:self-auto shrink-0">
+                                    <span className="material-symbols-outlined text-emerald-600 text-sm">health_and_safety</span>
+                                    <span>200/200 Checkpoints Passed</span>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {INSPECTION_PILLARS.map(pillar => (
+                                    <div key={pillar.title} className="bg-slate-50/80 rounded-2xl p-4 border border-slate-100 hover:border-slate-200 transition-colors">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-accent text-lg">{pillar.icon}</span>
+                                                <h4 className="text-xs font-bold text-primary">{pillar.title}</h4>
+                                            </div>
+                                            <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                                                {pillar.score}
+                                            </span>
+                                        </div>
+                                        <ul className="space-y-2">
+                                            {pillar.items.map((item, idx) => (
+                                                <li key={idx} className="flex items-start gap-2 text-xs text-slate-600">
+                                                    <span className="size-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                                                        <Check size={10} strokeWidth={3} />
+                                                    </span>
+                                                    <span>{item}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
 
@@ -804,112 +937,75 @@ const CarDetails = () => {
                 {/* Right Sidebar */}
                 <div className="space-y-4">
                     {/* Price Card */}
-                    <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-[var(--shadow-card)] sticky top-[5.5rem]">
-                        <div className="flex items-start justify-between mb-4">
-                            <div>
-                                <p className="text-xs text-slate-500 font-medium mb-1">Total Price</p>
-                                <div className="flex items-baseline gap-2">
-                                    <p className="text-3xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)}</p>
-                                    <p className="text-xl font-black text-primary font-display">Lakh</p>
+                    <div className="doppelrand-shell p-1.5 shadow-[var(--shadow-card)] sticky top-[5.5rem]">
+                        <div className="doppelrand-core p-6 bg-white space-y-4">
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <p className="text-xs text-slate-500 font-semibold mb-1">Total Price</p>
+                                    <div className="flex items-baseline gap-2">
+                                        <p className="text-3xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)}</p>
+                                        <p className="text-xl font-black text-primary font-display">Lakh</p>
+                                    </div>
+                                    {car.original_price && (
+                                        <p className="text-sm font-medium text-slate-400 line-through mt-0.5">₹ {formatPriceLakh(car.original_price)} Lakh</p>
+                                    )}
                                 </div>
-                                {car.original_price && (
-                                    <p className="text-sm font-medium text-slate-400 line-through mt-1">₹ {formatPriceLakh(car.original_price)} Lakh</p>
-                                )}
+                                <span className="bg-accent-light text-accent text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase">Negotiable</span>
                             </div>
-                            <span className="bg-accent-light text-accent text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase">Negotiable</span>
-                        </div>
-                        <Link to={`/finance?price=${car.price}`} className="text-sm font-semibold text-accent hover:underline flex items-center gap-1 mb-6">
-                            Calculate EMI Options <span className="material-symbols-outlined text-sm">open_in_new</span>
-                        </Link>
-                        <div className="space-y-3 mb-4">
-                            <Link to={`/book-test-drive?car=${car.id}`} className="w-full h-12 flex items-center justify-center gap-2 bg-accent text-primary font-bold rounded-xl hover:bg-accent-hover transition-all shadow-sm text-sm">
-                                <span className="material-symbols-outlined text-lg">directions_car</span> Book Test Drive
-                            </Link>
-                            <button
-                                onClick={() => {
-                                    if (isInCart(car.id)) {
-                                        setIsCartOpen(true);
-                                    } else {
-                                        addToCart({
-                                            id: car.id,
-                                            make: car.make,
-                                            model: car.model,
-                                            year: car.year,
-                                            price: car.price,
-                                            fuel_type: car.fuel_type,
-                                            transmission: car.transmission,
-                                            mileage: car.mileage,
-                                            images: car.images,
-                                            status: car.status,
-                                            created_at: car.source || new Date().toISOString(),
-                                            condition: car.condition
-                                        });
-                                    }
-                                }}
-                                className={`w-full h-12 flex items-center justify-center gap-2 font-bold rounded-xl transition-all text-sm border ${isInCart(car.id) ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100/70' : 'bg-primary text-white border-primary hover:bg-primary-light'}`}
-                            >
-                                <span className="material-symbols-outlined text-lg">{isInCart(car.id) ? 'done' : 'folder_special'}</span>
-                                {isInCart(car.id) ? 'In Inquiry Cart' : 'Add to Inquiry Cart'}
-                            </button>
-                            <a href={`https://wa.me/919823237975?text=I'm interested in the ${car.year} ${car.make} ${car.model} (ID: ${car.id})`} target="_blank" rel="noreferrer" className="w-full h-12 flex items-center justify-center gap-2 bg-[#25D366] text-white font-bold rounded-xl hover:bg-[#20bd5a] transition-colors text-sm">
-                                <span className="material-symbols-outlined text-lg">forum</span> WhatsApp Inquiry
-                            </a>
-                            <Link to={`/book-test-drive?car=${car.id}`} className="w-full h-12 flex items-center justify-center gap-2 bg-accent text-primary font-bold rounded-xl hover:bg-accent-hover transition-colors text-sm shadow-sm">
-                                <span className="material-symbols-outlined text-lg">directions_car</span> Schedule Test Drive
-                            </Link>
-                            <button 
-                                onClick={async () => {
-                                    const shareUrl = catalogId 
-                                        ? `${window.location.origin}/car/${car.id}?catalogId=${catalogId}`
-                                        : `${window.location.origin}/car/${car.id}`;
-                                    const shareData = {
-                                        title: `${car.year} ${car.make} ${car.model}`,
-                                        text: `Check out this ${car.year} ${car.make} ${car.model} at Shree Swami Samarth Motors!`,
-                                        url: shareUrl,
-                                    };
-                                    
-                                    const fallbackCopy = () => {
-                                        try {
-                                            const el = document.createElement('textarea');
-                                            el.value = shareUrl;
-                                            el.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
-                                            document.body.appendChild(el);
-                                            el.focus();
-                                            el.select();
-                                            const success = document.execCommand('copy');
-                                            document.body.removeChild(el);
-                                            if (success) {
-                                                showToast("Car link copied to clipboard!", "success");
-                                            } else {
-                                                showToast("Failed to copy link.", "error");
-                                            }
-                                        } catch (err) {
-                                            showToast("Failed to copy link.", "error");
-                                        }
-                                    };
 
-                                    if (navigator.share) {
-                                        try { 
-                                            await navigator.share(shareData); 
-                                        } catch (err) { 
-                                            console.log('Share canceled or failed', err); 
-                                        }
-                                    } else {
-                                        if (navigator.clipboard && window.isSecureContext) {
-                                            navigator.clipboard.writeText(shareUrl).then(() => {
-                                                showToast("Car link copied to clipboard!", "success");
-                                            }).catch(() => {
-                                                fallbackCopy();
-                                            });
+                            {/* Monthly EMI Preview Banner */}
+                            <div className="bg-amber-50/70 border border-amber-200/60 rounded-xl p-3 flex items-center justify-between">
+                                <div>
+                                    <span className="text-[10px] text-amber-900 font-bold uppercase tracking-wider block">Estimated Monthly EMI</span>
+                                    <span className="text-sm font-black text-primary font-display">
+                                        ₹ {Math.round((car.price * 0.8 * 0.0215)).toLocaleString('en-IN')}<span className="text-xs font-semibold text-slate-500">/mo*</span>
+                                    </span>
+                                </div>
+                                <Link to={`/finance?price=${car.price}`} className="text-xs font-bold text-accent hover:underline flex items-center gap-0.5">
+                                    Options <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                                </Link>
+                            </div>
+
+                            <div className="space-y-2.5 pt-1">
+                                <Link to={`/book-test-drive?car=${car.id}`} className="w-full h-12 flex items-center justify-center gap-2 bg-accent text-primary font-bold rounded-xl hover:bg-accent-hover transition-all shadow-sm text-sm">
+                                    <span className="material-symbols-outlined text-lg">directions_car</span> Book Test Drive
+                                </Link>
+                                <button
+                                    onClick={() => {
+                                        if (isInCart(car.id)) {
+                                            setIsCartOpen(true);
                                         } else {
-                                            fallbackCopy();
+                                            addToCart({
+                                                id: car.id,
+                                                make: car.make,
+                                                model: car.model,
+                                                year: car.year,
+                                                price: car.price,
+                                                fuel_type: car.fuel_type,
+                                                transmission: car.transmission,
+                                                mileage: car.mileage,
+                                                images: car.images,
+                                                status: car.status,
+                                                created_at: car.source || new Date().toISOString(),
+                                                condition: car.condition
+                                            });
                                         }
-                                    }
-                                }}
-                                className="w-full h-10 flex items-center justify-center gap-2 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition-colors text-sm mt-2"
-                            >
-                                <span className="material-symbols-outlined text-lg">share</span> Share Car
-                            </button>
+                                    }}
+                                    className={`w-full h-12 flex items-center justify-center gap-2 font-bold rounded-xl transition-all text-sm border ${isInCart(car.id) ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100/70' : 'bg-primary text-white border-primary hover:bg-primary-light'}`}
+                                >
+                                    <span className="material-symbols-outlined text-lg">{isInCart(car.id) ? 'done' : 'folder_special'}</span>
+                                    {isInCart(car.id) ? 'In Inquiry Cart' : 'Add to Inquiry Cart'}
+                                </button>
+                                <a href={`https://wa.me/919823237975?text=Hello%20Shree%20Swami%20Samarth%20Motors,%20I'm%20interested%20in%20the%20${car.year}%20${car.make}%20${car.model}%20(ID:%20${car.id})`} target="_blank" rel="noreferrer" className="w-full h-12 flex items-center justify-center gap-2 bg-[#25D366] text-white font-bold rounded-xl hover:bg-[#20bd5a] transition-colors text-sm">
+                                    <span className="material-symbols-outlined text-lg">forum</span> WhatsApp Inquiry
+                                </a>
+                                <button 
+                                    onClick={handleShareCar}
+                                    className="w-full h-10 flex items-center justify-center gap-2 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition-colors text-sm mt-2 cursor-pointer"
+                                >
+                                    <Share2 size={16} />
+                                    <span>Share Car</span>
+                                </button>
                             {catalogId && (
                                 <button
                                     onClick={() => setIsDownloadModalOpen(true)}
@@ -932,6 +1028,13 @@ const CarDetails = () => {
                                 </p>
                                 <div className="space-y-2">
                                     <button 
+                                        onClick={() => setIsShareModalOpen(true)}
+                                        className="w-full h-10 flex items-center justify-center gap-2 border border-slate-200 bg-amber-50/40 text-amber-900 font-bold rounded-xl hover:bg-amber-100/60 transition-colors text-xs cursor-pointer"
+                                    >
+                                        <Share2 size={14} className="text-amber-700" />
+                                        <span>Share with Customer (CRM)</span>
+                                    </button>
+                                    <button 
                                         onClick={() => setIsDownloadModalOpen(true)}
                                         className="w-full h-10 flex items-center justify-center gap-2 bg-primary text-white font-bold rounded-xl hover:bg-primary-light transition-colors text-xs shadow-sm cursor-pointer"
                                     >
@@ -950,6 +1053,7 @@ const CarDetails = () => {
                                 </div>
                             </div>
                         )}
+                        </div>
                     </div>
 
                     {/* Dealer Card */}
@@ -988,7 +1092,7 @@ const CarDetails = () => {
             </div>
 
             {/* Mobile Layout */}
-            <div className="lg:hidden flex flex-col space-y-6">
+            <div className="lg:hidden flex flex-col space-y-6 pb-36">
                 {/* Mobile Image Gallery (Swipeable) */}
                 <div 
                     className="relative overflow-hidden bg-slate-100 aspect-[16/10] sm:rounded-2xl shadow-md -mx-4 sm:mx-0"
@@ -1021,6 +1125,20 @@ const CarDetails = () => {
                             <span className="bg-amber-500 text-white text-[9px] font-extrabold px-2.5 py-1 rounded-lg uppercase tracking-wider backdrop-blur-md shadow-sm">Reserved</span>
                         )}
                     </div>
+
+                    {/* Floating Top-Right Share Pill */}
+                    <button 
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleShareCar();
+                        }}
+                        className="absolute top-4 right-4 size-9 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md text-white flex items-center justify-center transition-all shadow-md active:scale-90 cursor-pointer z-10"
+                        title="Share Car"
+                        aria-label="Share Car"
+                    >
+                        <Share2 size={15} />
+                    </button>
 
                     {/* Floating Image Count Pill */}
                     <div className="absolute bottom-4 right-4 bg-black/60 text-white text-[10px] font-bold px-2.5 py-1 rounded-full backdrop-blur-md shadow-sm tracking-wider">
@@ -1063,17 +1181,30 @@ const CarDetails = () => {
                             </p>
                         </div>
                         
-                        {/* Wishlist button */}
-                        <button 
-                            className={`p-2.5 rounded-full border transition-all ${
-                                wishlist.includes(car.id) 
-                                    ? 'bg-red-50 border-red-200 text-red-500 shadow-sm scale-100 active:scale-95' 
-                                    : 'bg-slate-50 border-slate-200 text-slate-400 active:scale-95'
-                            }`}
-                            onClick={(e) => toggleWishlist(e, car.id)}
-                        >
-                            <Heart size={16} fill={wishlist.includes(car.id) ? 'currentColor' : 'none'} />
-                        </button>
+                        {/* Actions: Share & Wishlist buttons */}
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button 
+                                type="button"
+                                onClick={handleShareCar}
+                                title="Share Car"
+                                aria-label="Share Car"
+                                className="size-9 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 hover:text-primary flex items-center justify-center transition-all shadow-2xs active:scale-90 cursor-pointer"
+                            >
+                                <Share2 size={16} />
+                            </button>
+                            <button 
+                                className={`size-9 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
+                                    wishlist.includes(car.id) 
+                                        ? 'bg-red-50 border-red-200 text-red-500 shadow-sm scale-100 active:scale-90' 
+                                        : 'bg-slate-50 border-slate-200 text-slate-400 active:scale-90'
+                                }`}
+                                onClick={(e) => toggleWishlist(e, car.id)}
+                                title={wishlist.includes(car.id) ? "Saved in Wishlist" : "Save to Wishlist"}
+                                aria-label="Wishlist"
+                            >
+                                <Heart size={16} fill={wishlist.includes(car.id) ? 'currentColor' : 'none'} />
+                            </button>
+                        </div>
                     </div>
                     
                     <div className="flex items-baseline justify-between mt-4 pt-4 border-t border-slate-50">
@@ -1108,23 +1239,32 @@ const CarDetails = () => {
                             <span className="material-symbols-outlined text-sm text-accent">admin_panel_settings</span>
                             Staff Options
                         </h3>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col gap-2">
                             <button 
-                                onClick={() => setIsDownloadModalOpen(true)}
-                                className="flex-1 h-11 flex items-center justify-center gap-1.5 bg-primary text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer"
+                                onClick={() => setIsShareModalOpen(true)}
+                                className="w-full h-11 flex items-center justify-center gap-1.5 border border-amber-200/90 bg-amber-50/70 text-amber-900 font-bold rounded-xl text-xs active:scale-95 transition-all shadow-2xs cursor-pointer"
                             >
-                                <span className="material-symbols-outlined text-base">download</span>
-                                Download Photos
+                                <Share2 size={15} className="text-amber-700" />
+                                <span>Share with Customer via CRM</span>
                             </button>
-                            {hasPermission('inventory', 'manage') && (
-                                <Link 
-                                    to={`/admin/inventory/${car.id}/edit`}
-                                    className="flex-1 h-11 flex items-center justify-center gap-1.5 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs"
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={() => setIsDownloadModalOpen(true)}
+                                    className="flex-1 h-11 flex items-center justify-center gap-1.5 bg-primary text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer"
                                 >
-                                    <span className="material-symbols-outlined text-base">edit</span>
-                                    Edit Car
-                                </Link>
-                            )}
+                                    <span className="material-symbols-outlined text-base">download</span>
+                                    Download Photos
+                                </button>
+                                {hasPermission('inventory', 'manage') && (
+                                    <Link 
+                                        to={`/admin/inventory/${car.id}/edit`}
+                                        className="flex-1 h-11 flex items-center justify-center gap-1.5 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs"
+                                    >
+                                        <span className="material-symbols-outlined text-base">edit</span>
+                                        Edit Car
+                                    </Link>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1249,16 +1389,34 @@ const CarDetails = () => {
                         <div className="px-4">
                             <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
                                 <div className="flex items-center justify-between pb-3 border-b border-slate-50">
-                                    <h3 className="text-sm font-bold text-primary font-display">150-Point Inspection</h3>
-                                    <span className="text-[10px] bg-green-50 text-green-600 border border-green-200 px-2 py-0.5 rounded-lg font-bold">Passed</span>
+                                    <div>
+                                        <h3 className="text-sm font-extrabold text-primary font-display">200-Point Inspection Report</h3>
+                                        <p className="text-[11px] text-slate-400">Inspected by certified Kolhapur technicians</p>
+                                    </div>
+                                    <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200/60 px-2 py-0.5 rounded-lg font-bold">100% Passed</span>
                                 </div>
-                                <div className="space-y-2.5">
-                                    {INSPECTION.map(item => (
-                                        <div key={item.label} className="flex items-center gap-3 p-3 bg-slate-50/50 rounded-2xl">
-                                            <div className="size-6 rounded-full bg-success-light flex items-center justify-center text-success shrink-0 font-bold">
-                                                <Check size={12} strokeWidth={3} />
+                                <div className="space-y-3">
+                                    {INSPECTION_PILLARS.map(pillar => (
+                                        <div key={pillar.title} className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="material-symbols-outlined text-accent text-base">{pillar.icon}</span>
+                                                    <span className="text-xs font-bold text-primary">{pillar.title}</span>
+                                                </div>
+                                                <span className="text-[10px] font-black text-emerald-700 bg-emerald-100/70 px-1.5 py-0.5 rounded">
+                                                    {pillar.score}
+                                                </span>
                                             </div>
-                                            <span className="text-xs font-semibold text-slate-700">{item.label}</span>
+                                            <div className="space-y-1.5 pt-1">
+                                                {pillar.items.map((item, idx) => (
+                                                    <div key={idx} className="flex items-start gap-2 text-[11px] text-slate-600">
+                                                        <span className="size-3.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                                                            <Check size={8} strokeWidth={3} />
+                                                        </span>
+                                                        <span>{item}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -1507,34 +1665,102 @@ const CarDetails = () => {
                 )}
             </AnimatePresence>
 
-            {/* Sticky Bottom CTA Bar for Mobile */}
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-t border-white/20 shadow-[0_-10px_30px_rgba(15,23,41,0.08)] px-4 py-3 flex items-center justify-between">
-                <div className="flex flex-col">
-                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider leading-none mb-1">Total Price</span>
+            {/* Sticky Bottom CTA Bar for Mobile (Floats above PublicLayout mobile dock) */}
+            <div className="lg:hidden fixed bottom-16 left-0 right-0 z-40 bg-white/95 backdrop-blur-xl border-t border-slate-200/90 shadow-[0_-8px_24px_rgba(15,23,41,0.08)] px-4 py-2.5 flex items-center justify-between gap-3">
+                <div className="flex flex-col min-w-0">
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider leading-none mb-0.5">Total Price</span>
                     <div className="flex items-baseline gap-0.5">
-                        <span className="text-xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)}</span>
-                        <span className="text-xs font-black text-primary font-display">L</span>
+                        <span className="text-lg font-black text-primary font-display leading-tight">₹ {formatPriceLakh(car.price)}</span>
+                        <span className="text-xs font-bold text-primary font-display">L</span>
                     </div>
+                    <span className="text-[10px] text-amber-800 font-semibold leading-none truncate">
+                        EMI ₹{Math.round((car.price * 0.8 * 0.0215)).toLocaleString('en-IN')}/mo*
+                    </span>
                 </div>
-                <div className="flex gap-2 flex-1 max-w-[72%] justify-end">
-                    <Link 
-                        to={`/book-test-drive?car=${car.id}`} 
-                        className="flex-1 h-11 flex items-center justify-center gap-1.5 bg-accent text-primary font-black rounded-xl text-[11px] shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+                <div className="flex items-center gap-2 shrink-0">
+                    <button
+                        type="button"
+                        onClick={handleShareCar}
+                        className="size-10 rounded-xl flex items-center justify-center border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 active:scale-95 transition-all shadow-2xs shrink-0 cursor-pointer"
+                        title="Share Car"
+                        aria-label="Share Car"
                     >
-                        <span className="material-symbols-outlined text-[15px] font-bold">directions_car</span>
-                        Book Drive
-                    </Link>
+                        <Share2 size={17} />
+                    </button>
+                    <button
+                        onClick={() => {
+                            if (isInCart(car.id)) {
+                                setIsCartOpen(true);
+                            } else {
+                                addToCart({
+                                    id: car.id,
+                                    make: car.make,
+                                    model: car.model,
+                                    year: car.year,
+                                    price: car.price,
+                                    fuel_type: car.fuel_type,
+                                    transmission: car.transmission,
+                                    mileage: car.mileage,
+                                    images: car.images,
+                                    status: car.status,
+                                    created_at: car.source || new Date().toISOString(),
+                                    condition: car.condition
+                                });
+                            }
+                        }}
+                        className={`size-10 rounded-xl flex items-center justify-center border transition-all ${
+                            isInCart(car.id)
+                                ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                        title={isInCart(car.id) ? 'Inquiry Cart' : 'Add to Inquiry Cart'}
+                        aria-label="Inquiry Cart"
+                    >
+                        <span className="material-symbols-outlined text-lg">{isInCart(car.id) ? 'done' : 'shopping_bag'}</span>
+                    </button>
                     <a 
-                        href={`https://wa.me/919823237975?text=I'm interested in the ${car.year} ${car.make} ${car.model} (ID: ${car.id})`} 
+                        href={`https://wa.me/919823237975?text=Hello%20Shree%20Swami%20Samarth%20Motors,%20I'm%20interested%20in%20the%20${car.year}%20${car.make}%20${car.model}%20(ID:%20${car.id})`} 
                         target="_blank" 
                         rel="noreferrer" 
-                        className="flex-1 h-11 flex items-center justify-center gap-1.5 bg-[#25D366] text-white font-black rounded-xl text-[11px] shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+                        className="h-10 px-3 flex items-center justify-center gap-1.5 bg-[#25D366] text-white font-bold rounded-xl text-xs shadow-sm active:scale-95 transition-transform"
                     >
-                        <span className="material-symbols-outlined text-[15px] font-bold">forum</span>
-                        WhatsApp
+                        <span className="material-symbols-outlined text-base">forum</span>
+                        <span>WhatsApp</span>
                     </a>
+                    <Link 
+                        to={`/book-test-drive?car=${car.id}`} 
+                        className="h-10 px-3.5 flex items-center justify-center gap-1.5 bg-accent text-primary font-bold rounded-xl text-xs shadow-sm active:scale-95 transition-transform"
+                    >
+                        <span className="material-symbols-outlined text-base">directions_car</span>
+                        <span>Drive</span>
+                    </Link>
                 </div>
             </div>
+
+            {/* Share Car Modal (Multi-Channel & WhatsApp Generator) */}
+            {isShareModalOpen && car && (
+                <ShareCarModal
+                    car={{
+                        ...car,
+                        variant: car.variant || null,
+                        mileage: car.mileage || null,
+                        fuel_type: car.fuel_type || null,
+                        transmission: car.transmission || null,
+                        color: car.color || null,
+                        body_type: car.body_type || null,
+                        registration_no: car.registration_no || null,
+                        ownership: typeof car.ownership === 'number' 
+                            ? car.ownership 
+                            : (car.ownership ? parseInt(String(car.ownership), 10) || null : null),
+                        description: car.description || null,
+                        features: car.features ? car.features.split(/[,\n]+/).map((f: string) => f.trim()).filter(Boolean) : null,
+                        images: car.images || null,
+                        thumbnail: car.images?.[0] || null,
+                        status: car.status || 'available'
+                    }}
+                    onClose={() => setIsShareModalOpen(false)}
+                />
+            )}
 
             {/* Download Photos Modal */}
             {isDownloadModalOpen && (
@@ -1543,7 +1769,7 @@ const CarDetails = () => {
                         id: car.id,
                         make: car.make,
                         model: car.model,
-                        variant: car.ownership || null,
+                        variant: car.variant || (typeof car.ownership === 'string' ? car.ownership : null),
                         year: car.year,
                         images: car.images,
                         thumbnail: car.images?.[0] || null

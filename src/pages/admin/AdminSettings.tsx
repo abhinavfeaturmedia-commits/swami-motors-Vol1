@@ -194,14 +194,14 @@ const AdminSettings: React.FC = () => {
             .eq('status', 'available')
             .order('created_at', { ascending: false })
             .limit(50)
-            .then(({ data }) => { if (data) setDealInventory(data); });
+            .then(({ data }: { data: any }) => { if (data) setDealInventory(data); });
 
         supabase
             .from('dealership_settings')
             .select('setting_value')
             .eq('setting_key', 'deal_of_the_week')
             .maybeSingle()
-            .then(({ data }) => {
+            .then(({ data }: { data: any }) => {
                 if (data?.setting_value) {
                     setDealCarId(data.setting_value.car_id || '');
                     const raw = data.setting_value.ends_at || '';

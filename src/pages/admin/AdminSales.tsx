@@ -60,7 +60,7 @@ const AdminSales = () => {
 
             // 1. Find or create customer
             // 1. Execute atomic sale transaction
-            const apiUrl = import.meta.env.VITE_API_URL || '';
+            const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
             const token = localStorage.getItem('swami_access_token');
             let success = false;
 

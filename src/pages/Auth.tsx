@@ -236,7 +236,28 @@ const Auth = () => {
                         </button>
                     </form>
 
-                    <p className="text-center text-xs text-slate-400 mt-8">
+                    {/* Staff Portal Bridge Link */}
+                    <div className="mt-6 pt-5 border-t border-slate-100">
+                        <div className="bg-amber-50/70 border border-amber-200/70 rounded-2xl p-3 sm:p-3.5 flex items-center justify-between gap-3 text-left shadow-2xs">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="size-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs shrink-0">
+                                    <span className="material-symbols-outlined text-base">admin_panel_settings</span>
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-xs font-bold text-slate-800 truncate">Swami Motors Staff?</p>
+                                    <p className="text-[10px] text-slate-500 truncate">Employee CRM & Admin Portal</p>
+                                </div>
+                            </div>
+                            <Link 
+                                to="/admin/login" 
+                                className="px-3 py-1.5 bg-slate-900 text-amber-300 hover:text-white hover:bg-black rounded-xl text-xs font-bold whitespace-nowrap shadow-xs transition-all active:scale-95 shrink-0"
+                            >
+                                Staff Login →
+                            </Link>
+                        </div>
+                    </div>
+
+                    <p className="text-center text-xs text-slate-400 mt-6">
                         By continuing, you agree to our{' '}
                         <a href="#" className="text-accent font-semibold hover:underline">Terms of Service</a>
                         {' '}and{' '}

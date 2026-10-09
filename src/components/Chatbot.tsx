@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -20,6 +21,8 @@ interface AvailableCar {
 }
 
 export const Chatbot: React.FC = () => {
+    const location = useLocation();
+    const hasStickyBottomBar = location.pathname.startsWith('/car/') || location.pathname.startsWith('/cars/');
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<Message[]>([
         {
@@ -111,7 +114,7 @@ export const Chatbot: React.FC = () => {
             try {
                 let aiText = '';
                 try {
-                    const apiBase = import.meta.env.VITE_API_URL || '';
+                    const apiBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
                     const res = await fetch(`${apiBase}/api/ai/chat`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -234,7 +237,11 @@ export const Chatbot: React.FC = () => {
     };
 
     return (
-        <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex flex-col items-end">
+        <div className={`fixed z-50 flex flex-col items-end transition-all duration-300 ${
+            hasStickyBottomBar 
+                ? 'bottom-[8.25rem] md:bottom-6 right-3 md:right-6' 
+                : 'bottom-20 md:bottom-6 right-3 md:right-6'
+        }`}>
             {/* Chat Window Panel */}
             <AnimatePresence>
                 {isOpen && (
@@ -243,7 +250,11 @@ export const Chatbot: React.FC = () => {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 50, scale: 0.9 }}
                         transition={{ duration: 0.25, ease: 'easeOut' }}
-                        className="w-[92vw] sm:w-[380px] h-[500px] bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-slate-100 flex flex-col overflow-hidden mb-4"
+                        className={`w-[92vw] sm:w-[380px] bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-slate-100 flex flex-col overflow-hidden mb-3 ${
+                            hasStickyBottomBar 
+                                ? 'h-[440px] max-h-[66vh] md:h-[500px]' 
+                                : 'h-[480px] max-h-[75vh] md:h-[500px]'
+                        }`}
                     >
                         {/* Header */}
                         <div className="bg-gradient-to-r from-primary to-primary-light p-4 text-white flex items-center justify-between shrink-0 shadow-md">
@@ -434,12 +445,12 @@ export const Chatbot: React.FC = () => {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setIsOpen(!isOpen)}
-                className={`size-14 rounded-full flex items-center justify-center text-white shadow-2xl border border-white/10 transition-colors cursor-pointer ${
-                    isOpen ? 'bg-primary-light' : 'bg-primary'
+                className={`size-12 md:size-14 rounded-full flex items-center justify-center text-white shadow-xl hover:shadow-2xl border border-white/20 transition-all cursor-pointer ${
+                    isOpen ? 'bg-primary-light' : 'bg-primary hover:bg-primary-light'
                 }`}
                 aria-label="Toggle AI Assistant"
             >
-                <span className="material-symbols-outlined text-2xl font-bold">
+                <span className="material-symbols-outlined text-[22px] md:text-2xl font-bold">
                     {isOpen ? 'chat_bubble_outline' : 'smart_toy'}
                 </span>
             </motion.button>

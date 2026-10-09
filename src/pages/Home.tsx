@@ -151,6 +151,7 @@ const Home = () => {
     const [brands, setBrands] = useState<string[]>([]);
     const [years, setYears] = useState<string[]>([]);
     const [selectedFilters, setSelectedFilters] = useState({ budget: '', brand: '', year: '' });
+    const [heroTab, setHeroTab] = useState<'all' | 'budget' | 'body' | 'brand'>('all');
     const navigate = useNavigate();
     const { user } = useAuth();
 
@@ -181,7 +182,7 @@ const Home = () => {
                 return;
             }
             const { data } = await supabase.from('user_wishlist').select('inventory_id').eq('user_id', user.id);
-            setWishlist(data?.map(w => w.inventory_id) || []);
+            setWishlist(data?.map((w: any) => w.inventory_id) || []);
         };
         loadWishlist();
 
@@ -204,10 +205,10 @@ const Home = () => {
         const fetchFilterOptions = async () => {
             const { data } = await supabase.from('inventory').select('make, year').in('status', ['available', 'reserved']);
             if (data) {
-                const b = Array.from(new Set(data.map(d => d.make))).filter(Boolean).sort();
-                const y = Array.from(new Set(data.map(d => String(d.year)))).filter(Boolean).sort().reverse();
-                setBrands(b);
-                setYears(y);
+                const b = Array.from(new Set(data.map((d: any) => d.make))).filter(Boolean) as string[];
+                const y = Array.from(new Set(data.map((d: any) => String(d.year)))).filter(Boolean) as string[];
+                setBrands(b.sort());
+                setYears(y.sort().reverse());
             }
         };
 
@@ -449,7 +450,7 @@ const Home = () => {
                 <div className="relative z-10 container-main">
                     <div className="grid lg:grid-cols-2 gap-8 items-center min-h-[32.5rem] py-12 lg:py-20">
                         {/* Left — copy + search */}
-                        <div>
+                        <div className="w-full min-w-0 max-w-full">
                             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/15 border border-accent/30 text-accent text-[11px] font-bold uppercase tracking-widest mb-6">
                                 <span className="material-symbols-outlined text-sm">auto_awesome</span>
                                 Effortless Luxury Discovery
@@ -464,47 +465,162 @@ const Home = () => {
                                 Experience the freedom of the open road with our meticulously curated collection of premium certified vehicles. Your next adventure starts here.
                             </p>
 
-                            {/* Search filters */}
-                            <div className="bg-white rounded-2xl p-5 shadow-xl max-w-lg">
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                                    <div>
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Budget Range</label>
-                                        <select value={selectedFilters.budget} onChange={e => setSelectedFilters(p => ({...p, budget: e.target.value}))} className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-primary font-medium outline-none focus:ring-2 focus:ring-primary/10 appearance-none cursor-pointer">
-                                            <option value="">Any Budget</option>
-                                            <option value="under5">Under ₹5L</option>
-                                            <option value="5to10">₹5L - ₹10L</option>
-                                            <option value="10to20">₹10L - ₹20L</option>
-                                            <option value="20plus">₹20L+</option>
-                                        </select>
+                            {/* Smart Intent Search Tabs & Doppelrand Card */}
+                            <div className="doppelrand-shell w-full max-w-lg shadow-2xl overflow-hidden">
+                                <div className="doppelrand-core p-4 sm:p-5 w-full min-w-0">
+                                    {/* Tabs */}
+                                    <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl mb-4 overflow-x-auto scrollbar-none touch-pan-x w-full max-w-full">
+                                        {[
+                                            { id: 'all', label: 'All Filters', icon: 'tune' },
+                                            { id: 'budget', label: 'By Budget', icon: 'payments' },
+                                            { id: 'body', label: 'Body Style', icon: 'directions_car' },
+                                            { id: 'brand', label: 'Top Brands', icon: 'stars' },
+                                        ].map(tab => (
+                                            <button
+                                                key={tab.id}
+                                                type="button"
+                                                onClick={() => setHeroTab(tab.id as any)}
+                                                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                                                    heroTab === tab.id
+                                                        ? 'bg-white text-primary shadow-xs'
+                                                        : 'text-slate-500 hover:text-primary'
+                                                }`}
+                                            >
+                                                <span className="material-symbols-outlined text-sm shrink-0">{tab.icon}</span>
+                                                <span>{tab.label}</span>
+                                            </button>
+                                        ))}
                                     </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Preferred Brand</label>
-                                        <select value={selectedFilters.brand} onChange={e => setSelectedFilters(p => ({...p, brand: e.target.value}))} className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-primary font-medium outline-none focus:ring-2 focus:ring-primary/10 appearance-none cursor-pointer">
-                                            <option value="">All Brands</option>
-                                            {brands.map(b => <option key={b} value={b}>{b}</option>)}
-                                        </select>
+
+                                    {/* Tab 1: All Filters (Classic 3-select) */}
+                                    {heroTab === 'all' && (
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Budget Range</label>
+                                                <select 
+                                                    value={selectedFilters.budget} 
+                                                    onChange={e => setSelectedFilters(p => ({...p, budget: e.target.value}))} 
+                                                    className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs text-primary font-semibold outline-none focus:ring-2 focus:ring-primary/10 cursor-pointer"
+                                                >
+                                                    <option value="">Any Budget</option>
+                                                    <option value="under5">Under ₹5L</option>
+                                                    <option value="5to10">₹5L - ₹10L</option>
+                                                    <option value="10to20">₹10L - ₹20L</option>
+                                                    <option value="20plus">₹20L+</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Brand</label>
+                                                <select 
+                                                    value={selectedFilters.brand} 
+                                                    onChange={e => setSelectedFilters(p => ({...p, brand: e.target.value}))} 
+                                                    className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs text-primary font-semibold outline-none focus:ring-2 focus:ring-primary/10 cursor-pointer"
+                                                >
+                                                    <option value="">All Brands</option>
+                                                    {brands.map(b => <option key={b} value={b}>{b}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Year</label>
+                                                <select 
+                                                    value={selectedFilters.year} 
+                                                    onChange={e => setSelectedFilters(p => ({...p, year: e.target.value}))} 
+                                                    className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs text-primary font-semibold outline-none focus:ring-2 focus:ring-primary/10 cursor-pointer"
+                                                >
+                                                    <option value="">Any Year</option>
+                                                    {years.map(y => <option key={y} value={y}>{y}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tab 2: By Budget Quick Pills */}
+                                    {heroTab === 'budget' && (
+                                        <div className="mb-4">
+                                            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Select Target Budget</p>
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                {[
+                                                    { label: 'Under ₹5L', val: 'under5' },
+                                                    { label: '₹5L - ₹10L', val: '5to10' },
+                                                    { label: '₹10L - ₹20L', val: '10to20' },
+                                                    { label: '₹20L+ Luxury', val: '20plus' },
+                                                ].map(b => (
+                                                    <button
+                                                        key={b.val}
+                                                        type="button"
+                                                        onClick={() => setSelectedFilters(p => ({ ...p, budget: p.budget === b.val ? '' : b.val }))}
+                                                        className={`p-2.5 rounded-xl text-xs font-bold text-center border transition-all cursor-pointer ${
+                                                            selectedFilters.budget === b.val
+                                                                ? 'bg-primary text-white border-primary shadow-sm'
+                                                                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                                                        }`}
+                                                    >
+                                                        {b.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tab 3: By Body Style Quick Pills */}
+                                    {heroTab === 'body' && (
+                                        <div className="mb-4">
+                                            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Popular Body Types</p>
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                {['SUV', 'Sedan', 'Hatchback', 'MUV'].map(bt => (
+                                                    <button
+                                                        key={bt}
+                                                        type="button"
+                                                        onClick={() => navigate(`/inventory?body_type=${bt}`)}
+                                                        className="p-2.5 rounded-xl text-xs font-bold text-center bg-slate-50 border border-slate-200 text-slate-700 hover:bg-primary hover:text-white transition-all cursor-pointer"
+                                                    >
+                                                        {bt}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tab 4: Top Brands Quick Pills */}
+                                    {heroTab === 'brand' && (
+                                        <div className="mb-4">
+                                            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Frequent Choices in Kolhapur</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {['Maruti Suzuki', 'Hyundai', 'Tata', 'Mahindra', 'Toyota', 'Honda'].map(brand => (
+                                                    <button
+                                                        key={brand}
+                                                        type="button"
+                                                        onClick={() => navigate(`/inventory?make=${encodeURIComponent(brand)}`)}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-50 border border-slate-200 text-slate-700 hover:bg-primary hover:text-white transition-all cursor-pointer"
+                                                    >
+                                                        {brand}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Bottom action bar */}
+                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                                        <Link to="/inventory" className="text-xs font-semibold text-slate-500 hover:text-primary flex items-center justify-center sm:justify-start gap-1 transition-colors">
+                                            <span className="material-symbols-outlined text-sm">tune</span> All Filter Options
+                                        </Link>
+                                        <button 
+                                            onClick={() => {
+                                                const query = new URLSearchParams();
+                                                if (selectedFilters.budget) query.append('budget', selectedFilters.budget);
+                                                if (selectedFilters.brand) query.append('make', selectedFilters.brand);
+                                                if (selectedFilters.year) query.append('year', selectedFilters.year);
+                                                navigate(`/inventory?${query.toString()}`);
+                                            }} 
+                                            className="btn-island-primary cursor-pointer w-full sm:w-auto"
+                                        >
+                                            <span>Explore Matches</span>
+                                            <div className="btn-island-icon bg-white/20">
+                                                <ArrowRight size={14} />
+                                            </div>
+                                        </button>
                                     </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Model Year</label>
-                                        <select value={selectedFilters.year} onChange={e => setSelectedFilters(p => ({...p, year: e.target.value}))} className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-primary font-medium outline-none focus:ring-2 focus:ring-primary/10 appearance-none cursor-pointer">
-                                            <option value="">Any Year</option>
-                                            {years.map(y => <option key={y} value={y}>{y}</option>)}
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                                    <Link to="/inventory" className="text-xs font-semibold text-slate-500 hover:text-primary flex items-center gap-1 transition-colors">
-                                        <span className="material-symbols-outlined text-sm">tune</span> Advanced Filters
-                                    </Link>
-                                    <button onClick={() => {
-                                        const query = new URLSearchParams();
-                                        if (selectedFilters.budget) query.append('budget', selectedFilters.budget);
-                                        if (selectedFilters.brand) query.append('make', selectedFilters.brand);
-                                        if (selectedFilters.year) query.append('year', selectedFilters.year);
-                                        navigate(`/inventory?${query.toString()}`);
-                                    }} className="inline-flex items-center justify-center gap-2 h-10 px-6 bg-primary text-white font-bold rounded-xl text-sm hover:bg-primary-light transition-all shadow-sm cursor-pointer border-none w-full sm:w-auto">
-                                        <span className="material-symbols-outlined text-lg">search</span> Explore
-                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -637,51 +753,69 @@ const Home = () => {
                             <div className="col-span-1 sm:col-span-2 lg:col-span-4 text-center py-10 text-slate-400 w-full">No vehicles have been added recently.</div>
                         ) : cars.map((car) => {
                             const isSaved = wishlist.includes(car.id);
+                            const emiEst = car.price > 0 
+                                ? Math.round((car.price * 0.8 * (0.095 / 12) * Math.pow(1 + 0.095 / 12, 60)) / (Math.pow(1 + 0.095 / 12, 60) - 1)) 
+                                : 0;
+
                             return (
-                                <article key={car.id} className="min-w-[85%] sm:min-w-0 snap-center bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all duration-300 group flex flex-col relative">
-                                    <Link to={`/car/${car.id}`} className="flex flex-col flex-1">
-                                        <div className="relative aspect-[16/11] overflow-hidden bg-slate-100">
-                                            <img alt={`${car.make} ${car.model}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src={getPrimaryImage(car.images)} />
-                                            {car.condition === 'Excellent' && (
-                                                <div className="absolute top-3 left-3 bg-primary text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider">
-                                                    Certified
+                                <article key={car.id} className="min-w-[85%] sm:min-w-0 snap-center doppelrand-shell hover:border-accent/40 group flex flex-col relative transition-all duration-300">
+                                    <div className="doppelrand-core flex flex-col flex-1 overflow-hidden">
+                                        <Link to={`/car/${car.id}`} className="flex flex-col flex-1">
+                                            <div className="relative aspect-[16/11] overflow-hidden bg-slate-100">
+                                                <img 
+                                                    alt={`${car.make} ${car.model}`} 
+                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                                    src={getPrimaryImage(car.images)} 
+                                                />
+                                                <div className="absolute top-2.5 left-2.5 bg-primary/90 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                                                    <span className="material-symbols-outlined text-xs text-accent">verified</span> Certified
                                                 </div>
-                                            )}
-                                        </div>
-                                        <div className="p-4 flex flex-col flex-1">
-                                            <h3 className="text-sm font-bold text-primary font-display mb-2 truncate" title={`${car.year} ${car.make} ${car.model}`}>
-                                                {car.year} {car.make} {car.model}
-                                            </h3>
-
-                                            {/* Specs row */}
-                                            <div className="flex items-center gap-3 mb-2 text-[11px] text-slate-500">
-                                                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">settings</span>{car.transmission}</span>
-                                                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">local_gas_station</span>{car.fuel_type}</span>
                                             </div>
+                                            <div className="p-4 flex flex-col flex-1">
+                                                <h3 className="text-sm font-bold text-primary font-display mb-1.5 truncate group-hover:text-accent transition-colors" title={`${car.year} ${car.make} ${car.model}`}>
+                                                    {car.year} {car.make} {car.model}
+                                                </h3>
 
-                                            {/* Secondary info */}
-                                            <div className="flex items-center gap-3 text-[11px] text-slate-400 mb-3">
-                                                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">speed</span>{(car.mileage || 0).toLocaleString()} km</span>
+                                                {/* Specs row */}
+                                                <div className="flex items-center gap-2.5 mb-2 text-[11px] text-slate-500 font-medium">
+                                                    <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">tune</span>{car.transmission}</span>
+                                                    <span>•</span>
+                                                    <span className="flex items-center gap-1"><span className="material-symbols-outlined text-xs">local_gas_station</span>{car.fuel_type}</span>
+                                                    <span>•</span>
+                                                    <span>{(car.mileage || 0).toLocaleString()} km</span>
+                                                </div>
+
+                                                {/* Calculated Monthly EMI Badge */}
+                                                {emiEst > 0 && (
+                                                    <div className="inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200/80 text-[10px] font-bold text-amber-800 mb-2">
+                                                        <span>EMI from ₹{emiEst.toLocaleString('en-IN')}/mo*</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                        </div>
-                                    </Link>
+                                        </Link>
 
-                                    <button 
-                                        className={`absolute top-3 right-3 p-2 bg-white/90 rounded-full transition-colors shadow-sm backdrop-blur-sm z-10 ${isSaved ? 'text-red-500' : 'text-slate-400 hover:text-red-500'}`}
-                                        onClick={(e) => toggleWishlist(e, car.id)}
-                                    >
-                                        <Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />
-                                    </button>
+                                        <button 
+                                            className={`absolute top-4 right-4 p-2 bg-white/95 rounded-full transition-all shadow-md backdrop-blur-md z-10 cursor-pointer ${isSaved ? 'text-red-500' : 'text-slate-400 hover:text-red-500'}`}
+                                            onClick={(e) => toggleWishlist(e, car.id)}
+                                            aria-label="Save to Wishlist"
+                                        >
+                                            <Heart size={15} fill={isSaved ? 'currentColor' : 'none'} />
+                                        </button>
 
-                                    <div className="p-4 pt-0 mt-auto">
-                                        <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                                            <div>
-                                                <span className="text-[9px] text-slate-400 font-bold uppercase">Price</span>
-                                                <p className="text-lg font-black text-primary font-display">₹ {formatPriceLakh(car.price)} L</p>
+                                        <div className="p-4 pt-0 mt-auto">
+                                            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                                                <div>
+                                                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Price</span>
+                                                    <p className="text-base font-black text-primary font-display leading-tight">₹ {formatPriceLakh(car.price)} L</p>
+                                                </div>
+                                                <Link 
+                                                    to={`/car/${car.id}`} 
+                                                    className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-primary text-primary hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all group/btn"
+                                                >
+                                                    View Details
+                                                    <ArrowRight size={12} className="group-hover/btn:translate-x-0.5 transition-transform" />
+                                                </Link>
                                             </div>
-                                            <Link to={`/car/${car.id}`} className="inline-flex items-center gap-1 bg-accent/10 hover:bg-accent text-accent hover:text-primary px-3.5 py-2 rounded-lg text-xs font-bold transition-all">
-                                                View <span className="material-symbols-outlined text-sm">arrow_outward</span>
-                                            </Link>
                                         </div>
                                     </div>
                                 </article>

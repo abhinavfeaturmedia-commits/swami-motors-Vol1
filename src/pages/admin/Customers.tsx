@@ -364,24 +364,31 @@ const Customers = () => {
     const [customerCarInterestMap, setCustomerCarInterestMap] = useState<Map<string, Array<{ make: string; model: string; registration_no: string }>>>(new Map());
 
     useEffect(() => {
-        supabase
-            .from('lead_car_interests')
-            .select('customer_id, car:inventory(make, model, registration_no)')
-            .not('customer_id', 'is', null)
-            .then((res: any) => {
-                const data = res?.data;
-                const map = new Map<string, Array<{ make: string; model: string; registration_no: string }>>();
-                (data || []).forEach((r: any) => {
-                    if (!r.customer_id || !r.car) return;
-                    if (!map.has(r.customer_id)) map.set(r.customer_id, []);
-                    map.get(r.customer_id)!.push({
-                        make:            (r.car.make            || '').toLowerCase(),
-                        model:           (r.car.model           || '').toLowerCase(),
-                        registration_no: (r.car.registration_no || '').toLowerCase(),
+        try {
+            supabase
+                .from('lead_car_interests')
+                .select('customer_id, car:inventory(make, model, registration_no)')
+                .not('customer_id', 'is', null)
+                .then((res: any) => {
+                    const data = res?.data;
+                    const map = new Map<string, Array<{ make: string; model: string; registration_no: string }>>();
+                    (data || []).forEach((r: any) => {
+                        if (!r.customer_id || !r.car) return;
+                        if (!map.has(r.customer_id)) map.set(r.customer_id, []);
+                        map.get(r.customer_id)!.push({
+                            make:            (r.car.make            || '').toLowerCase(),
+                            model:           (r.car.model           || '').toLowerCase(),
+                            registration_no: (r.car.registration_no || '').toLowerCase(),
+                        });
                     });
+                    setCustomerCarInterestMap(map);
+                })
+                .catch((err: any) => {
+                    console.warn('Non-fatal: could not load bulk car interest search map', err);
                 });
-                setCustomerCarInterestMap(map);
-            });
+        } catch (err: any) {
+            console.warn('Non-fatal: customer car interest query error', err);
+        }
     }, []);
 
     /**

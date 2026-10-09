@@ -258,10 +258,10 @@ const AnnouncementBanner = () => {
             .select('*')
             .order('is_pinned', { ascending: false })
             .order('created_at', { ascending: false })
-            .then(({ data }) => {
+            .then(({ data }: { data: any }) => {
                 if (data) {
                     const today = new Date().toDateString();
-                    const visible = data.filter(a =>
+                    const visible = (data as any[]).filter((a: any) =>
                         a.is_pinned || new Date(a.created_at).toDateString() === today
                     );
                     setAnnouncements(visible);

@@ -238,6 +238,60 @@ router.post('/select', async (req, res) => {
         // Apply filters: [{ column, operator, value }]
         if (activeFilters.length > 0) {
             for (const f of activeFilters) {
+                // Support PostgREST .or('col.op.val,col2.op.val2') conditions
+                if (f.operator === 'or' && typeof f.value === 'string') {
+                    const conditions = f.value.match(/[^,()]+(?:\([^)]*\))?/g) || [f.value];
+                    const orParts = [];
+                    for (const cond of conditions) {
+                        const trimmed = cond.trim();
+                        const dotParts = trimmed.split('.');
+                        if (dotParts.length >= 2) {
+                            const cName = dotParts[0].trim();
+                            const cOp = dotParts[1].trim();
+                            const cVal = dotParts.slice(2).join('.').trim();
+                            if (isValidIdentifier(cName)) {
+                                if (cOp === 'is' && cVal === 'null') {
+                                    orParts.push(`\`${cName}\` IS NULL`);
+                                } else if (cOp === 'not' && cVal === 'null') {
+                                    orParts.push(`\`${cName}\` IS NOT NULL`);
+                                } else if (cOp === 'ilike' || cOp === 'like') {
+                                    orParts.push(`\`${cName}\` LIKE ?`);
+                                    params.push(cVal);
+                                } else if (cOp === 'eq') {
+                                    orParts.push(`\`${cName}\` = ?`);
+                                    params.push(cVal);
+                                } else if (cOp === 'neq') {
+                                    orParts.push(`\`${cName}\` != ?`);
+                                    params.push(cVal);
+                                } else if (cOp === 'gt') {
+                                    orParts.push(`\`${cName}\` > ?`);
+                                    params.push(cVal);
+                                } else if (cOp === 'gte') {
+                                    orParts.push(`\`${cName}\` >= ?`);
+                                    params.push(cVal);
+                                } else if (cOp === 'lt') {
+                                    orParts.push(`\`${cName}\` < ?`);
+                                    params.push(cVal);
+                                } else if (cOp === 'lte') {
+                                    orParts.push(`\`${cName}\` <= ?`);
+                                    params.push(cVal);
+                                } else if (cOp === 'in') {
+                                    const inVals = cVal.replace(/^\(|\)$/g, '').split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+                                    if (inVals.length > 0) {
+                                        const p = inVals.map(() => '?').join(', ');
+                                        orParts.push(`\`${cName}\` IN (${p})`);
+                                        params.push(...inVals);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (orParts.length > 0) {
+                        whereClauses.push(`(${orParts.join(' OR ')})`);
+                    }
+                    continue;
+                }
+
                 if (!f.column || !isValidIdentifier(f.column)) continue;
                 const op = f.operator || 'eq';
                 const col = `\`${f.column}\``;
@@ -286,10 +340,22 @@ router.post('/select', async (req, res) => {
                         whereClauses.push(`${col} LIKE ?`);
                         params.push(f.value);
                         break;
+                    case 'not_like':
+                    case 'not_ilike':
+                        whereClauses.push(`${col} NOT LIKE ?`);
+                        params.push(f.value);
+                        break;
                     case 'in':
                         if (Array.isArray(f.value) && f.value.length > 0) {
                             const placeholders = f.value.map(() => '?').join(', ');
                             whereClauses.push(`${col} IN (${placeholders})`);
+                            params.push(...f.value);
+                        }
+                        break;
+                    case 'not_in':
+                        if (Array.isArray(f.value) && f.value.length > 0) {
+                            const placeholders = f.value.map(() => '?').join(', ');
+                            whereClauses.push(`${col} NOT IN (${placeholders})`);
                             params.push(...f.value);
                         }
                         break;

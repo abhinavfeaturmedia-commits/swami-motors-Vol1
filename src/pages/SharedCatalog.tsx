@@ -146,7 +146,7 @@ const SharedCatalog: React.FC = () => {
                 }
 
                 // Override with database values (the source of truth)
-                itemData.forEach(item => {
+                (itemData as any[]).forEach((item: any) => {
                     likesMap[item.inventory_id] = item.is_liked || false;
                     commentsMap[item.inventory_id] = item.comments || [];
                 });
@@ -157,7 +157,7 @@ const SharedCatalog: React.FC = () => {
                 localStorage.setItem(`likes_${id}`, JSON.stringify(likesMap));
                 localStorage.setItem(`comments_${id}`, JSON.stringify(commentsMap));
 
-                const carIds = itemData.map(item => item.inventory_id);
+                const carIds = (itemData as any[]).map((item: any) => item.inventory_id);
 
                 if (carIds.length > 0) {
                     const { data: carList, error: carError } = await supabase

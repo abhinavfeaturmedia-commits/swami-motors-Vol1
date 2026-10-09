@@ -119,8 +119,9 @@ const UserManagement = () => {
                 return;
             }
 
+            const apiBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
             const endpoint = import.meta.env.VITE_USE_NODE_BACKEND !== 'false'
-                ? `${import.meta.env.VITE_API_URL || ''}/api/auth/staff-create`
+                ? `${apiBase}/api/auth/staff-create`
                 : `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff-user`;
 
             const res = await fetch(

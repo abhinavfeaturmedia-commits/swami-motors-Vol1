@@ -55,14 +55,24 @@ const ALLOWED_ORIGINS = [
     'https://www.autokundali.com',
     'http://localhost:5173',
     'http://localhost:3000',
-    'http://127.0.0.1:5173'
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3000'
 ];
+
+// Helper to allow local development / private LAN IPs (e.g. 192.168.x.x, 10.x.x.x, localhost)
+const isLocalOrPrivateOrigin = (origin) => {
+    return /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin);
+};
 
 app.use(cors({
     origin: (origin, callback) => {
         // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
         if (!origin) return callback(null, true);
-        if (ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.autokundali.com')) {
+        if (
+            ALLOWED_ORIGINS.includes(origin) || 
+            origin.endsWith('.autokundali.com') ||
+            isLocalOrPrivateOrigin(origin)
+        ) {
             return callback(null, true);
         }
         return callback(new Error(`CORS blocked for origin: ${origin}`));
