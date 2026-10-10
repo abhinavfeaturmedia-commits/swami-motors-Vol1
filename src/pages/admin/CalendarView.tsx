@@ -123,7 +123,7 @@ const CalendarView = () => {
                 {Object.entries(typeColors).map(([key, val]) => (
                     <div key={key} className="flex items-center gap-1.5 text-xs text-slate-600">
                         <span className={`size-2.5 rounded-full ${val.dot}`} />
-                        <span className="capitalize">{key.replace('-', ' ')}</span>
+                        <span className="capitalize">{(key || '').replace(/-/g, ' ')}</span>
                     </div>
                 ))}
             </div>
@@ -176,7 +176,7 @@ const CalendarView = () => {
                                     <div key={i} className={`p-3 rounded-xl border ${tc?.bg || 'bg-slate-50 border-slate-200'}`}>
                                         <div className="flex items-center gap-2 mb-1">
                                             <span className={`size-2 rounded-full ${tc?.dot || 'bg-slate-400'}`} />
-                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{e.type.replace('-', ' ')}</span>
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{(e.type || 'event').replace(/-/g, ' ')}</span>
                                         </div>
                                         <p className="text-sm font-semibold text-primary">{e.title}</p>
                                         <p className="text-xs text-slate-500 mt-1 font-medium"><span className="material-symbols-outlined text-[13px] align-middle mr-1">schedule</span>{e.time}</p>

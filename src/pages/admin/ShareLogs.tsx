@@ -275,7 +275,7 @@ const ShareLogs: React.FC = () => {
                                         <td className="px-5 py-3.5">
                                             <p className="text-sm font-semibold text-primary">{log.customer_name}</p>
                                             <a
-                                                href={`https://wa.me/91${log.customer_phone.replace(/\D/g, '')}`}
+                                                href={`https://wa.me/91${(log.customer_phone || '').replace(/\D/g, '')}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="text-[11px] text-green-600 hover:underline flex items-center gap-0.5"

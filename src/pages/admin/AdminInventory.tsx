@@ -218,8 +218,8 @@ const AdminInventory = () => {
         supabase.from('dealers').select('id, dealer_code, name').then(({ data }: { data: any }) => {
             if (data) {
                 const sorted = (data as Dealer[]).sort((a, b) => {
-                    const numA = parseInt(a.dealer_code.replace(/\D/g, '')) || 0;
-                    const numB = parseInt(b.dealer_code.replace(/\D/g, '')) || 0;
+                    const numA = parseInt((a.dealer_code || '').replace(/\D/g, '')) || 0;
+                    const numB = parseInt((b.dealer_code || '').replace(/\D/g, '')) || 0;
                     return numA - numB;
                 });
                 setDealers(sorted);

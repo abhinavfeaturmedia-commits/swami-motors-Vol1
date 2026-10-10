@@ -758,7 +758,7 @@ const FinanceServices = () => {
                                                 const message = encodeURIComponent(
                                                     `Hello ${file.full_name}, this is Swami Samarth Motors. We noticed that your insurance policy (${file.policy_number || 'N/A'}) for your vehicle is expiring on ${expDate.toLocaleDateString('en-IN')}. Let's renew this to avoid coverage gaps. Please reply to proceed.`
                                                 );
-                                                const whatsappUrl = `https://wa.me/91${file.phone.replace(/[^0-9]/g, '')}?text=${message}`;
+                                                const whatsappUrl = `https://wa.me/91${(file.phone || '').replace(/[^0-9]/g, '')}?text=${message}`;
                                                 
                                                 return (
                                                     <a
@@ -1277,7 +1277,7 @@ const FinanceServices = () => {
                                                         ? 'bg-blue-50 text-blue-700 border-blue-200'
                                                         : 'bg-amber-50 text-amber-700 border-amber-200'
                                                 }`}>
-                                                    {f.status.replace('_', ' ')}
+                                                    {(f.status || 'pending').replace(/_/g, ' ')}
                                                 </span>
                                             </div>
                                         ))}

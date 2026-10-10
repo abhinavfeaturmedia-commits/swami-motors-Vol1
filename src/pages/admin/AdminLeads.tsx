@@ -465,7 +465,7 @@ const AdminLeads = () => {
      * so "98123 45678" and "9812345678" are treated as the same number.
      */
     const normalizePhone = (raw: string): string => {
-        let n = raw.replace(/[\s\-().+]/g, '');
+        let n = (raw || '').replace(/[\s\-().+]/g, '');
         if (n.startsWith('91') && n.length === 12) n = n.slice(2); // strip country code
         if (n.startsWith('0') && n.length === 11) n = n.slice(1);  // strip leading 0
         return n;
@@ -1165,7 +1165,7 @@ const AdminLeads = () => {
                                                 <a href={`tel:${lead.phone}`} title="Call" className="size-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-blue-100 hover:text-blue-600 transition-colors">
                                                     <span className="material-symbols-outlined text-[18px]">call</span>
                                                 </a>
-                                                <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" title="WhatsApp" className="size-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-green-100 hover:text-green-600 transition-colors">
+                                                <a href={`https://wa.me/${(lead.phone || '').replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" title="WhatsApp" className="size-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-green-100 hover:text-green-600 transition-colors">
                                                     <span className="material-symbols-outlined text-[18px]">chat</span>
                                                 </a>
                                                 {/* Delete — only admin OR assigned staff */}

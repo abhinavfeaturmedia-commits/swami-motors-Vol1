@@ -406,7 +406,7 @@ const UserDashboard = () => {
                                                                     {s.type === 'loan' ? 'Car Loan File' : 'Car Insurance Contract'}
                                                                 </p>
                                                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-amber-100 text-amber-800 border border-amber-200">
-                                                                    {s.status.replace('_', ' ')}
+                                                                    {(s.status || 'pending').replace(/_/g, ' ')}
                                                                 </span>
                                                             </div>
                                                             <p className="text-xs text-slate-500 mt-1">

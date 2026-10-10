@@ -133,7 +133,7 @@ const DailyPlanner = () => {
                                             {new Date(b.booking_date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                                         </span>
                                         <div className="flex-1">
-                                            <p className="text-sm font-semibold text-primary">{b.type.replace('_', ' ').toUpperCase()}</p>
+                                            <p className="text-sm font-semibold text-primary">{(b.type || 'booking').replace(/_/g, ' ').toUpperCase()}</p>
                                             <p className="text-xs text-slate-500">{b.lead?.full_name || 'Guest'}</p>
                                         </div>
                                     </div>

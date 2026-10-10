@@ -70,7 +70,7 @@ const LeadSources = () => {
                                 <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
                                     {sourcesData.reduce<{ offset: number; elements: React.ReactNode[] }>((acc, s, i) => {
                                         const dash = (s.pct / 100) * 283;
-                                        const elem = <circle key={i} cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="10" strokeDasharray={`${dash} ${283 - dash}`} strokeDashoffset={-acc.offset} className={s.color.replace('bg-', 'text-')} />;
+                                        const elem = <circle key={i} cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="10" strokeDasharray={`${dash} ${283 - dash}`} strokeDashoffset={-acc.offset} className={(s.color || 'bg-slate-400').replace('bg-', 'text-')} />;
                                         acc.elements.push(elem);
                                         acc.offset += dash;
                                         return acc;

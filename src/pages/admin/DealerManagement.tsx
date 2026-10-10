@@ -75,8 +75,8 @@ const generateDealerCode = (existingCodes: string[]) => {
     return code;
 };
 
-const getCodeNumber = (code: string) => {
-    const num = parseInt(code.replace(/\D/g, ''), 10);
+const getCodeNumber = (code?: string | null) => {
+    const num = parseInt((code || '').replace(/\D/g, ''), 10);
     return isNaN(num) ? 0 : num;
 };
 
@@ -573,7 +573,7 @@ const DealerManagement = () => {
                                                 {dealer.whatsapp_number && (
                                                     <div className="flex items-center gap-2">
                                                         <span className="material-symbols-outlined text-slate-300 text-[14px]">chat</span>
-                                                        <a href={`https://wa.me/91${dealer.whatsapp_number.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-green-600 hover:text-green-700 transition-colors font-semibold flex items-center gap-1">
+                                                        <a href={`https://wa.me/91${(dealer.whatsapp_number || '').replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-green-600 hover:text-green-700 transition-colors font-semibold flex items-center gap-1">
                                                             {dealer.whatsapp_number}
                                                             <span className="text-[9px] px-1 bg-green-50 text-green-500 rounded border border-green-100 uppercase">WA</span>
                                                         </a>
@@ -684,7 +684,7 @@ const DealerManagement = () => {
                                                             <div className="flex items-center gap-2">
                                                                 {dealer.phone && <a href={`tel:${dealer.phone}`} className="hover:text-primary transition-colors">{dealer.phone}</a>}
                                                                 {dealer.whatsapp_number && (
-                                                                    <a href={`https://wa.me/91${dealer.whatsapp_number.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-green-500 hover:text-green-600 transition-colors flex items-center" title="Send WhatsApp">
+                                                                    <a href={`https://wa.me/91${(dealer.whatsapp_number || '').replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-green-500 hover:text-green-600 transition-colors flex items-center" title="Send WhatsApp">
                                                                         <svg className="size-3.5 fill-current" viewBox="0 0 24 24"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.424 2.5 1.14 3.473l-.744 2.718 2.79-.731a5.717 5.717 0 002.582.617h.002c3.18 0 5.766-2.586 5.767-5.767a5.772 5.772 0 00-5.769-5.774zm3.435 8.16c-.1.285-.572.545-.826.58-.24.032-.552.058-1.284-.24-.925-.378-1.503-1.32-1.55-1.382-.047-.062-.394-.523-.394-1.002 0-.479.25-.713.34-.81.089-.096.196-.12.261-.12.066 0 .132.001.189.004.06.002.138-.023.216.166.089.215.305.744.344.821.039.078.065.169.013.273-.052.104-.078.169-.156.26-.078.09-.163.2-.234.273-.078.078-.16.163-.069.32.091.156.405.67.87 1.085.6.535 1.107.7 1.267.78.16.08.254.065.349-.046.096-.11.411-.479.522-.642.11-.162.221-.137.371-.081.15.056.953.45 1.117.531.163.081.272.122.311.19.039.068.039.394-.061.679zM12 .003C5.384.003.007 5.378.007 12a11.93 11.93 0 001.821 6.272L.022 24l5.894-1.547a11.95 11.95 0 006.087 1.63c6.613 0 11.99-5.378 11.99-12S18.616.003 12.001.003z"/></svg>
                                                                     </a>
                                                                 )}

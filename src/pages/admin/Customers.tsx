@@ -190,7 +190,7 @@ const Customers = () => {
                 events.push({
                     id: `lead-${l.id}`,
                     type: 'lead',
-                    title: `Enquiry: ${l.type.replace('_', ' ').toUpperCase()}`,
+                    title: `Enquiry: ${(l.type || 'general').replace(/_/g, ' ').toUpperCase()}`,
                     description: l.message || (l.car_make ? `Interested in ${l.car_make} ${l.car_model || ''}` : 'General Enquiry'),
                     date: new Date(l.created_at),
                     status: l.status,
@@ -629,7 +629,7 @@ const Customers = () => {
                                                 <a href={`tel:${c.phone}`} className="p-1.5 hover:bg-green-50 rounded-lg" title="Call" onClick={e => e.stopPropagation()}>
                                                     <span className="material-symbols-outlined text-green-500 text-base">call</span>
                                                 </a>
-                                        <a href={`https://wa.me/91${(c.whatsapp_number || c.phone).replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-slate-100 rounded-lg" title="WhatsApp" onClick={e => e.stopPropagation()}>
+                                        <a href={`https://wa.me/91${(c.whatsapp_number || c.phone || '').replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-slate-100 rounded-lg" title="WhatsApp" onClick={e => e.stopPropagation()}>
                                                     <span className="material-symbols-outlined text-slate-400 text-base">chat</span>
                                                 </a>
                                             </div>

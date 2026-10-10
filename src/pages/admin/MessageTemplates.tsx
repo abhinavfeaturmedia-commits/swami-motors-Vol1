@@ -108,7 +108,7 @@ const MessageTemplates: React.FC = () => {
     };
 
     const handleSendWhatsApp = () => {
-        const phone = variables.customer_phone.replace(/\D/g, '');
+        const phone = (variables.customer_phone || '').replace(/\D/g, '');
         const cleanPhone = phone.length === 10 ? `91${phone}` : phone;
         const encoded = encodeURIComponent(currentRenderedText);
         window.open(`https://wa.me/${cleanPhone}?text=${encoded}`, '_blank');

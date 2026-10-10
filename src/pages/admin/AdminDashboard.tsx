@@ -94,7 +94,7 @@ const AdminDashboard = () => {
     };
     const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     const avatar = (n: string) => n ? n.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase() : 'U';
-    const fmtType = (t: string) => t.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    const fmtType = (t?: string | null) => t ? t.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : 'General';
 
     return (
         <div className="space-y-6">
@@ -203,7 +203,7 @@ const AdminDashboard = () => {
                                         </td>
                                         <td className="px-4 sm:px-5 py-3.5 text-xs text-slate-700 font-medium">{fmtType(lead.type)}</td>
                                         <td className="px-4 sm:px-5 py-3.5">
-                                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${statusColors[lead.status] || 'bg-slate-100'}`}>{lead.status.replace('_', ' ')}</span>
+                                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${statusColors[lead.status] || 'bg-slate-100'}`}>{(lead.status || 'new').replace(/_/g, ' ')}</span>
                                         </td>
                                         <td className="px-4 sm:px-5 py-3.5 text-[10px] sm:text-xs text-slate-400 whitespace-nowrap">{fmtDate(lead.created_at)}</td>
                                         <td className="px-4 sm:px-5 py-3.5 text-right">
