@@ -31,7 +31,7 @@ const Accounts = () => {
                 mode: 'Bank Transfer',
                 status: 'Completed',
                 // Navigate to the car's admin edit/view page so the admin can inspect it
-                link: s.car_id ? `/admin/inventory/${s.car_id}/edit` : null,
+                link: (s.inventory_id || s.car?.id || (s as any).car_id) ? `/admin/inventory/${s.inventory_id || s.car?.id || (s as any).car_id}/edit` : null,
             });
         });
 

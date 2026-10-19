@@ -83,12 +83,25 @@ app.use(cors({
 }));
 
 // ─── 3. Rate Limiters ────────────────────────────────────────────────────────
-// General API Rate Limiter: max 300 requests per 15 minutes per IP
+// General API Rate Limiter: max 3000 requests per 15 minutes per IP
+// Authenticated requests (Bearer token) and local LAN requests are exempted
 const generalApiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 300,
+    max: 3000,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => {
+        // Skip rate limiting if user is authenticated via Bearer token
+        if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            return true;
+        }
+        // Skip rate limiting for local development or LAN IPs
+        const ip = req.ip || req.connection?.remoteAddress || '';
+        if (ip.includes('127.0.0.1') || ip.includes('::1') || ip.startsWith('192.168.') || ip.startsWith('10.')) {
+            return true;
+        }
+        return false;
+    },
     message: { error: 'Too many requests from this IP. Please try again after 15 minutes.' }
 });
 
@@ -122,8 +135,14 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 // Global JWT Token decoder
 app.use(authenticateToken);
 
-// Serve static uploads with caching headers
-const uploadsDir = path.join(__dirname, 'uploads');
+// Serve static uploads with caching headers (supports persistent Hostinger public_html directory)
+const HOSTINGER_PERSISTENT_UPLOADS = '/home/u750566272/domains/autokundali.com/public_html/uploads';
+const defaultUploadsDir = path.join(__dirname, 'uploads');
+const uploadsDir = process.env.UPLOADS_DIR || 
+    (fs.existsSync('/home/u750566272/domains/autokundali.com/public_html') 
+        ? HOSTINGER_PERSISTENT_UPLOADS 
+        : defaultUploadsDir);
+
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir, {
     maxAge: '7d',

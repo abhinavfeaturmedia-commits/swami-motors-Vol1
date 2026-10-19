@@ -10,8 +10,15 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-// Ensure upload directories exist
-const uploadsDir = path.join(__dirname, '..', 'uploads');
+// Persistent uploads directory logic (supports Hostinger public_html or environment override or local fallback)
+const HOSTINGER_PERSISTENT_UPLOADS = '/home/u750566272/domains/autokundali.com/public_html/uploads';
+const defaultUploadsDir = path.join(__dirname, '..', 'uploads');
+
+const uploadsDir = process.env.UPLOADS_DIR || 
+    (fs.existsSync('/home/u750566272/domains/autokundali.com/public_html') 
+        ? HOSTINGER_PERSISTENT_UPLOADS 
+        : defaultUploadsDir);
+
 const carsUploadsDir = path.join(uploadsDir, 'cars');
 
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });

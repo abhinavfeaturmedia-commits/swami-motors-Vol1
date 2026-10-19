@@ -1,6 +1,8 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useData } from '../../contexts/DataContext';
+import { useToast } from '../../contexts/ToastContext';
+import { supabase } from '../../lib/supabase';
 
 const SHORTCUTS = [
     { icon: 'person_add', label: 'New Lead', path: '/admin/leads' },
@@ -12,7 +14,21 @@ const SHORTCUTS = [
 const priorityColors: Record<string, string> = { 'High': 'text-red-600 bg-red-50', 'Medium': 'text-amber-600 bg-amber-50', 'Low': 'text-green-600 bg-green-50' };
 
 const DailyPlanner = () => {
-    const { tasks, sales, bookings } = useData();
+    const { tasks, sales, bookings, refreshData } = useData();
+    const toast = useToast();
+
+    const handleToggleTask = async (task: any) => {
+        try {
+            const newStatus = task.status === 'completed' ? 'todo' : 'completed';
+            const { error } = await supabase.from('tasks').update({ status: newStatus }).eq('id', task.id);
+            if (error) throw error;
+            toast.success(`Task "${task.title}" marked as ${newStatus === 'completed' ? 'completed ✓' : 'to-do'}`);
+            refreshData();
+        } catch (err: any) {
+            console.error(err);
+            toast.error('Failed to update task.');
+        }
+    };
 
     // Live Tasks Processing
     const todoTasks = tasks.filter(t => t.status === 'todo');
@@ -80,14 +96,21 @@ const DailyPlanner = () => {
                             <div className="space-y-3">
                                 {todoTasks.slice(0, 5).map(task => (
                                     <div key={task.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100/50 transition-colors group">
-                                        <div className="size-5 rounded-md border-2 border-slate-300 flex items-center justify-center cursor-pointer group-hover:border-primary transition-colors" />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleToggleTask(task)}
+                                            title="Mark as completed"
+                                            className="size-6 rounded-md border-2 border-slate-300 flex items-center justify-center cursor-pointer group-hover:border-primary transition-all hover:bg-emerald-500 hover:border-emerald-500 hover:text-white text-transparent"
+                                        >
+                                            <span className="material-symbols-outlined text-sm">check</span>
+                                        </button>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-primary">{task.title}</p>
                                             <div className="flex items-center gap-2 mt-1">
                                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${priorityColors[task.priority] || 'bg-slate-100 text-slate-500'}`}>{task.priority || 'Normal'}</span>
                                             </div>
                                         </div>
-                                        <span className="text-xs text-slate-400 font-medium">{new Date(task.due_date).toLocaleDateString()}</span>
+                                        <span className="text-xs text-slate-400 font-medium">{task.due_date ? new Date(task.due_date).toLocaleDateString() : 'Today'}</span>
                                     </div>
                                 ))}
                             </div>
@@ -103,14 +126,21 @@ const DailyPlanner = () => {
                             <div className="space-y-3">
                                 {progressTasks.map(task => (
                                     <div key={task.id} className="flex items-center gap-4 p-4 bg-blue-50/50 rounded-xl border border-blue-100">
-                                        <div className="size-5 rounded-md bg-blue-500 flex items-center justify-center"><span className="material-symbols-outlined text-white text-sm">remove</span></div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleToggleTask(task)}
+                                            title="Mark as completed"
+                                            className="size-6 rounded-md bg-blue-500 hover:bg-emerald-500 flex items-center justify-center cursor-pointer text-white transition-all shadow-xs"
+                                        >
+                                            <span className="material-symbols-outlined text-sm">check</span>
+                                        </button>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-primary">{task.title}</p>
                                             <div className="flex items-center gap-2 mt-1">
                                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${priorityColors[task.priority] || 'bg-slate-100 text-slate-500'}`}>{task.priority || 'Normal'}</span>
                                             </div>
                                         </div>
-                                        <span className="text-xs text-slate-400 font-medium">{new Date(task.due_date).toLocaleDateString()}</span>
+                                        <span className="text-xs text-slate-400 font-medium">{task.due_date ? new Date(task.due_date).toLocaleDateString() : 'Today'}</span>
                                     </div>
                                 ))}
                             </div>

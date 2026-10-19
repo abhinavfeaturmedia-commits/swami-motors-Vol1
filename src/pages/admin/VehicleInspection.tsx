@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useData } from '../../contexts/DataContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
 const CATEGORIES = [
@@ -14,7 +15,8 @@ const CATEGORIES = [
 type Status = 'Pass' | 'Fail' | 'NA' | '';
 
 const VehicleInspection = () => {
-    const { inventory, refreshData } = useData();
+    const { inventory, inspections, refreshData } = useData();
+    const { profile, user } = useAuth();
     const toast = useToast();
     const availableInventory = inventory.filter(c => c.status !== 'sold');
     
@@ -36,14 +38,17 @@ const VehicleInspection = () => {
         setIsSaving(true);
         
         try {
-            // Serialize checklist items to JSON string since schema only has 'notes'
-            const formattedNotes = `Score: ${score}% (${passed} Pass, ${failed} Fail)\n\nInspector Notes:\n${notes}\n\nChecklist Dump:\n${JSON.stringify(statuses)}`;
+            // Serialize checklist items to JSON string since schema stores structured summary in notes
+            const formattedNotes = `Score: ${score}% (${passed} Pass, ${failed} Fail)\n\nInspector Notes:\n${notes}\n\nChecklist:\n${JSON.stringify(statuses)}`;
             const finalStatus = score >= 80 ? 'passed' : 'failed';
+            const inspectorName = profile?.full_name || user?.email?.split('@')[0] || 'Admin Inspector';
+            const todayStr = new Date().toISOString().split('T')[0];
 
             const { error } = await supabase.from('inspections').insert({
                 inventory_id: selectedVehicleId,
-                inspector_name: 'Admin User',
+                inspector_name: inspectorName,
                 status: finalStatus,
+                inspection_date: todayStr,
                 notes: formattedNotes
             });
 
@@ -51,13 +56,22 @@ const VehicleInspection = () => {
                 toast.error('Error saving inspection report.');
                 console.error(error);
             } else {
-                toast.success('Inspection saved successfully!');
+                // If inspection passed >= 80%, certify vehicle condition and tag certified in inventory notes
+                if (score >= 80) {
+                    await supabase.from('inventory').update({
+                        condition: 'Certified Excellent',
+                        notes: `200-Pt Verified Inspection Passed (${score}%) by ${inspectorName} on ${todayStr}`
+                    }).eq('id', selectedVehicleId);
+                }
+
+                toast.success(`Inspection recorded successfully (${score}% - ${finalStatus.toUpperCase()})`);
                 setStatuses({});
                 setNotes('');
                 refreshData();
             }
         } catch (err) {
             console.error(err);
+            toast.error('Failed to complete inspection save.');
         } finally {
             setIsSaving(false);
         }
@@ -128,6 +142,68 @@ const VehicleInspection = () => {
             <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block">Inspector Additional Notes</label>
                 <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Add any major concerns or observations..." className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-primary outline-none resize-none focus:border-primary/50" />
+            </div>
+
+            {/* Past Inspections History */}
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-[var(--shadow-card)] p-5 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div>
+                        <h3 className="font-bold text-primary font-display text-sm">Recent Quality Inspections</h3>
+                        <p className="text-xs text-slate-400">Past audits and certification records across vehicles</p>
+                    </div>
+                    <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+                        {inspections.length} Total Inspections
+                    </span>
+                </div>
+
+                {inspections.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400 text-xs">
+                        No inspection records found yet. Submit the form above to record your first vehicle audit.
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr className="border-b border-slate-100 text-slate-400 uppercase text-[10px] font-bold">
+                                    <th className="py-2.5 px-3">Vehicle</th>
+                                    <th className="py-2.5 px-3">Inspector</th>
+                                    <th className="py-2.5 px-3">Date</th>
+                                    <th className="py-2.5 px-3">Status</th>
+                                    <th className="py-2.5 px-3">Summary / Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {inspections.slice(0, 10).map((insp: any) => {
+                                    const car = insp.car || inventory.find(c => c.id === insp.inventory_id);
+                                    const isPass = insp.status === 'passed';
+                                    return (
+                                        <tr key={insp.id} className="hover:bg-slate-50/50 transition">
+                                            <td className="py-3 px-3 font-bold text-primary">
+                                                {car ? `${car.year} ${car.make} ${car.model}` : `Vehicle #${insp.inventory_id?.slice(0, 8)}`}
+                                            </td>
+                                            <td className="py-3 px-3 text-slate-600 font-medium">
+                                                {insp.inspector_name || 'Inspector'}
+                                            </td>
+                                            <td className="py-3 px-3 text-slate-500">
+                                                {insp.inspection_date ? new Date(insp.inspection_date).toLocaleDateString('en-IN') : 'Recent'}
+                                            </td>
+                                            <td className="py-3 px-3">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                                    isPass ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                                                }`}>
+                                                    {insp.status || 'evaluated'}
+                                                </span>
+                                            </td>
+                                            <td className="py-3 px-3 text-slate-500 max-w-xs truncate" title={insp.notes}>
+                                                {insp.notes?.split('\n')[0] || 'Inspection logged'}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
         </div>
     );

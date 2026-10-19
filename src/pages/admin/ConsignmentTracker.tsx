@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { toWhatsAppUrl } from '../../lib/utils';
+import { toWhatsAppUrl, resolveImage, handleImageError } from '../../lib/utils';
 import HighlightText from '../../components/ui/HighlightText';
 
 interface ConsignmentCar {
@@ -59,7 +59,7 @@ const ConsignmentTracker = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
     const [saleModal, setSaleModal] = useState<{ car: ConsignmentCar } | null>(null);
-    const [saleForm, setSaleForm] = useState({ buyer_name: '', final_price: '' });
+    const [saleForm, setSaleForm] = useState({ buyer_name: '', buyer_phone: '', buyer_email: '', final_price: '' });
     const [saleSaving, setSaleSaving] = useState(false);
 
     const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -85,7 +85,12 @@ const ConsignmentTracker = () => {
             const car = cars.find(c => c.id === id);
             if (car) {
                 setSaleModal({ car });
-                setSaleForm({ buyer_name: '', final_price: String(car.consignment_agreed_price || car.price || '') });
+                setSaleForm({
+                    buyer_name: '',
+                    buyer_phone: '',
+                    buyer_email: '',
+                    final_price: String(car.consignment_agreed_price || car.price || '')
+                });
                 return; // open modal first
             }
         }
@@ -110,20 +115,36 @@ const ConsignmentTracker = () => {
             if (car.consignment_fee_type === 'fixed') fee = car.consignment_fee_value || 0;
             else if (car.consignment_fee_type === 'percentage' && car.consignment_fee_value) fee = Math.round(salePrice * car.consignment_fee_value / 100);
 
-            // Upsert / Link buyer to customers CRM
+            // Upsert / Link buyer to customers CRM with phone priority
             let customerId: string | null = null;
-            if (saleForm.buyer_name) {
-                const { data: existingCust } = await supabase
-                    .from('customers')
-                    .select('id')
-                    .eq('full_name', saleForm.buyer_name.trim())
-                    .maybeSingle();
+            const cleanPhone = saleForm.buyer_phone?.trim();
+            const cleanName = saleForm.buyer_name?.trim();
+            const cleanEmail = saleForm.buyer_email?.trim();
+
+            if (cleanPhone || cleanName) {
+                let existingCust: any = null;
+                if (cleanPhone) {
+                    const { data } = await supabase.from('customers').select('id').eq('phone', cleanPhone).maybeSingle();
+                    existingCust = data;
+                }
+                if (!existingCust && cleanName) {
+                    const { data } = await supabase.from('customers').select('id').eq('full_name', cleanName).maybeSingle();
+                    existingCust = data;
+                }
 
                 if (existingCust) {
                     customerId = existingCust.id;
+                    if (cleanPhone || cleanEmail) {
+                        await supabase.from('customers').update({
+                            phone: cleanPhone || undefined,
+                            email: cleanEmail || undefined,
+                        }).eq('id', customerId);
+                    }
                 } else {
                     const { data: newCust } = await supabase.from('customers').insert({
-                        full_name: saleForm.buyer_name.trim(),
+                        full_name: cleanName || 'Consignment Buyer',
+                        phone: cleanPhone || null,
+                        email: cleanEmail || null,
                         notes: `Consignment buyer of ${car.year} ${car.make} ${car.model}`
                     }).select('id').single();
                     if (newCust) customerId = newCust.id;
@@ -304,7 +325,12 @@ const ConsignmentTracker = () => {
                                                 <div className="flex items-center gap-3">
                                                     <div className="size-10 rounded-xl overflow-hidden bg-slate-100 shrink-0">
                                                         {car.thumbnail ? (
-                                                            <img src={car.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                            <img 
+                                                                src={resolveImage(car.thumbnail)} 
+                                                                alt="" 
+                                                                onError={handleImageError}
+                                                                className="w-full h-full object-cover" 
+                                                            />
                                                         ) : (
                                                             <div className="w-full h-full flex items-center justify-center">
                                                                 <span className="material-symbols-outlined text-slate-300 text-xl">directions_car</span>
@@ -445,6 +471,16 @@ const ConsignmentTracker = () => {
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Buyer Name</label>
                                 <input required value={saleForm.buyer_name} onChange={e => setSaleForm({...saleForm, buyer_name: e.target.value})} placeholder="Buyer's full name" className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Buyer Phone</label>
+                                    <input type="tel" value={saleForm.buyer_phone} onChange={e => setSaleForm({...saleForm, buyer_phone: e.target.value})} placeholder="e.g. 98232XXXXX" className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Buyer Email (Optional)</label>
+                                    <input type="email" value={saleForm.buyer_email} onChange={e => setSaleForm({...saleForm, buyer_email: e.target.value})} placeholder="buyer@example.com" className="w-full h-10 border border-slate-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-purple-200" />
+                                </div>
                             </div>
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Final Sale Price (₹)</label>

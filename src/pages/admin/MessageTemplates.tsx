@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
 
 interface Template {
     id: string;
@@ -72,6 +73,90 @@ const MessageTemplates: React.FC = () => {
     const [selectedCategory, setSelectedCategory] = useState<string>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTemplate, setActiveTemplate] = useState<Template>(DEFAULT_TEMPLATES[0]);
+    const [saving, setSaving] = useState(false);
+    const [saveSuccess, setSaveSuccess] = useState(false);
+    const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+    const [isAddOpen, setIsAddOpen] = useState(false);
+    const [newTemplate, setNewTemplate] = useState<Omit<Template, 'id'>>({
+        title: '',
+        category: 'lead',
+        channel: 'whatsapp',
+        text: ''
+    });
+
+    // Fetch saved templates from MySQL dealership_settings
+    useEffect(() => {
+        const fetchTemplates = async () => {
+            try {
+                const { data } = await supabase
+                    .from('dealership_settings')
+                    .select('setting_value')
+                    .eq('setting_key', 'message_templates')
+                    .maybeSingle();
+
+                if (data?.setting_value) {
+                    const parsed = typeof data.setting_value === 'string'
+                        ? JSON.parse(data.setting_value)
+                        : data.setting_value;
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        setTemplates(parsed);
+                        setActiveTemplate(parsed[0]);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load templates from DB, using defaults:', err);
+            }
+        };
+
+        fetchTemplates();
+    }, []);
+
+    // Save templates list to MySQL
+    const handleSaveTemplates = async (templatesToSave: Template[]) => {
+        setSaving(true);
+        try {
+            const { error } = await supabase
+                .from('dealership_settings')
+                .upsert({
+                    setting_key: 'message_templates',
+                    setting_value: JSON.stringify(templatesToSave),
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'setting_key' });
+
+            if (error) throw error;
+            setTemplates(templatesToSave);
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 3000);
+        } catch (err: any) {
+            alert('Failed to save templates to database: ' + err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleSaveEditedTemplate = () => {
+        if (!editingTemplate) return;
+        const updated = templates.map(t => t.id === editingTemplate.id ? editingTemplate : t);
+        setActiveTemplate(editingTemplate);
+        setEditingTemplate(null);
+        handleSaveTemplates(updated);
+    };
+
+    const handleAddNewTemplate = () => {
+        if (!newTemplate.title.trim() || !newTemplate.text.trim()) {
+            alert('Title and Message Text are required.');
+            return;
+        }
+        const created: Template = {
+            ...newTemplate,
+            id: 'tmpl-' + Date.now()
+        };
+        const updated = [created, ...templates];
+        setActiveTemplate(created);
+        setIsAddOpen(false);
+        setNewTemplate({ title: '', category: 'lead', channel: 'whatsapp', text: '' });
+        handleSaveTemplates(updated);
+    };
 
     // Live Variable Replacements
     const [variables, setVariables] = useState({
@@ -128,6 +213,28 @@ const MessageTemplates: React.FC = () => {
                 <div>
                     <h1 className="text-2xl font-black text-primary font-display">Communication Templates</h1>
                     <p className="text-slate-500 text-sm">Pre-approved WhatsApp and SMS message formats with dynamic customer and vehicle data.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    {saveSuccess && (
+                        <span className="text-xs font-bold text-green-600 bg-green-50 border border-green-200 px-3 py-1.5 rounded-xl flex items-center gap-1 animate-fade-in">
+                            <span className="material-symbols-outlined text-sm">check_circle</span> Saved to MySQL!
+                        </span>
+                    )}
+                    <button
+                        onClick={() => setIsAddOpen(true)}
+                        className="h-10 px-4 bg-primary text-white font-bold rounded-xl text-xs flex items-center gap-1.5 hover:bg-primary-light transition-all shadow-sm cursor-pointer"
+                    >
+                        <span className="material-symbols-outlined text-base">add</span>
+                        New Template
+                    </button>
+                    <button
+                        onClick={() => handleSaveTemplates(templates)}
+                        disabled={saving}
+                        className="h-10 px-4 bg-emerald-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 hover:bg-emerald-700 transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                    >
+                        <span className="material-symbols-outlined text-base">{saving ? 'sync' : 'save'}</span>
+                        {saving ? 'Saving...' : 'Save All Changes'}
+                    </button>
                 </div>
             </div>
 
@@ -306,16 +413,140 @@ const MessageTemplates: React.FC = () => {
                                 Send via WhatsApp Web / App
                             </button>
                             <button
-                                onClick={handleCopy}
-                                className="h-11 px-5 bg-primary text-white font-bold rounded-xl text-xs flex items-center gap-2 hover:bg-primary-light transition-all shadow-md cursor-pointer"
+                                onClick={() => setEditingTemplate({ ...activeTemplate })}
+                                className="h-11 px-4 border border-slate-300 bg-white text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 hover:bg-slate-50 transition-all shadow-sm cursor-pointer"
                             >
-                                <span className="material-symbols-outlined text-lg">{copied ? 'check' : 'content_copy'}</span>
-                                {copied ? 'Copied to Clipboard!' : 'Copy Formatted Text'}
+                                <span className="material-symbols-outlined text-base">edit</span>
+                                Edit This Template
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* Edit Template Modal */}
+            {editingTemplate && (
+                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-primary font-display">Edit Template</h3>
+                            <button onClick={() => setEditingTemplate(null)} className="text-slate-400 hover:text-slate-600">
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Template Title</label>
+                            <input
+                                type="text"
+                                value={editingTemplate.title}
+                                onChange={e => setEditingTemplate({ ...editingTemplate, title: e.target.value })}
+                                className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
+                            <select
+                                value={editingTemplate.category}
+                                onChange={e => setEditingTemplate({ ...editingTemplate, category: e.target.value as any })}
+                                className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary"
+                            >
+                                <option value="lead">Inquiries (Lead)</option>
+                                <option value="test_drive">Test Drive</option>
+                                <option value="service">Service</option>
+                                <option value="finance">Finance</option>
+                                <option value="delivery">Delivery</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Message Text</label>
+                            <textarea
+                                rows={6}
+                                value={editingTemplate.text}
+                                onChange={e => setEditingTemplate({ ...editingTemplate, text: e.target.value })}
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-primary font-mono"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1">Variables: {'{customer_name}'}, {'{car_name}'}, {'{booking_date}'}, {'{booking_time}'}, {'{amount}'}</p>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button
+                                onClick={() => setEditingTemplate(null)}
+                                className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveEditedTemplate}
+                                className="h-10 px-5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-light"
+                            >
+                                Save Template to Database
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add New Template Modal */}
+            {isAddOpen && (
+                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-primary font-display">Create New Template</h3>
+                            <button onClick={() => setIsAddOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Template Title</label>
+                            <input
+                                type="text"
+                                placeholder="e.g., Festival Offer Broadcast"
+                                value={newTemplate.title}
+                                onChange={e => setNewTemplate({ ...newTemplate, title: e.target.value })}
+                                className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
+                            <select
+                                value={newTemplate.category}
+                                onChange={e => setNewTemplate({ ...newTemplate, category: e.target.value as any })}
+                                className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary"
+                            >
+                                <option value="lead">Inquiries (Lead)</option>
+                                <option value="test_drive">Test Drive</option>
+                                <option value="service">Service</option>
+                                <option value="finance">Finance</option>
+                                <option value="delivery">Delivery</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Message Text</label>
+                            <textarea
+                                rows={6}
+                                placeholder="Write message with placeholders like {customer_name}..."
+                                value={newTemplate.text}
+                                onChange={e => setNewTemplate({ ...newTemplate, text: e.target.value })}
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-primary font-mono"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1">Variables: {'{customer_name}'}, {'{car_name}'}, {'{booking_date}'}, {'{booking_time}'}, {'{amount}'}</p>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button
+                                onClick={() => setIsAddOpen(false)}
+                                className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleAddNewTemplate}
+                                className="h-10 px-5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-light"
+                            >
+                                Add & Save to Database
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { X, CheckSquare, Square, Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { resolveImage, handleImageError } from '../../lib/utils';
 
 // Types
 interface Car {
@@ -58,9 +59,7 @@ const DownloadPhotosModal: React.FC<Props> = ({ car, isOpen, onClose }) => {
 
     // Helper to get image full URL
     const getImageUrl = (img: string) => {
-        if (img.startsWith('http')) return img;
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-        return `${supabaseUrl}/storage/v1/object/public/car-images/${img}`;
+        return resolveImage(img);
     };
 
     // Helper to download single photo
@@ -76,7 +75,7 @@ const DownloadPhotosModal: React.FC<Props> = ({ car, isOpen, onClose }) => {
             const fileName = `${car.year}_${car.make}_${car.model}_photo_${index + 1}.${fileExt}`.replace(/\s+/g, '_');
 
             let blob: Blob;
-            if (!isFullUrl) {
+            if (!isFullUrl && !img.startsWith('/uploads/') && !img.startsWith('uploads/')) {
                 // If it's a Supabase path, download via client SDK
                 const { data, error } = await supabase.storage.from('car-images').download(img);
                 if (error) throw error;
@@ -395,6 +394,7 @@ const DownloadPhotosModal: React.FC<Props> = ({ car, isOpen, onClose }) => {
                                         <img 
                                             src={getImageUrl(img)} 
                                             alt="" 
+                                            onError={handleImageError}
                                             className={`w-full h-full object-cover select-none transition-transform duration-300 group-hover:scale-105 ${
                                                 isSelected ? 'opacity-100' : 'opacity-60'
                                             }`} 

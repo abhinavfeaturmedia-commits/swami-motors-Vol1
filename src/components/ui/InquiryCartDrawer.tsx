@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { X, Trash2, Loader2, CheckCircle, MessageSquare } from 'lucide-react';
 import { useInquiryCart } from '../../contexts/InquiryCartContext';
 import { supabase } from '../../lib/supabase';
-import { getPrimaryImage, formatPriceLakh } from '../../lib/utils';
+import { getPrimaryImage, formatPriceLakh, handleImageError } from '../../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { trackEvent } from '../../hooks/useAnalytics';
 
 export const InquiryCartDrawer: React.FC = () => {
     const { cartItems, removeFromCart, clearCart, isCartOpen, setIsCartOpen } = useInquiryCart();
@@ -50,19 +51,25 @@ export const InquiryCartDrawer: React.FC = () => {
 
             if (leadError) throw leadError;
 
-            // 3. Insert associations into lead_inventory_items table
+            // 3. Insert associations into lead_inventory_items and lead_car_interests tables
             const linkItems = cartItems.map(car => ({
                 lead_id: lead.id,
                 inventory_id: car.id
             }));
 
-            const { error: linkError } = await supabase
-                .from('lead_inventory_items')
-                .insert(linkItems);
+            const interestItems = cartItems.map(car => ({
+                lead_id: lead.id,
+                inventory_id: car.id,
+                interest_level: 'high',
+                notes: `Cart multi-car inquiry (${car.year} ${car.make} ${car.model})`
+            }));
 
-            if (linkError) {
-                console.error('Failed to link inventory items, but lead was created', linkError);
-            }
+            await Promise.allSettled([
+                supabase.from('lead_inventory_items').insert(linkItems),
+                supabase.from('lead_car_interests').insert(interestItems)
+            ]);
+
+            trackEvent('form_submit', { searchQuery: `Cart Inquiry (${cartItems.length} vehicles)` });
 
             // Success state
             setCreatedLeadId(lead.id);
@@ -198,8 +205,9 @@ export const InquiryCartDrawer: React.FC = () => {
                                                 className="flex items-center gap-4 p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors group relative"
                                             >
                                                 <img
-                                                    src={getPrimaryImage(car.images)}
+                                                    src={getPrimaryImage(car.images?.length ? car.images : ((car as any).thumbnail ? [(car as any).thumbnail] : []))}
                                                     alt={`${car.make} ${car.model}`}
+                                                    onError={handleImageError}
                                                     className="w-16 h-12 object-cover rounded-lg bg-slate-200"
                                                 />
                                                 <div className="flex-1 min-w-0">

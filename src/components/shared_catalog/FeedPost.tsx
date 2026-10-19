@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Heart, MessageCircle, Share2, ChevronLeft, ChevronRight, Check, Copy, ShoppingBag, Send, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getPrimaryImage, formatPriceLakh } from '../../lib/utils';
+import { getPrimaryImage, resolveImage, formatPriceLakh, handleImageError } from '../../lib/utils';
 
 export interface Car {
     id: string;
@@ -14,6 +14,7 @@ export interface Car {
     transmission: string;
     mileage: number;
     images: string[];
+    thumbnail?: string | null;
     condition: string;
     status: string;
 }
@@ -211,8 +212,9 @@ export const FeedPost: React.FC<FeedPostProps> = ({
             >
                 {car.images && car.images.length > 0 ? (
                     <img 
-                        src={car.images[currentImgIndex]} 
+                        src={resolveImage(car.images[currentImgIndex])} 
                         alt={`${car.year} ${car.make} ${car.model}`}
+                        onError={handleImageError}
                         className="w-full h-full object-cover"
                         draggable={false}
                     />

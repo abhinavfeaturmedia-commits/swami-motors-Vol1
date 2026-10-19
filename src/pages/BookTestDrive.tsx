@@ -2,7 +2,8 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
-import { formatPriceLakh, getPrimaryImage } from '../lib/utils';
+import { formatPriceLakh, getPrimaryImage, handleImageError } from '../lib/utils';
+import { trackEvent } from '../hooks/useAnalytics';
 
 const TIMES = {
     Morning: ['09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM'],
@@ -26,11 +27,12 @@ interface CarInfo {
     fuel_type: string;
     transmission: string;
     images: string[];
+    thumbnail?: string | null;
 }
 
 const BookTestDrive = () => {
-    const [searchParams] = useSearchParams();
-    const carId = searchParams.get('car');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const carId = searchParams.get('car') || searchParams.get('carId') || searchParams.get('id');
 
     // ─── Calendar state ───────────────────────────────────────────────────────
     const today = useMemo(() => new Date(), []);
@@ -40,9 +42,10 @@ const BookTestDrive = () => {
     const [selectedDate, setSelectedDate] = useState<number | null>(null);
     const [selectedTime, setSelectedTime] = useState('10:30 AM');
 
-    // ─── Car info sidebar ─────────────────────────────────────────────────────
+    // ─── Car info & available stock ───────────────────────────────────────────
     const [car, setCar] = useState<CarInfo | null>(null);
     const [carLoading, setCarLoading] = useState(false);
+    const [availableCars, setAvailableCars] = useState<CarInfo[]>([]);
 
     // ─── Form state ───────────────────────────────────────────────────────────
     const [driveLocation, setDriveLocation] = useState<'showroom' | 'doorstep'>('showroom');
@@ -52,20 +55,32 @@ const BookTestDrive = () => {
     const [submitted, setSubmitted] = useState(false);
     const [error, setError] = useState('');
 
-    // ─── Fetch car if ID is passed ────────────────────────────────────────────
+    // ─── Fetch available inventory & car ──────────────────────────────────────
     useEffect(() => {
-        if (!carId) return;
-        const fetchCar = async () => {
+        const fetchCars = async () => {
             setCarLoading(true);
             const { data } = await supabase
                 .from('inventory')
                 .select('id, make, model, year, price, fuel_type, transmission, images')
-                .eq('id', carId)
-                .single();
-            if (data) setCar(data);
+                .in('status', ['available', 'reserved'])
+                .order('price', { ascending: false });
+            if (data && data.length > 0) {
+                setAvailableCars(data);
+                if (carId) {
+                    const matched = data.find((c: any) => c.id === carId);
+                    if (matched) setCar(matched);
+                }
+            } else if (carId) {
+                const { data: singleCar } = await supabase
+                    .from('inventory')
+                    .select('id, make, model, year, price, fuel_type, transmission, images')
+                    .eq('id', carId)
+                    .single();
+                if (singleCar) setCar(singleCar);
+            }
             setCarLoading(false);
         };
-        fetchCar();
+        fetchCars();
     }, [carId]);
 
     // ─── Calendar helpers ─────────────────────────────────────────────────────
@@ -153,22 +168,38 @@ const BookTestDrive = () => {
                     time24 = `${String(h).padStart(2, '0')}:${m}:00`;
                 }
 
-                await supabase.from('bookings').insert({
-                    lead_id: leadData.id,
-                    inventory_id: car?.id || null,
-                    booking_type: 'test_drive',
-                    booking_date: isoDate,
-                    booking_time: time24,
-                    status: 'scheduled'
-                });
-
-                // Link car to customer interest
-                if (car?.id) {
-                    await supabase.from('lead_car_interests').insert({
+                await Promise.allSettled([
+                    supabase.from('bookings').insert({
+                        lead_id: leadData.id,
+                        inventory_id: car?.id || null,
+                        booking_type: 'test_drive',
+                        booking_date: isoDate,
+                        booking_time: time24,
+                        status: 'scheduled'
+                    }),
+                    supabase.from('test_drive_bookings').insert({
+                        customer_name: form.full_name.trim(),
+                        phone: form.phone.trim(),
+                        email: null,
+                        car_id: car?.id || null,
+                        preferred_date: isoDate,
+                        preferred_time: selectedTime,
+                        status: 'scheduled',
+                        notes: driveLocation === 'doorstep' ? `Doorstep Delivery: ${doorstepAddress.trim()}` : 'Kasaba Bawada Showroom'
+                    }),
+                    car?.id ? supabase.from('lead_car_interests').insert({
+                        lead_id: leadData.id,
+                        inventory_id: car.id,
+                        interest_level: 'high',
+                        notes: 'Test Drive Scheduled'
+                    }) : Promise.resolve(),
+                    car?.id ? supabase.from('lead_inventory_items').insert({
                         lead_id: leadData.id,
                         inventory_id: car.id
-                    });
-                }
+                    }) : Promise.resolve()
+                ]);
+
+                trackEvent('form_submit', { vehicleId: car?.id, searchQuery: 'Book Test Drive' });
             }
             setSubmitted(true);
         }
@@ -270,12 +301,73 @@ const BookTestDrive = () => {
                                 <p className="text-slate-500 text-sm">Experience your preferred vehicle firsthand at our Kasaba Bawada showroom or your doorstep.</p>
                             </div>
 
-                            {/* Step 1: Drive Location Preference */}
+                            {/* Step 1: Vehicle Selection */}
                             <div className="doppelrand-shell p-1.5 shadow-[var(--shadow-card)]">
                                 <div className="doppelrand-core p-5 bg-white space-y-4">
                                     <div className="flex items-center justify-between">
                                         <h3 className="font-extrabold text-primary font-display text-sm uppercase tracking-wider text-slate-500">
-                                            1. Test Drive Location Preference
+                                            1. Select Vehicle for Test Drive
+                                        </h3>
+                                        {car && (
+                                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full uppercase">
+                                                Vehicle Selected
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {car ? (
+                                        <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-16 h-12 rounded-xl overflow-hidden bg-slate-200 shrink-0">
+                                                    <img src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))} onError={handleImageError} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-sm font-bold text-primary font-display">{car.year} {car.make} {car.model}</h4>
+                                                    <p className="text-xs text-slate-500">₹{formatPriceLakh(car.price)} Lakh · {car.fuel_type} · {car.transmission}</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setCar(null); setSearchParams({}); }}
+                                                className="text-xs font-bold text-accent hover:underline px-3 py-1.5 rounded-lg border border-accent/20 bg-accent/5 cursor-pointer"
+                                            >
+                                                Change Vehicle
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <p className="text-xs text-slate-500">
+                                                Select a verified vehicle from our Kolhapur showroom stock:
+                                            </p>
+                                            <select
+                                                value=""
+                                                onChange={(e) => {
+                                                    const selected = availableCars.find(c => c.id === e.target.value);
+                                                    if (selected) {
+                                                        setCar(selected);
+                                                        setSearchParams({ car: selected.id });
+                                                    }
+                                                }}
+                                                className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-xs sm:text-sm font-bold text-primary outline-none focus:ring-2 focus:ring-primary/10 cursor-pointer"
+                                            >
+                                                <option value="">— Select a car from inventory —</option>
+                                                {availableCars.map(c => (
+                                                    <option key={c.id} value={c.id}>
+                                                        {c.year} {c.make} {c.model} (₹{formatPriceLakh(c.price)} L) — {c.fuel_type} / {c.transmission}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Step 2: Drive Location Preference */}
+                            <div className="doppelrand-shell p-1.5 shadow-[var(--shadow-card)]">
+                                <div className="doppelrand-core p-5 bg-white space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="font-extrabold text-primary font-display text-sm uppercase tracking-wider text-slate-500">
+                                            2. Test Drive Location Preference
                                         </h3>
                                         <span className="text-[10px] font-bold text-accent bg-accent/10 px-2 py-0.5 rounded-full uppercase">
                                             Kolhapur
@@ -336,12 +428,12 @@ const BookTestDrive = () => {
                                 </div>
                             </div>
 
-                            {/* Step 2: Calendar */}
+                            {/* Step 3: Calendar */}
                             <div className="doppelrand-shell p-1.5 shadow-[var(--shadow-card)]">
                                 <div className="doppelrand-core p-6 bg-white space-y-4">
                                     <div className="flex items-center justify-between mb-2">
                                         <h3 className="font-extrabold text-primary font-display text-sm uppercase tracking-wider text-slate-500">
-                                            2. Choose Date
+                                            3. Choose Date
                                         </h3>
                                         <div className="flex items-center gap-1">
                                             <button onClick={prevMonth} className="size-8 hover:bg-slate-100 rounded-lg transition-colors flex items-center justify-center">
@@ -399,11 +491,11 @@ const BookTestDrive = () => {
                                 </div>
                             </div>
 
-                            {/* Step 3: Time Slots */}
+                            {/* Step 4: Time Slots */}
                             <div className="doppelrand-shell p-1.5 shadow-[var(--shadow-card)]">
                                 <div className="doppelrand-core p-6 bg-white space-y-4">
                                     <h3 className="font-extrabold text-primary font-display text-sm uppercase tracking-wider text-slate-500">
-                                        3. Available Time Slots
+                                        4. Available Time Slots
                                     </h3>
                                     {Object.entries(TIMES).map(([period, slots]) => (
                                         <div key={period} className="mb-4 last:mb-0">
@@ -432,11 +524,11 @@ const BookTestDrive = () => {
                                 </div>
                             </div>
 
-                            {/* Step 4: Personal Details */}
+                            {/* Step 5: Personal Details */}
                             <div className="doppelrand-shell p-1.5 shadow-[var(--shadow-card)]">
                                 <div className="doppelrand-core p-6 bg-white space-y-4">
                                     <h3 className="font-extrabold text-primary font-display text-sm uppercase tracking-wider text-slate-500">
-                                        4. Your Contact Details
+                                        5. Your Contact Details
                                     </h3>
 
                                     {error && (
@@ -525,8 +617,9 @@ const BookTestDrive = () => {
                                     <>
                                         <div className="aspect-[16/10] rounded-xl overflow-hidden bg-slate-100 mb-4">
                                             <img
-                                                src={getPrimaryImage(car.images)}
+                                                src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))}
                                                 alt={`${car.year} ${car.make} ${car.model}`}
+                                                onError={handleImageError}
                                                 className="w-full h-full object-cover"
                                             />
                                         </div>

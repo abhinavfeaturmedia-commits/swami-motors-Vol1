@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { formatPriceLakh, getPrimaryImage } from '../lib/utils';
+import { formatPriceLakh, getPrimaryImage, handleImageError } from '../lib/utils';
 
 interface Car {
     id: string;
@@ -12,6 +12,7 @@ interface Car {
     fuel_type: string;
     transmission: string;
     images: string[];
+    thumbnail?: string | null;
 }
 
 const PARTNER_BANKS = [
@@ -544,8 +545,9 @@ const EMICalculator = () => {
                                     <div className="doppelrand-core p-3">
                                         <div className="relative aspect-[16/10] bg-slate-100 rounded-xl overflow-hidden mb-3">
                                             <img
-                                                src={getPrimaryImage(car.images)}
+                                                src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))}
                                                 alt={`${car.year} ${car.make} ${car.model}`}
+                                                onError={handleImageError}
                                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                             />
                                             <div className="absolute top-2.5 left-2.5 bg-primary/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-md backdrop-blur-xs">

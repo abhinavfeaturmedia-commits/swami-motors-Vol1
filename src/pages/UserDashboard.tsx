@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { CheckCircle2, Clock, Sparkles, Shield, ArrowRight, Heart } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { getPrimaryImage, formatPriceLakh, formatDate } from '../lib/utils';
+import { getPrimaryImage, formatPriceLakh, formatDate, handleImageError } from '../lib/utils';
 
 interface Booking {
     id: string;
@@ -24,6 +24,7 @@ interface WishlistCar {
     year: number;
     price: number;
     images: string[];
+    thumbnail?: string | null;
     fuel_type: string;
     transmission: string;
 }
@@ -49,9 +50,13 @@ const UserDashboard = () => {
     const { user, profile, signOut } = useAuth();
     const [activeTab, setActiveTab] = useState('bookings');
 
-    // ─── Bookings from leads table ────────────────────────────────────────────
-    const [bookings, setBookings] = useState<Booking[]>([]);
+    // ─── Bookings from leads, test_drive_bookings & service_bookings ─────────
+    const [bookings, setBookings] = useState<any[]>([]);
     const [bookingsLoading, setBookingsLoading] = useState(true);
+
+    // ─── My Garage (Purchased vehicles from sales table) ────────────────────
+    const [myCars, setMyCars] = useState<any[]>([]);
+    const [myCarsLoading, setMyCarsLoading] = useState(false);
 
     // ─── Wishlist from user_wishlist ──────────────────────────────────────────
     const [wishlistCars, setWishlistCars] = useState<WishlistCar[]>([]);
@@ -63,38 +68,163 @@ const UserDashboard = () => {
 
     const tabs = [
         { id: 'bookings', label: 'My Bookings', icon: 'event_note' },
+        { id: 'garage', label: 'My Garage', icon: 'directions_car' },
         { id: 'services', label: 'Financial Services', icon: 'handshake' },
         { id: 'shortlisted', label: 'Shortlisted Cars', icon: 'favorite' },
         { id: 'settings', label: 'Profile', icon: 'person' },
     ];
 
-    // ─── Fetch bookings ───────────────────────────────────────────────────────
+    // ─── Fetch bookings & appointments ─────────────────────────────────────────
     useEffect(() => {
-        if (!profile?.phone && !profile?.email) {
+        if (!profile?.phone && !profile?.email && !user?.email) {
             setBookingsLoading(false);
             return;
         }
 
         const fetchBookings = async () => {
             setBookingsLoading(true);
-            let query = supabase
-                .from('leads')
-                .select('id, type, message, status, created_at, full_name, car_make, car_model, car_year')
-                .order('created_at', { ascending: false });
+            const userPhone = profile?.phone?.trim();
+            const userEmail = (profile?.email || user?.email)?.trim();
 
-            if (profile.phone) {
-                query = query.eq('phone', profile.phone);
-            } else if (profile.email) {
-                query = query.eq('email', profile.email);
+            try {
+                // 1. Fetch leads inquiries
+                let query = supabase
+                    .from('leads')
+                    .select('id, type, message, status, created_at, full_name, car_make, car_model, car_year')
+                    .order('created_at', { ascending: false });
+
+                if (userPhone) {
+                    query = query.eq('phone', userPhone);
+                } else if (userEmail) {
+                    query = query.eq('email', userEmail);
+                }
+                const { data: leadsData } = await query;
+
+                // 2. Fetch test drive bookings
+                let tdQuery = supabase
+                    .from('test_drive_bookings')
+                    .select('*, car:inventory(*)')
+                    .order('created_at', { ascending: false });
+                if (userPhone) {
+                    tdQuery = tdQuery.eq('phone', userPhone);
+                }
+                const { data: tdData } = await tdQuery;
+
+                // 3. Fetch workshop service bookings
+                let sbQuery = supabase
+                    .from('service_bookings')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                if (userPhone) {
+                    sbQuery = sbQuery.eq('phone', userPhone);
+                }
+                const { data: sbData } = await sbQuery;
+
+                // Combine into unified list
+                const unified: any[] = [...(leadsData || [])];
+
+                // Merge test drive records
+                if (tdData && tdData.length > 0) {
+                    tdData.forEach((td: any) => {
+                        const existingIdx = unified.findIndex(b => b.id === td.id);
+                        if (existingIdx === -1) {
+                            unified.push({
+                                id: td.id,
+                                type: 'test_drive',
+                                message: td.notes || `Test Drive: ${td.preferred_date || 'Date TBD'} at ${td.preferred_time || '10:30 AM'}`,
+                                status: td.status || 'scheduled',
+                                created_at: td.created_at || new Date().toISOString(),
+                                full_name: td.customer_name || profile?.full_name || 'Customer',
+                                car_make: td.car?.make || null,
+                                car_model: td.car?.model || null,
+                                car_year: td.car?.year || null,
+                                appointment_date: td.preferred_date,
+                                appointment_time: td.preferred_time,
+                            });
+                        }
+                    });
+                }
+
+                // Merge service booking records
+                if (sbData && sbData.length > 0) {
+                    sbData.forEach((sb: any) => {
+                        const existingIdx = unified.findIndex(b => b.id === sb.id);
+                        if (existingIdx === -1) {
+                            unified.push({
+                                id: sb.id,
+                                type: 'car_service',
+                                message: sb.service_type ? `Service: ${sb.service_type} (${sb.preferred_date || ''})` : 'Service Booking',
+                                status: sb.status || 'pending',
+                                created_at: sb.created_at || new Date().toISOString(),
+                                full_name: sb.customer_name || profile?.full_name || 'Customer',
+                                car_make: sb.vehicle_model || null,
+                                car_model: sb.license_plate || null,
+                                car_year: null,
+                                appointment_date: sb.preferred_date,
+                                appointment_time: sb.preferred_time,
+                            });
+                        }
+                    });
+                }
+
+                unified.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                setBookings(unified);
+            } catch (err) {
+                console.error('Error fetching unified bookings:', err);
+            } finally {
+                setBookingsLoading(false);
             }
-
-            const { data } = await query;
-            setBookings(data || []);
-            setBookingsLoading(false);
         };
 
         fetchBookings();
-    }, [profile]);
+    }, [profile, user]);
+
+    // ─── Fetch My Garage (Purchased vehicles) ──────────────────────────────────
+    useEffect(() => {
+        const fetchPurchasedVehicles = async () => {
+            const userPhone = profile?.phone?.trim();
+            if (!userPhone) return;
+            setMyCarsLoading(true);
+
+            try {
+                // Find matching customer in customers table
+                const { data: cust } = await supabase
+                    .from('customers')
+                    .select('id')
+                    .eq('phone', userPhone)
+                    .maybeSingle();
+
+                if (cust?.id) {
+                    const { data: salesData } = await supabase
+                        .from('sales')
+                        .select('*, car:inventory(*)')
+                        .eq('customer_id', cust.id)
+                        .eq('status', 'completed');
+
+                    if (salesData && salesData.length > 0) {
+                        setMyCars(
+                            salesData
+                                .map((s: any) => ({
+                                    ...s.car,
+                                    sale_id: s.id,
+                                    sale_date: s.sale_date,
+                                    final_price: s.final_price
+                                }))
+                                .filter((c: any) => !!c.id)
+                        );
+                    }
+                }
+            } catch (err) {
+                console.error('Error fetching purchased cars:', err);
+            } finally {
+                setMyCarsLoading(false);
+            }
+        };
+
+        if (activeTab === 'garage' || activeTab === 'bookings') {
+            fetchPurchasedVehicles();
+        }
+    }, [activeTab, profile]);
 
     // ─── Fetch financial services ─────────────────────────────────────────────
     useEffect(() => {
@@ -349,6 +479,93 @@ const UserDashboard = () => {
                         </section>
                     )}
 
+                    {/* My Garage Tab (Purchased Cars) */}
+                    {activeTab === 'garage' && (
+                        <section className="mb-10">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-base font-bold text-primary font-display flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-accent">directions_car</span> My Garage & Owned Vehicles
+                                </h2>
+                                <span className="text-xs text-slate-400 font-medium">{myCars.length} Vehicle{myCars.length === 1 ? '' : 's'} Owned</span>
+                            </div>
+
+                            {myCarsLoading ? (
+                                <div className="space-y-3">
+                                    {[1, 2].map(i => (
+                                        <div key={i} className="doppelrand-shell rounded-2xl animate-pulse h-28" />
+                                    ))}
+                                </div>
+                            ) : myCars.length === 0 ? (
+                                <div className="doppelrand-shell rounded-3xl text-center py-12 px-6">
+                                    <div className="doppelrand-core p-8 flex flex-col items-center">
+                                        <div className="size-16 rounded-2xl bg-primary/5 border border-primary/10 text-primary flex items-center justify-center mb-4">
+                                            <span className="material-symbols-outlined text-3xl">garage</span>
+                                        </div>
+                                        <h3 className="font-bold text-primary font-display text-lg mb-1">Your Garage is Empty</h3>
+                                        <p className="text-xs text-slate-500 max-w-md mb-6 leading-relaxed">
+                                            Vehicles purchased through Shree Swami Samarth Motors are automatically linked here with their certification passports, service reminders, and maintenance history.
+                                        </p>
+                                        <Link
+                                            to="/inventory"
+                                            className="inline-flex items-center gap-2 h-11 px-6 bg-primary text-white rounded-xl text-xs font-bold hover:bg-primary-light transition-all shadow-sm"
+                                        >
+                                            <span className="material-symbols-outlined text-base">directions_car</span> Browse Certified Showroom
+                                        </Link>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {myCars.map(car => (
+                                        <div key={car.id || car.sale_id} className="doppelrand-shell rounded-2xl overflow-hidden">
+                                            <div className="doppelrand-core p-5 space-y-4">
+                                                <div className="aspect-[16/10] rounded-xl overflow-hidden bg-slate-100 relative">
+                                                    <img
+                                                        src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))}
+                                                        alt={`${car.year} ${car.make} ${car.model}`}
+                                                        onError={handleImageError}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                    <div className="absolute top-2.5 left-2.5 bg-emerald-700/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-md backdrop-blur-xs flex items-center gap-1">
+                                                        <CheckCircle2 size={10} /> Swami Certified
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <h3 className="font-bold text-primary font-display text-base">
+                                                        {car.year} {car.make} {car.model}
+                                                    </h3>
+                                                    <p className="text-xs text-slate-500">
+                                                        Plate: <span className="font-bold text-slate-700">{car.registration_no || car.license_plate || 'MH-09 Registered'}</span> · {car.fuel_type} · {car.transmission}
+                                                    </p>
+                                                    {car.sale_date && (
+                                                        <p className="text-[11px] text-slate-400 mt-1">
+                                                            Purchased on {formatDate(car.sale_date)}
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+                                                    <Link
+                                                        to={`/service-booking`}
+                                                        className="h-9 px-3 bg-primary text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-primary-light transition-all"
+                                                    >
+                                                        <span className="material-symbols-outlined text-sm">build</span> Book Service
+                                                    </Link>
+                                                    <Link
+                                                        to={`/insurance`}
+                                                        className="h-9 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+                                                    >
+                                                        <span className="material-symbols-outlined text-sm">shield</span> Insurance
+                                                    </Link>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                    )}
+
                     {/* Financial Services Tab */}
                     {activeTab === 'services' && (
                         <section className="mb-10">
@@ -491,8 +708,9 @@ const UserDashboard = () => {
                                             <div className="doppelrand-core p-3">
                                                 <Link to={`/car/${car.id}`} className="block relative aspect-[16/10] overflow-hidden rounded-xl bg-slate-100 mb-3">
                                                     <img
-                                                        src={getPrimaryImage(car.images)}
+                                                        src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))}
                                                         alt={`${car.year} ${car.make} ${car.model}`}
+                                                        onError={handleImageError}
                                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                                     />
                                                     <button

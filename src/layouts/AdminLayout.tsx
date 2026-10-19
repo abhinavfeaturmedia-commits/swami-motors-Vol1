@@ -561,12 +561,17 @@ const StaffAccountabilityModals: React.FC = () => {
         
         try {
             // Check commitment first
-            const { data: commData } = await supabase
+            const { data: commData, error: commError } = await supabase
                 .from('staff_commitments')
                 .select('id')
                 .eq('user_id', profile.id)
                 .eq('date', todayStr)
                 .maybeSingle();
+
+            if (commError) {
+                console.warn("Could not check commitments (network/rate limit), skipping modal:", commError);
+                return;
+            }
                 
             if (!commData) {
                 setShowCommitmentModal(true);
@@ -579,12 +584,17 @@ const StaffAccountabilityModals: React.FC = () => {
             // If commitment is logged, check report (after 6 PM)
             const currentHour = new Date().getHours();
             if (currentHour >= 18) {
-                const { data: repData } = await supabase
+                const { data: repData, error: repError } = await supabase
                     .from('staff_daily_reports')
                     .select('id')
                     .eq('user_id', profile.id)
                     .eq('date', todayStr)
                     .maybeSingle();
+
+                if (repError) {
+                    console.warn("Could not check daily report (network/rate limit), skipping modal:", repError);
+                    return;
+                }
                     
                 if (!repData) {
                     // Fetch today's commitments to pre-fill actuals
@@ -627,20 +637,38 @@ const StaffAccountabilityModals: React.FC = () => {
         setSubmitting(true);
         const todayStr = new Date().toLocaleDateString('en-CA');
         try {
-            const { error } = await supabase
+            const { data: existingComm } = await supabase
                 .from('staff_commitments')
-                .insert({
-                    user_id: profile.id,
-                    date: todayStr,
-                    ...commForm
-                });
-            if (error) throw error;
+                .select('id')
+                .eq('user_id', profile.id)
+                .eq('date', todayStr)
+                .maybeSingle();
+
+            if (existingComm?.id) {
+                const { error } = await supabase
+                    .from('staff_commitments')
+                    .update({
+                        ...commForm,
+                        updated_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+                    })
+                    .eq('id', existingComm.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from('staff_commitments')
+                    .insert({
+                        user_id: profile.id,
+                        date: todayStr,
+                        ...commForm
+                    });
+                if (error) throw error;
+            }
             setShowCommitmentModal(false);
-            // Re-trigger checks to see if report is needed (e.g. if logged in after 6pm)
             checkLogs();
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error submitting commitments:", err);
-            alert("Failed to submit commitments. Please try again.");
+            const msg = err?.message || err?.error || "Failed to submit commitments. Please try again.";
+            alert(msg);
         } finally {
             setSubmitting(false);
         }
@@ -652,18 +680,37 @@ const StaffAccountabilityModals: React.FC = () => {
         setSubmitting(true);
         const todayStr = new Date().toLocaleDateString('en-CA');
         try {
-            const { error } = await supabase
+            const { data: existingRep } = await supabase
                 .from('staff_daily_reports')
-                .insert({
-                    user_id: profile.id,
-                    date: todayStr,
-                    ...repForm
-                });
-            if (error) throw error;
+                .select('id')
+                .eq('user_id', profile.id)
+                .eq('date', todayStr)
+                .maybeSingle();
+
+            if (existingRep?.id) {
+                const { error: updateError } = await supabase
+                    .from('staff_daily_reports')
+                    .update({
+                        ...repForm,
+                        updated_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+                    })
+                    .eq('id', existingRep.id);
+                if (updateError) throw updateError;
+            } else {
+                const { error: insertError } = await supabase
+                    .from('staff_daily_reports')
+                    .insert({
+                        user_id: profile.id,
+                        date: todayStr,
+                        ...repForm
+                    });
+                if (insertError) throw insertError;
+            }
             setShowReportModal(false);
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error submitting daily report:", err);
-            alert("Failed to submit daily report. Please try again.");
+            const msg = err?.message || err?.error || "Failed to submit daily report. Please try again.";
+            alert(msg);
         } finally {
             setSubmitting(false);
         }
@@ -673,14 +720,24 @@ const StaffAccountabilityModals: React.FC = () => {
         return (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
-                    <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-6 py-5 flex items-center gap-3">
-                        <div className="size-10 bg-white/20 rounded-xl flex items-center justify-center text-white shrink-0">
-                            <Target size={20} />
+                    <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-6 py-5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className="size-10 bg-white/20 rounded-xl flex items-center justify-center text-white shrink-0">
+                                <Target size={20} />
+                            </div>
+                            <div>
+                                <h2 className="text-base font-black text-white">Daily Morning Commitments</h2>
+                                <p className="text-white/60 text-xs">Please set your commitments and targets before starting work today.</p>
+                            </div>
                         </div>
-                        <div>
-                            <h2 className="text-base font-black text-white">Daily Morning Commitments</h2>
-                            <p className="text-white/60 text-xs">Please set your commitments and targets before starting work today.</p>
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowCommitmentModal(false)}
+                            className="size-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                            title="Close"
+                        >
+                            <span className="material-symbols-outlined text-lg">close</span>
+                        </button>
                     </div>
                     
                     <form onSubmit={handleCommSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
@@ -720,7 +777,7 @@ const StaffAccountabilityModals: React.FC = () => {
                             <button
                                 type="submit"
                                 disabled={submitting}
-                                className="h-11 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-colors shadow-md shadow-indigo-600/10 flex items-center justify-center"
+                                className="h-11 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-colors shadow-md shadow-indigo-600/10 flex items-center justify-center cursor-pointer"
                             >
                                 {submitting ? 'Submitting Targets...' : 'Submit Commitment & Start Day'}
                             </button>
@@ -735,14 +792,24 @@ const StaffAccountabilityModals: React.FC = () => {
         return (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
-                    <div className="bg-gradient-to-r from-amber-600 to-orange-600 px-6 py-5 flex items-center gap-3">
-                        <div className="size-10 bg-white/20 rounded-xl flex items-center justify-center text-white shrink-0">
-                            <BarChart2 size={20} />
+                    <div className="bg-gradient-to-r from-amber-600 to-orange-600 px-6 py-5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className="size-10 bg-white/20 rounded-xl flex items-center justify-center text-white shrink-0">
+                                <BarChart2 size={20} />
+                            </div>
+                            <div>
+                                <h2 className="text-base font-black text-white">Evening Sales Report</h2>
+                                <p className="text-white/60 text-xs">It is after 6:00 PM. Please log your performance statistics achieved today.</p>
+                            </div>
                         </div>
-                        <div>
-                            <h2 className="text-base font-black text-white">Evening Sales Report</h2>
-                            <p className="text-white/60 text-xs">It is after 6:00 PM. Please log your performance statistics achieved today.</p>
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowReportModal(false)}
+                            className="size-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                            title="Close"
+                        >
+                            <span className="material-symbols-outlined text-lg">close</span>
+                        </button>
                     </div>
                     
                     <form onSubmit={handleRepSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">

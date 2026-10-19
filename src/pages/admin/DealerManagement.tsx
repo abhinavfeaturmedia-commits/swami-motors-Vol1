@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import HighlightText from '../../components/ui/HighlightText';
+import { resolveImage, handleImageError } from '../../lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Dealer {
@@ -798,7 +799,7 @@ const DealerManagement = () => {
                                                     <div className="flex items-center gap-3">
                                                         <div className="size-11 rounded-lg overflow-hidden bg-slate-100 shrink-0 shadow-xs border border-slate-150">
                                                             {car.thumbnail
-                                                                ? <img src={car.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                                ? <img src={resolveImage(car.thumbnail)} alt="" onError={handleImageError} className="w-full h-full object-cover" />
                                                                 : <div className="w-full h-full flex items-center justify-center bg-slate-50"><span className="material-symbols-outlined text-slate-300 text-lg">directions_car</span></div>
                                                             }
                                                         </div>

@@ -10,6 +10,7 @@ export interface Car {
     transmission: string;
     mileage: number;
     images: string[];
+    thumbnail?: string | null;
     status: string;
     created_at: string;
     condition: string;

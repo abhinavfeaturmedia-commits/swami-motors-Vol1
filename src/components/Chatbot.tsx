@@ -43,6 +43,15 @@ export const Chatbot: React.FC = () => {
     const [submittingLead, setSubmittingLead] = useState(false);
     const [leadSubmitted, setLeadSubmitted] = useState(false);
 
+    const [sessionId] = useState(() => {
+        let s = sessionStorage.getItem('swami_chat_session');
+        if (!s) {
+            s = 'session_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+            sessionStorage.setItem('swami_chat_session', s);
+        }
+        return s;
+    });
+
     const messageEndRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom of messages
@@ -121,7 +130,8 @@ export const Chatbot: React.FC = () => {
                         body: JSON.stringify({
                             message: textToSend,
                             history: messages.slice(-6).map(m => ({ sender: m.sender, text: m.text })),
-                            cars: availableCars
+                            cars: availableCars,
+                            sessionId
                         })
                     });
                     if (res.ok) {

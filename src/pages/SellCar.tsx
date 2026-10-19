@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Star, ArrowRight, ChevronRight, CheckCircle2, ShieldCheck, Zap, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { trackEvent } from '../hooks/useAnalytics';
 
 const POPULAR_BRANDS = ['Maruti Suzuki', 'Hyundai', 'Tata', 'Mahindra', 'Honda', 'Toyota', 'Kia'];
 
@@ -89,20 +90,30 @@ const SellCar = () => {
             form.inspection_address ? `Doorstep: ${form.inspection_address}` : null
         ].filter(Boolean).join(' | ');
 
+        const assessedValuation = Math.round(Number(range.min) * 100000);
+
         const { error: err } = await supabase.from('leads').insert({
             type: 'sell_car',
             full_name: form.full_name.trim(),
             phone: form.phone.trim(),
+            personal_address: form.inspection_address?.trim() || null,
             car_make: form.car_make.trim() || null,
             car_model: form.car_model.trim() || null,
             car_year: form.car_year ? Number(form.car_year) : null,
             car_mileage: form.car_mileage ? Number(form.car_mileage) : null,
+            assessed_price: assessedValuation || null,
+            condition_notes: regPlate ? `Vehicle Reg: ${regPlate}` : null,
             notes: details,
             message: `Selling Car Inquiry [Estimated Kolhapur Valuation: ₹${range.min}L - ₹${range.max}L]: ${form.car_year} ${form.car_make} ${form.car_model} (${details})`,
             source: 'website_sell_car',
+            status: 'new'
         });
+
         if (err) setError('Something went wrong. Please call us directly.');
-        else setSubmitted(true);
+        else {
+            trackEvent('form_submit', { searchQuery: `Sell Car: ${form.car_make} ${form.car_model}` });
+            setSubmitted(true);
+        }
         setLoading(false);
     };
 

@@ -4,7 +4,7 @@ import { Check, ChevronLeft, ChevronRight, Maximize2, X, ZoomIn, ZoomOut, Heart,
 import { supabase } from '../lib/supabase';
 import DownloadPhotosModal from '../components/admin/DownloadPhotosModal';
 import ShareCarModal from '../components/ShareCarModal';
-import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
+import { getPrimaryImage, formatPriceLakh, handleImageError } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { useInquiryCart } from '../contexts/InquiryCartContext';
@@ -88,6 +88,7 @@ interface CarData {
     mileage: number;
     condition: string;
     images: string[];
+    thumbnail?: string | null;
     features: string;
     status: string;
     source?: string;
@@ -295,8 +296,10 @@ const CarDetails = () => {
             e.stopPropagation();
             e.preventDefault();
         }
-        if (!car || !car.images) return;
-        setSelectedImg(prev => (prev + 1) % car.images.length);
+        if (!car) return;
+        const total = (car.images && car.images.length > 0) ? car.images.length : (car.thumbnail ? 1 : 0);
+        if (total <= 1) return;
+        setSelectedImg(prev => (prev + 1) % total);
     };
 
     const prevImage = (e?: React.MouseEvent) => {
@@ -304,8 +307,10 @@ const CarDetails = () => {
             e.stopPropagation();
             e.preventDefault();
         }
-        if (!car || !car.images) return;
-        setSelectedImg(prev => (prev - 1 + car.images.length) % car.images.length);
+        if (!car) return;
+        const total = (car.images && car.images.length > 0) ? car.images.length : (car.thumbnail ? 1 : 0);
+        if (total <= 1) return;
+        setSelectedImg(prev => (prev - 1 + total) % total);
     };
 
     // Keyboard navigation
@@ -588,8 +593,9 @@ const CarDetails = () => {
         );
     }
 
-    const mainImage = car.images && car.images.length > 0 ? getPrimaryImage([car.images[selectedImg] || car.images[0]]) : getPrimaryImage([]);
-    const thumbnails = car.images && car.images.length > 0 ? car.images : [];
+    const effectiveImages = (car.images && car.images.length > 0) ? car.images : (car.thumbnail ? [car.thumbnail] : []);
+    const mainImage = effectiveImages.length > 0 ? getPrimaryImage([effectiveImages[selectedImg] || effectiveImages[0]]) : getPrimaryImage([]);
+    const thumbnails = effectiveImages;
 
     return (
         <div className="container-main py-6 pb-36 lg:pb-8">
@@ -659,6 +665,7 @@ const CarDetails = () => {
                                     key={selectedImg}
                                     src={mainImage}
                                     alt={`${car.year} ${car.make} ${car.model}`}
+                                    onError={handleImageError}
                                     style={isHovered ? zoomStyle : undefined}
                                     className="w-full h-full object-cover transition-transform duration-100"
                                     initial={{ opacity: 0 }}
@@ -721,7 +728,7 @@ const CarDetails = () => {
                                     onClick={() => setSelectedImg(i)} 
                                     className={`shrink-0 w-24 h-16 sm:w-28 sm:h-20 rounded-xl overflow-hidden border-2 transition-all duration-300 ${i === selectedImg ? 'border-accent shadow-md scale-[0.98]' : 'border-slate-200 opacity-60 hover:opacity-100'}`}
                                 >
-                                    <img src={getPrimaryImage([img])} alt="" className="w-full h-full object-cover" />
+                                    <img src={getPrimaryImage([img])} alt="" onError={handleImageError} className="w-full h-full object-cover" />
                                 </button>
                             ))}
                         </div>
@@ -1107,6 +1114,7 @@ const CarDetails = () => {
                                 key={selectedImg}
                                 src={mainImage}
                                 alt={`${car.year} ${car.make} ${car.model}`}
+                                onError={handleImageError}
                                 className="w-full h-full object-cover"
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
@@ -1155,7 +1163,7 @@ const CarDetails = () => {
                                 onClick={() => setSelectedImg(i)} 
                                 className={`shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-all duration-200 snap-start ${i === selectedImg ? 'border-accent shadow-sm scale-[0.98]' : 'border-slate-200 opacity-60'}`}
                             >
-                                <img src={getPrimaryImage([img])} alt="" className="w-full h-full object-cover" />
+                                <img src={getPrimaryImage([img])} alt="" onError={handleImageError} className="w-full h-full object-cover" />
                             </button>
                         ))}
                     </div>
@@ -1511,7 +1519,7 @@ const CarDetails = () => {
                                 <article key={sCar.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all duration-300 group flex flex-col relative">
                                     <Link to={`/car/${sCar.id}`} className="flex flex-col flex-1">
                                         <div className="relative aspect-[16/11] overflow-hidden bg-slate-100">
-                                            <img alt={`${sCar.make} ${sCar.model}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src={getPrimaryImage(sCar.images)} />
+                                            <img alt={`${sCar.make} ${sCar.model}`} onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src={getPrimaryImage(sCar.images && sCar.images.length > 0 ? sCar.images : [sCar.thumbnail])} />
                                             {sCar.condition === 'Excellent' && (
                                                 <div className="absolute top-3 left-3 bg-primary text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider">
                                                     Certified
@@ -1633,6 +1641,7 @@ const CarDetails = () => {
                                     key={selectedImg}
                                     src={mainImage}
                                     alt=""
+                                    onError={handleImageError}
                                     initial={{ scale: 0.95, opacity: 0 }}
                                     animate={{ scale: lightboxZoom ? 2.0 : 1, opacity: 1 }}
                                     exit={{ scale: 0.95, opacity: 0 }}
@@ -1656,7 +1665,7 @@ const CarDetails = () => {
                                             i === selectedImg ? 'border-accent shadow-lg scale-[0.98]' : 'border-white/20 opacity-50 hover:opacity-100'
                                         }`}
                                     >
-                                        <img src={getPrimaryImage([img])} alt="" className="w-full h-full object-cover" />
+                                        <img src={getPrimaryImage([img])} alt="" onError={handleImageError} className="w-full h-full object-cover" />
                                     </button>
                                 ))}
                             </div>

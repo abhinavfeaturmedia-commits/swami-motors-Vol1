@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { supabase } from '../../lib/supabase';
-import { toWhatsAppUrl } from '../../lib/utils';
+import { toWhatsAppUrl, resolveImage, handleImageError } from '../../lib/utils';
 import HighlightText from '../../components/ui/HighlightText';
 
 interface Customer {
@@ -803,7 +803,7 @@ const Customers = () => {
                                                         <div key={interest.id} className="flex items-center gap-3 bg-white border border-slate-100 shadow-sm rounded-xl px-3.5 py-2.5">
                                                             <div className="size-10 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
                                                                 {interest.car?.thumbnail ? (
-                                                                    <img src={interest.car.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                                    <img src={resolveImage(interest.car.thumbnail)} alt="" onError={handleImageError} className="w-full h-full object-cover" />
                                                                 ) : (
                                                                     <div className="w-full h-full flex items-center justify-center">
                                                                         <span className="material-symbols-outlined text-slate-400 text-base">directions_car</span>

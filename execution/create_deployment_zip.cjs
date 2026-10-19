@@ -19,11 +19,6 @@ if (fs.existsSync(backendPublic)) {
 }
 fs.mkdirSync(backendPublic, { recursive: true });
 
-// Ensure uploads/cars folder exists
-const uploadsDir = path.join(backendDir, 'uploads', 'cars');
-fs.mkdirSync(uploadsDir, { recursive: true });
-fs.writeFileSync(path.join(uploadsDir, '.gitkeep'), '');
-
 // Copy dist to backend/public
 function copyDirSync(src, dest) {
     fs.mkdirSync(dest, { recursive: true });
@@ -42,11 +37,11 @@ function copyDirSync(src, dest) {
 console.log('📂 Copying fresh compiled frontend into backend/public...');
 copyDirSync(distDir, backendPublic);
 
-// Add files to JSZip recursively
+// Add files to JSZip recursively (never zip uploads or node_modules)
 function addDirectoryToZip(zip, dirPath, rootPath) {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
     for (const entry of entries) {
-        if (entry.name === 'node_modules' || entry.name.endsWith('.zip')) continue;
+        if (entry.name === 'node_modules' || entry.name.endsWith('.zip') || entry.name === '.env' || entry.name === '.git' || entry.name === 'uploads') continue;
         const fullPath = path.join(dirPath, entry.name);
         const relPath = path.relative(rootPath, fullPath).replace(/\\/g, '/');
         if (entry.isDirectory()) {

@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { TrendingUp, Plus } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { supabase } from '../../lib/supabase';
 
 const catColors: Record<string, string> = { 
@@ -14,20 +16,30 @@ const catColors: Record<string, string> = {
 
 const VehicleExpenses = () => {
     const { expenses, inventory, sales, refreshData } = useData();
+    const { profile, user } = useAuth();
+    const toast = useToast();
     const [tab, setTab] = useState<'expenses' | 'profit'>('expenses');
     
     const [showAdd, setShowAdd] = useState(false);
     const [editId, setEditId] = useState<string | null>(null);
-    const [form, setForm] = useState({ car_id: '', category: 'Repair', amount: '', description: '' });
+    const [form, setForm] = useState({
+        car_id: '',
+        category: 'Repair',
+        amount: '',
+        description: '',
+        expense_date: new Date().toISOString().split('T')[0]
+    });
 
     const handleSaveExpense = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const payload = {
+            const payload: any = {
                 car_id: form.car_id === 'general' ? null : form.car_id,
                 category: form.category,
                 amount: Number(form.amount),
-                description: form.description
+                description: form.description,
+                expense_date: form.expense_date || new Date().toISOString().split('T')[0],
+                added_by: profile?.id || user?.id || null
             };
             let queryError;
             
@@ -40,13 +52,20 @@ const VehicleExpenses = () => {
             }
 
             if (queryError) throw queryError;
-            setForm({ car_id: '', category: 'Repair', amount: '', description: '' });
+            setForm({
+                car_id: '',
+                category: 'Repair',
+                amount: '',
+                description: '',
+                expense_date: new Date().toISOString().split('T')[0]
+            });
             setEditId(null);
             setShowAdd(false);
+            toast.success(editId ? 'Expense record updated successfully.' : 'New expense recorded in ledger.');
             refreshData();
         } catch (error: any) {
             console.error("Expense insert error:", error);
-            alert('Failed to save expense: ' + (error.message || 'Unknown error'));
+            toast.error('Failed to save expense: ' + (error.message || 'Unknown error'));
         }
     };
 
@@ -55,7 +74,8 @@ const VehicleExpenses = () => {
             car_id: e.car_id ? e.car_id : 'general',
             category: e.category || 'Repair',
             amount: e.amount.toString(),
-            description: e.description || ''
+            description: e.description || '',
+            expense_date: e.expense_date ? String(e.expense_date).split('T')[0] : new Date().toISOString().split('T')[0]
         });
         setEditId(e.id);
         setShowAdd(true);
@@ -67,10 +87,11 @@ const VehicleExpenses = () => {
         try {
             const { error } = await supabase.from('vehicle_expenses').delete().eq('id', id);
             if (error) throw error;
+            toast.info('Expense record deleted.');
             refreshData();
         } catch (error: any) {
             console.error("Delete expense error:", error);
-            alert('Failed to delete expense: ' + (error.message || 'Unknown error'));
+            toast.error('Failed to delete expense: ' + (error.message || 'Unknown error'));
         }
     };
 
@@ -134,7 +155,7 @@ const VehicleExpenses = () => {
                     <h1 className="text-2xl font-black text-primary font-display">Vehicle Finance & Operations</h1>
                     <p className="text-slate-500 text-sm">Track per-vehicle costs, disbursements, and exact CRM profit margins.</p>
                 </div>
-                <button onClick={() => { setShowAdd(!showAdd); setEditId(null); setForm({ car_id: '', category: 'Repair', amount: '', description: '' }); }} className="h-10 px-5 bg-accent text-primary font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-accent-hover transition-colors">
+                <button onClick={() => { setShowAdd(!showAdd); setEditId(null); setForm({ car_id: '', category: 'Repair', amount: '', description: '', expense_date: new Date().toISOString().split('T')[0] }); }} className="h-10 px-5 bg-accent text-primary font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-accent-hover transition-colors">
                     <Plus size={18} /> {showAdd ? 'Cancel' : 'Add Expense'}
                 </button>
             </div>
@@ -142,14 +163,14 @@ const VehicleExpenses = () => {
             {showAdd && (
                 <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm mb-6">
                     <h2 className="text-primary font-bold mb-4 font-display">{editId ? 'Edit Expense Log' : 'Log New Expense'}</h2>
-                    <form onSubmit={handleSaveExpense} className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <form onSubmit={handleSaveExpense} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
                         <div className="md:col-span-2">
                             <label className="block text-xs font-bold text-slate-500 mb-1">Expense Target</label>
                             <select required value={form.car_id} onChange={e => setForm({...form, car_id: e.target.value})} className="w-full h-10 border border-slate-200 rounded-lg px-3 text-sm">
                                 <option value="">-- Choose Target --</option>
                                 <option value="general" className="font-bold text-primary">🏢 General Business (Not single car)</option>
                                 <optgroup label="Inventory Vehicles">
-                                    {inventory.map(c => <option key={c.id} value={c.id}>{c.year} {c.make} {c.model} ({c.license_plate})</option>)}
+                                    {inventory.map(c => <option key={c.id} value={c.id}>{c.year} {c.make} {c.model} ({c.license_plate || c.registration_no || 'In Stock'})</option>)}
                                 </optgroup>
                             </select>
                         </div>
@@ -163,13 +184,17 @@ const VehicleExpenses = () => {
                             <label className="block text-xs font-bold text-slate-500 mb-1">Amount (₹)</label>
                             <input required type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} className="w-full h-10 border border-slate-200 rounded-lg px-3 text-sm" placeholder="e.g. 5000" />
                         </div>
-                        <div className="md:col-span-1">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Expense Date</label>
+                            <input required type="date" value={form.expense_date} onChange={e => setForm({...form, expense_date: e.target.value})} className="w-full h-10 border border-slate-200 rounded-lg px-3 text-sm" />
+                        </div>
+                        <div>
                             <label className="block text-xs font-bold text-white mb-1">Submit</label>
-                            <button type="submit" className="w-full h-10 bg-primary text-white font-bold rounded-lg hover:bg-primary-light">{editId ? 'Update Log' : 'Save Log'}</button>
+                            <button type="submit" className="w-full h-10 bg-primary text-white font-bold rounded-lg hover:bg-primary-light text-sm">{editId ? 'Update Log' : 'Save Log'}</button>
                         </div>
                         <div className="col-span-full">
                             <label className="block text-xs font-bold text-slate-500 mb-1">Description</label>
-                            <input type="text" value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="w-full h-10 border border-slate-200 rounded-lg px-3 text-sm" placeholder="e.g. Replaced AC Compressor" />
+                            <input type="text" value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="w-full h-10 border border-slate-200 rounded-lg px-3 text-sm" placeholder="e.g. Replaced AC Compressor / Wheel Alignment" />
                         </div>
                     </form>
                 </div>

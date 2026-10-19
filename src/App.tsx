@@ -1,5 +1,5 @@
-import React, { Suspense } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import React, { Suspense, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { InquiryCartProvider } from './contexts/InquiryCartContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -7,6 +7,20 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { AdminRoute, UserRoute, ModuleRoute } from './components/ProtectedRoute';
 import PublicLayout from './layouts/PublicLayout';
 import AdminLayout from './layouts/AdminLayout';
+import { trackEvent } from './hooks/useAnalytics';
+
+// Tracks public route pageviews to MySQL website_events
+const RouteTracker: React.FC = () => {
+    const location = useLocation();
+
+    useEffect(() => {
+        if (!location.pathname.startsWith('/admin')) {
+            trackEvent('page_view', { searchQuery: location.pathname });
+        }
+    }, [location.pathname]);
+
+    return null;
+};
 
 // Lightweight Page Loader for smooth lazy route transitions
 const PageLoader = () => (
@@ -102,6 +116,7 @@ const App: React.FC = () => {
                 <AuthProvider>
                     <InquiryCartProvider>
                         <BrowserRouter>
+                            <RouteTracker />
                             <Suspense fallback={<PageLoader />}>
                         <Routes>
                             {/* Public Routes */}

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, CheckCircle2, Sparkles, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { formatPriceLakh } from '../lib/utils';
+import { formatPriceLakh, getPrimaryImage, handleImageError } from '../lib/utils';
+import { trackEvent } from '../hooks/useAnalytics';
 
 interface Car {
     id: string;
@@ -15,6 +16,7 @@ interface Car {
     mileage: number;
     condition: string;
     images: string[];
+    thumbnail?: string;
 }
 
 const SECTIONS = [
@@ -65,12 +67,7 @@ const CompareModels = () => {
         fetchInventory();
     }, [paramCarA, paramCarB]);
 
-    const getPrimaryImage = (images: string[] | null) => {
-        if (!images || images.length === 0) return 'https://placehold.co/800x500/slate/white?text=No+Photo';
-        const img = images[0];
-        if (img.startsWith('http')) return img;
-        return `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/car-images/${img}`;
-    };
+
 
     const leftCar = inventory.find(c => c.id === leftId) || null;
     const rightCar = inventory.find(c => c.id === rightId) || null;
@@ -211,7 +208,7 @@ const CompareModels = () => {
                             <div className="aspect-[16/10] rounded-2xl overflow-hidden bg-slate-100 mb-4 relative">
                                 {car ? (
                                     <>
-                                        <img src={getPrimaryImage(car.images)} alt={`${car.year} ${car.make} ${car.model}`} className="w-full h-full object-cover" />
+                                        <img src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))} onError={handleImageError} alt={`${car.year} ${car.make} ${car.model}`} className="w-full h-full object-cover" />
                                         <div className="absolute top-2.5 left-2.5 bg-primary/90 text-white text-xs font-bold px-2.5 py-1 rounded-lg backdrop-blur-xs">
                                             ₹{formatPriceLakh(car.price)} Lakh
                                         </div>
@@ -345,12 +342,18 @@ const CompareModels = () => {
                                 href={`https://wa.me/919823237975?text=${encodeURIComponent(`Hello Shree Swami Samarth Motors, I am comparing the ${leftCar.year} ${leftCar.make} ${leftCar.model} (₹${formatPriceLakh(leftCar.price)}L) vs ${rightCar.year} ${rightCar.make} ${rightCar.model} (₹${formatPriceLakh(rightCar.price)}L). Which one would you recommend for my family?`)}`}
                                 target="_blank"
                                 rel="noreferrer"
+                                onClick={() => {
+                                    trackEvent('whatsapp_click', {
+                                        vehicleId: leftCar.id,
+                                        searchQuery: `Compare: ${leftCar.make} ${leftCar.model} vs ${rightCar.make} ${rightCar.model}`
+                                    });
+                                }}
                                 className="h-11 px-6 rounded-xl bg-[#25D366] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 hover:bg-[#20bd5a] transition-all shadow-sm"
                             >
                                 <span className="material-symbols-outlined text-base">chat</span> Ask Our Experts on WhatsApp
                             </a>
                             <Link
-                                to="/book-test-drive"
+                                to={`/book-test-drive?car=${leftCar.id}`}
                                 className="h-11 px-6 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs sm:text-sm flex items-center justify-center hover:bg-slate-50 transition-all"
                             >
                                 Visit Showroom

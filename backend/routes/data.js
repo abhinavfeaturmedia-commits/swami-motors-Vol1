@@ -16,7 +16,7 @@ const SOFT_DELETE_TABLES = new Set([
 
 // Whitelist of valid database tables to prevent arbitrary table access
 const ALLOWED_TABLES = new Set([
-    'accessories', 'attendance_breaks', 'attendance_holidays', 'attendance_records',
+    'accessories', 'ai_chat_logs', 'attendance_breaks', 'attendance_holidays', 'attendance_records',
     'attendance_sessions', 'audit_logs', 'bookings', 'catalog_views',
     'club_attendance', 'club_business_deals', 'club_chapters', 'club_gifts',
     'club_members', 'club_one_to_many', 'club_one_to_one', 'club_presentations',
@@ -46,11 +46,15 @@ const PUBLIC_READ_TABLES = new Set([
     'lead_inventory_items'
 ]);
 
-// Tables that public visitors can submit to (inquiries, test drives, wishlist, analytics, finance)
+// Tables that public visitors can submit to (inquiries, test drives, shares, wishlist, analytics, finance)
 const PUBLIC_INSERT_TABLES = new Set([
     'leads',
     'bookings',
     'visits',
+    'inventory_shares',
+    'test_drive_bookings',
+    'service_bookings',
+    'ai_chat_logs',
     'lead_inventory_items',
     'lead_activities',
     'lead_accessories',
@@ -117,15 +121,22 @@ async function expandRelations(currentTable, columnsStr, rows) {
         // Determine foreign key column in currentTable
         let fkCol = null;
         if (relatedTable === 'inventory' || alias === 'car') {
-            fkCol = 'inventory_id';
+            if ('inventory_id' in rows[0]) fkCol = 'inventory_id';
+            else if ('car_id' in rows[0]) fkCol = 'car_id';
+            else fkCol = 'inventory_id';
         } else if (relatedTable === 'customers' || alias === 'customer') {
-            fkCol = 'customer_id';
+            if ('customer_id' in rows[0]) fkCol = 'customer_id';
+            else if ('client_id' in rows[0]) fkCol = 'client_id';
+            else fkCol = 'customer_id';
         } else if (relatedTable === 'leads' || alias === 'lead') {
-            fkCol = 'lead_id';
+            if ('lead_id' in rows[0]) fkCol = 'lead_id';
+            else fkCol = 'lead_id';
         } else if (relatedTable === 'dealers' || alias === 'dealer') {
-            fkCol = 'dealer_id';
+            if ('dealer_id' in rows[0]) fkCol = 'dealer_id';
+            else fkCol = 'dealer_id';
         } else if (relatedTable === 'accessories') {
-            fkCol = 'accessory_id';
+            if ('accessory_id' in rows[0]) fkCol = 'accessory_id';
+            else fkCol = 'accessory_id';
         } else if (relatedTable === 'profiles') {
             if (alias === 'creator' || columnsStr.includes('created_by')) fkCol = 'created_by';
             else if (alias === 'staff' || columnsStr.includes('staff_id')) fkCol = 'staff_id';
@@ -296,6 +307,12 @@ router.post('/select', async (req, res) => {
                 const op = f.operator || 'eq';
                 const col = `\`${f.column}\``;
 
+                let filterVal = f.value;
+                const DATE_COLS = new Set(['sale_date', 'booking_date', 'visit_date', 'expense_date', 'due_date', 'date', 'lead_date', 'settlement_date', 'expiry_date']);
+                if (DATE_COLS.has(f.column) && typeof filterVal === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(filterVal)) {
+                    filterVal = filterVal.split('T')[0];
+                }
+
                 switch (op) {
                     case 'is_null':
                         whereClauses.push(`${col} IS NULL`);
@@ -304,72 +321,73 @@ router.post('/select', async (req, res) => {
                         whereClauses.push(`${col} IS NOT NULL`);
                         break;
                     case 'eq':
-                        if (f.value === null) {
+                        if (filterVal === null) {
                             whereClauses.push(`${col} IS NULL`);
                         } else {
                             whereClauses.push(`${col} = ?`);
-                            params.push(f.value);
+                            params.push(filterVal);
                         }
                         break;
                     case 'neq':
-                        if (f.value === null) {
+                        if (filterVal === null) {
                             whereClauses.push(`${col} IS NOT NULL`);
                         } else {
                             whereClauses.push(`${col} != ?`);
-                            params.push(f.value);
+                            params.push(filterVal);
                         }
                         break;
                     case 'gt':
                         whereClauses.push(`${col} > ?`);
-                        params.push(f.value);
+                        params.push(filterVal);
                         break;
                     case 'gte':
                         whereClauses.push(`${col} >= ?`);
-                        params.push(f.value);
+                        params.push(filterVal);
                         break;
                     case 'lt':
                         whereClauses.push(`${col} < ?`);
-                        params.push(f.value);
+                        params.push(filterVal);
                         break;
                     case 'lte':
                         whereClauses.push(`${col} <= ?`);
-                        params.push(f.value);
+                        params.push(filterVal);
                         break;
                     case 'like':
                     case 'ilike':
                         whereClauses.push(`${col} LIKE ?`);
-                        params.push(f.value);
+                        params.push(filterVal);
                         break;
                     case 'not_like':
                     case 'not_ilike':
                         whereClauses.push(`${col} NOT LIKE ?`);
-                        params.push(f.value);
+                        params.push(filterVal);
                         break;
                     case 'in':
-                        if (Array.isArray(f.value) && f.value.length > 0) {
-                            const placeholders = f.value.map(() => '?').join(', ');
+                        if (Array.isArray(filterVal) && filterVal.length > 0) {
+                            const placeholders = filterVal.map(() => '?').join(', ');
                             whereClauses.push(`${col} IN (${placeholders})`);
-                            params.push(...f.value);
+                            params.push(...filterVal);
                         }
                         break;
                     case 'not_in':
-                        if (Array.isArray(f.value) && f.value.length > 0) {
-                            const placeholders = f.value.map(() => '?').join(', ');
+                        if (Array.isArray(filterVal) && filterVal.length > 0) {
+                            const placeholders = filterVal.map(() => '?').join(', ');
                             whereClauses.push(`${col} NOT IN (${placeholders})`);
-                            params.push(...f.value);
+                            params.push(...filterVal);
                         }
                         break;
                     case 'is':
-                        if (f.value === null) {
+                        if (filterVal === null) {
                             whereClauses.push(`${col} IS NULL`);
                         } else {
                             whereClauses.push(`${col} = ?`);
-                            params.push(f.value);
+                            params.push(filterVal);
                         }
                         break;
                     default:
                         whereClauses.push(`${col} = ?`);
-                        params.push(f.value);
+                        params.push(filterVal);
+                        break;
                 }
             }
 
@@ -381,7 +399,14 @@ router.post('/select', async (req, res) => {
         // Apply ordering
         if (order && order.column && isValidIdentifier(order.column)) {
             const dir = order.ascending === false ? 'DESC' : 'ASC';
-            sql += ` ORDER BY \`${order.column}\` ${dir}`;
+            if (table === 'inventory' && order.column === 'created_at' && dir === 'DESC') {
+                sql += ` ORDER BY COALESCE(\`created_at\`, \`updated_at\`, '1970-01-01') DESC, \`id\` DESC`;
+            } else {
+                sql += ` ORDER BY \`${order.column}\` ${dir}`;
+            }
+        } else if (table === 'inventory') {
+            // Default ordering for inventory to ensure recent cars show first
+            sql += ` ORDER BY COALESCE(\`created_at\`, \`updated_at\`, '1970-01-01') DESC, \`id\` DESC`;
         }
 
         // Apply pagination
@@ -489,23 +514,18 @@ router.post('/insert', async (req, res) => {
 
             // Defaults for strict NOT NULL datetime & time fields
             const now = new Date();
+            const nowSqlStr = now.toISOString().slice(0, 19).replace('T', ' ');
             if (table === 'bookings' && item.booking_time) {
                 item.booking_time = normalizeTime(item.booking_time);
             }
             if (table === 'catalog_views' && !item.viewed_at) {
-                item.viewed_at = now;
+                item.viewed_at = nowSqlStr;
             }
-            if ((table === 'visits' || table === 'finance_services') && !item.created_at) {
-                item.created_at = now;
+            if ((table === 'inventory' || table === 'visits' || table === 'finance_services' || table === 'staff_announcements' || table === 'leads' || table === 'bookings' || table === 'consignments' || table === 'customers') && !item.created_at) {
+                item.created_at = nowSqlStr;
             }
-            if ((table === 'visits' || table === 'finance_services') && !item.updated_at) {
-                item.updated_at = now;
-            }
-            if (table === 'staff_announcements' && !item.created_at) {
-                item.created_at = now;
-            }
-            if (table === 'leads' && !item.created_at) {
-                item.created_at = now;
+            if ((table === 'inventory' || table === 'visits' || table === 'finance_services' || table === 'staff_announcements' || table === 'leads' || table === 'bookings' || table === 'consignments' || table === 'customers') && !item.updated_at) {
+                item.updated_at = nowSqlStr;
             }
 
             const validEntries = Object.entries(item).filter(([k]) => isValidIdentifier(k));
@@ -640,11 +660,16 @@ router.post('/update', async (req, res) => {
             return res.status(400).json({ error: `Invalid or disallowed table: ${table}` });
         }
 
-        // Security check: require authentication for updates
-        if (!req.user) {
+        // Security check: require authentication for updates, with safe exception for public shared catalog interactions
+        const isPublicSharedCatalogUpdate = !req.user && 
+            table === 'shared_catalog_items' && 
+            values && 
+            Object.keys(values).every(k => ['is_liked', 'comments'].includes(k));
+
+        if (!req.user && !isPublicSharedCatalogUpdate) {
             return res.status(401).json({ error: 'Unauthorized: Authentication required to update records' });
         }
-        if (req.user.role === 'customer') {
+        if (req.user && req.user.role === 'customer') {
             if (table === 'profiles') {
                 match.id = req.user.id;
             } else if (table !== 'user_wishlist') {
@@ -656,10 +681,15 @@ router.post('/update', async (req, res) => {
             return res.status(400).json({ error: 'Values and match conditions are required' });
         }
 
+        const updateValues = { ...values };
+        if ((table === 'inventory' || table === 'visits' || table === 'finance_services' || table === 'leads' || table === 'bookings' || table === 'consignments' || table === 'customers') && !updateValues.updated_at) {
+            updateValues.updated_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
+        }
+
         const setClauses = [];
         const params = [];
 
-        for (const [k, v] of Object.entries(values)) {
+        for (const [k, v] of Object.entries(updateValues)) {
             if (!isValidIdentifier(k)) continue;
             setClauses.push(`\`${k}\` = ?`);
             if (v === null || v === undefined) {

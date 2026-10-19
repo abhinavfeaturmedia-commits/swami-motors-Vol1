@@ -7,6 +7,7 @@ import ShareCarModal from '../../components/ShareCarModal';
 import HighlightText from '../../components/ui/HighlightText';
 import DownloadPhotosModal from '../../components/admin/DownloadPhotosModal';
 import CreateSharedCatalogModal from '../../components/admin/CreateSharedCatalogModal';
+import { resolveImage, handleImageError } from '../../lib/utils';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface Car {
@@ -32,6 +33,7 @@ interface Car {
     images: string[] | null;
     registration_no: string | null;
     created_at: string;
+    updated_at?: string | null;
 }
 
 const statusColors: Record<string, string> = {
@@ -92,6 +94,16 @@ const AdminInventory = () => {
         setSearchParams(prev => {
             if (dealer === 'all') prev.delete('dealer');
             else prev.set('dealer', dealer);
+            return prev;
+        });
+    };
+
+    const sortBy = (searchParams.get('sort') || 'recent') as 'recent' | 'price-asc' | 'price-desc' | 'year-desc' | 'mileage-asc';
+
+    const setSortBy = (sort: string) => {
+        setSearchParams(prev => {
+            if (sort === 'recent') prev.delete('sort');
+            else prev.set('sort', sort);
             return prev;
         });
     };
@@ -284,7 +296,11 @@ const AdminInventory = () => {
             showToast('Failed to update status.', 'error');
         } else {
             setCars(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c));
-            showToast('Status updated.');
+            if (newStatus === 'sold') {
+                showToast('Vehicle marked as sold. Log final sale details in Sales Ledger for accurate P&L.');
+            } else {
+                showToast('Status updated.');
+            }
         }
     };
 
@@ -329,56 +345,90 @@ const AdminInventory = () => {
         return { makes, models, years, fuels, transmissions, bodies, ownerships, colors };
     }, [cars, activeTab, dealerFilter]);
 
-    const filtered = cars.filter(c => {
-        // Status tab
-        const matchTab = activeTab === 'All' || c.status === activeTab;
-        
-        // Search query
-        const q = searchQuery.toLowerCase();
-        const matchSearch = !q || `${c.make} ${c.model} ${c.variant ?? ''} ${c.registration_no ?? ''}`.toLowerCase().includes(q);
-        
-        // Dealer source
-        const matchDealer = dealerFilter === 'all'
-            ? true
-            : dealerFilter === 'purchased'
-                ? (!c.source || c.source === 'purchased' || c.source === 'own')
-            : dealerFilter === 'consignment'
-                ? c.source === 'consignment'
-            : dealerFilter === 'dealer'
-                ? c.source === 'dealer'
-                : c.dealer_id === dealerFilter;
+    const filtered = useMemo(() => {
+        const list = cars.filter(c => {
+            // Status tab
+            const matchTab = activeTab === 'All' || c.status === activeTab;
+            
+            // Search query
+            const q = searchQuery.toLowerCase();
+            const matchSearch = !q || `${c.make} ${c.model} ${c.variant ?? ''} ${c.registration_no ?? ''}`.toLowerCase().includes(q);
+            
+            // Dealer source
+            const matchDealer = dealerFilter === 'all'
+                ? true
+                : dealerFilter === 'purchased'
+                    ? (!c.source || c.source === 'purchased' || c.source === 'own')
+                : dealerFilter === 'consignment'
+                    ? c.source === 'consignment'
+                : dealerFilter === 'dealer'
+                    ? c.source === 'dealer'
+                    : c.dealer_id === dealerFilter;
 
-        // Makes (Brands)
-        if (selectedMakes.length > 0 && !selectedMakes.includes(c.make)) return false;
+            // Makes (Brands)
+            if (selectedMakes.length > 0 && !selectedMakes.includes(c.make)) return false;
 
-        // Models
-        if (selectedModels.length > 0 && !selectedModels.includes(c.model)) return false;
+            // Models
+            if (selectedModels.length > 0 && !selectedModels.includes(c.model)) return false;
 
-        // Years
-        if (selectedYears.length > 0 && !selectedYears.includes(c.year)) return false;
+            // Years
+            if (selectedYears.length > 0 && !selectedYears.includes(c.year)) return false;
 
-        // Fuel types
-        if (selectedFuels.length > 0 && (!c.fuel_type || !selectedFuels.includes(c.fuel_type))) return false;
+            // Fuel types
+            if (selectedFuels.length > 0 && (!c.fuel_type || !selectedFuels.includes(c.fuel_type))) return false;
 
-        // Transmissions
-        if (selectedTransmissions.length > 0 && (!c.transmission || !selectedTransmissions.includes(c.transmission))) return false;
+            // Transmissions
+            if (selectedTransmissions.length > 0 && (!c.transmission || !selectedTransmissions.includes(c.transmission))) return false;
 
-        // Body types
-        if (selectedBodies.length > 0 && (!c.body_type || !selectedBodies.includes(c.body_type))) return false;
+            // Body types
+            if (selectedBodies.length > 0 && (!c.body_type || !selectedBodies.includes(c.body_type))) return false;
 
-        // Ownerships
-        if (selectedOwnerships.length > 0 && (c.ownership === null || !selectedOwnerships.includes(c.ownership))) return false;
+            // Ownerships
+            if (selectedOwnerships.length > 0 && (c.ownership === null || !selectedOwnerships.includes(c.ownership))) return false;
 
-        // Colors
-        if (selectedColors.length > 0 && (!c.color || !selectedColors.includes(c.color))) return false;
+            // Colors
+            if (selectedColors.length > 0 && (!c.color || !selectedColors.includes(c.color))) return false;
 
-        // Price range (min and max in Lakhs in query param, stored in absolute rupees in DB)
-        const priceLakhs = c.price / 100000;
-        if (priceMin && priceLakhs < parseFloat(priceMin)) return false;
-        if (priceMax && priceLakhs > parseFloat(priceMax)) return false;
+            // Price range (min and max in Lakhs in query param, stored in absolute rupees in DB)
+            const priceLakhs = c.price / 100000;
+            if (priceMin && priceLakhs < parseFloat(priceMin)) return false;
+            if (priceMax && priceLakhs > parseFloat(priceMax)) return false;
 
-        return matchTab && matchSearch && matchDealer;
-    });
+            return matchTab && matchSearch && matchDealer;
+        });
+
+        // Always sort recently added cars first by default
+        return list.sort((a, b) => {
+            if (sortBy === 'price-asc') {
+                return (Number(a.price) || 0) - (Number(b.price) || 0);
+            }
+            if (sortBy === 'price-desc') {
+                return (Number(b.price) || 0) - (Number(a.price) || 0);
+            }
+            if (sortBy === 'year-desc') {
+                return (Number(b.year) || 0) - (Number(a.year) || 0);
+            }
+            if (sortBy === 'mileage-asc') {
+                return (Number(a.mileage) || 0) - (Number(b.mileage) || 0);
+            }
+
+            // Default: 'recent' -> Recent Added First
+            const parseTime = (dateVal: string | null | undefined) => {
+                if (!dateVal) return 0;
+                const normalized = String(dateVal).replace(' ', 'T');
+                const t = new Date(normalized).getTime();
+                return isNaN(t) ? 0 : t;
+            };
+
+            const timeA = parseTime(a.created_at) || parseTime(a.updated_at);
+            const timeB = parseTime(b.created_at) || parseTime(b.updated_at);
+
+            if (timeB !== timeA) {
+                return timeB - timeA;
+            }
+            return (b.id || '').localeCompare(a.id || '');
+        });
+    }, [cars, activeTab, searchQuery, dealerFilter, selectedMakes, selectedModels, selectedYears, selectedFuels, selectedTransmissions, selectedBodies, selectedOwnerships, selectedColors, priceMin, priceMax, sortBy]);
 
 
     const tabCount = (tab: string) => tab === 'All' ? cars.length : cars.filter(c => c.status === tab).length;
@@ -511,6 +561,21 @@ const AdminInventory = () => {
                             placeholder="Search by make, model, reg…"
                             className="w-full h-10 border border-slate-200 rounded-xl pl-9 pr-4 text-sm outline-none focus:ring-2 focus:ring-primary/10"
                         />
+                    </div>
+                    {/* Sort Selector */}
+                    <div className="relative shrink-0">
+                        <select
+                            value={sortBy}
+                            onChange={e => setSortBy(e.target.value)}
+                            className="h-10 border border-slate-200 rounded-xl px-3 bg-white text-xs sm:text-sm text-slate-700 outline-none focus:ring-2 focus:ring-primary/10 cursor-pointer shadow-sm font-medium"
+                            title="Sort Vehicles"
+                        >
+                            <option value="recent">Recently Added (Default)</option>
+                            <option value="price-asc">Price: Low to High</option>
+                            <option value="price-desc">Price: High to Low</option>
+                            <option value="year-desc">Year: Newest First</option>
+                            <option value="mileage-asc">Mileage: Lowest First</option>
+                        </select>
                     </div>
                     {/* Drawer Toggle Button */}
                     <button
@@ -704,8 +769,13 @@ const AdminInventory = () => {
                                     <td className="px-5 py-3.5">
                                         <div className="flex items-center gap-3">
                                             <div className="size-12 rounded-xl overflow-hidden bg-slate-100 shrink-0">
-                                                {car.thumbnail ? (
-                                                    <img src={car.thumbnail} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" />
+                                                {car.thumbnail || (car.images && car.images.length > 0) ? (
+                                                    <img 
+                                                        src={resolveImage(car.thumbnail || (car.images ? car.images[0] : null))} 
+                                                        alt={`${car.make} ${car.model}`} 
+                                                        onError={handleImageError}
+                                                        className="w-full h-full object-cover" 
+                                                    />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center">
                                                         <span className="material-symbols-outlined text-slate-300 text-2xl">directions_car</span>

@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import { query } from '../db.js';
 
 const router = express.Router();
@@ -45,7 +46,7 @@ async function getOpenRouterConfig() {
  */
 router.post('/chat', async (req, res) => {
     try {
-        const { message, history = [], cars = [] } = req.body;
+        const { message, history = [], cars = [], sessionId, carId } = req.body;
 
         if (!message || typeof message !== 'string') {
             return res.status(400).json({ error: 'Message is required' });
@@ -132,10 +133,43 @@ Tone & Guidelines:
 
         const data = await openRouterResponse.json();
         const reply = data.choices?.[0]?.message?.content || "Thank you for contacting Shree Swami Samarth Motors. How else can we assist you?";
+        const trimmedReply = reply.trim();
+
+        // ─── Persist Chat Interaction to MySQL (ai_chat_logs) ─────────────────
+        const logId = crypto.randomUUID();
+        const session = sessionId || 'anon-session';
+        const cleanMessage = message.trim();
+
+        // Detect phone number (Indian 10-digit mobile number)
+        const phoneRegex = /(?:(?:\+|0{0,2})91[\s-]*)?([6-9]\d{9})/;
+        const matchPhone = cleanMessage.match(phoneRegex);
+        const detectedPhone = matchPhone ? matchPhone[1] : null;
+
+        try {
+            await query(
+                `INSERT INTO ai_chat_logs (id, session_id, user_message, ai_reply, detected_phone, car_id, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+                [logId, session, cleanMessage, trimmedReply, detectedPhone, carId || null]
+            );
+
+            // If user mentioned phone number, automatically create or log lead in MySQL leads table
+            if (detectedPhone) {
+                const leadId = crypto.randomUUID();
+                const leadMessage = `AI Chatbot conversation inquiry: "${cleanMessage.slice(0, 300)}"`;
+                await query(
+                    `INSERT INTO leads (id, type, full_name, phone, message, source, status, created_at, updated_at)
+                     VALUES (?, 'ai_chatbot', 'Chatbot Visitor', ?, ?, 'ai_chatbot', 'new', NOW(), NOW())`,
+                    [leadId, detectedPhone, leadMessage]
+                );
+                console.log(`✅ Automated lead captured from AI chat for phone: ${detectedPhone}`);
+            }
+        } catch (dbErr) {
+            console.error('Error persisting AI chat log / lead to MySQL:', dbErr.message);
+        }
 
         return res.json({
             success: true,
-            reply: reply.trim()
+            reply: trimmedReply
         });
 
     } catch (err) {

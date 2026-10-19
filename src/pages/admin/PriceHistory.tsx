@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { resolveImage, handleImageError } from '../../lib/utils';
 
 interface PriceAuditEntry {
     id: string;
@@ -278,8 +279,13 @@ const PriceHistory: React.FC = () => {
                                             <td className="py-3 px-4">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-12 h-9 rounded-lg bg-slate-100 overflow-hidden shrink-0">
-                                                        {car.thumbnail ? (
-                                                            <img src={car.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                        {car.thumbnail || (car.images && car.images.length > 0) ? (
+                                                            <img 
+                                                                src={resolveImage(car.thumbnail || (car.images ? car.images[0] : null))} 
+                                                                alt="" 
+                                                                onError={handleImageError}
+                                                                className="w-full h-full object-cover" 
+                                                            />
                                                         ) : (
                                                             <div className="w-full h-full flex items-center justify-center text-slate-300">
                                                                 <span className="material-symbols-outlined text-sm">directions_car</span>

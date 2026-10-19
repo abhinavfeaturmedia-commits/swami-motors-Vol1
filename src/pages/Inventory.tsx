@@ -2,9 +2,10 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { X, Heart } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
+import { getPrimaryImage, formatPriceLakh, handleImageError } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { useInquiryCart } from '../contexts/InquiryCartContext';
+import { useToast } from '../contexts/ToastContext';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Car {
@@ -17,8 +18,10 @@ interface Car {
     transmission: string;
     mileage: number;
     images: string[];
+    thumbnail?: string | null;
     status: string;
     created_at: string;
+    updated_at?: string | null;
     condition: string;
     body_type?: string;
 }
@@ -31,6 +34,7 @@ const Inventory = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const { user } = useAuth();
+    const toast = useToast();
 
     const [sortBy, setSortBy] = useState('newest');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -104,16 +108,18 @@ const Inventory = () => {
         e.stopPropagation();
         
         if (!user) {
-            alert('Please login to save cars to your wishlist.');
+            toast.info('Please sign in to save vehicles to your wishlist.');
             return;
         }
         
         if (wishlist.includes(id)) {
             setWishlist(prev => prev.filter(wId => wId !== id));
             await supabase.from('user_wishlist').delete().match({ user_id: user.id, inventory_id: id });
+            toast.info('Removed vehicle from your wishlist.');
         } else {
             setWishlist(prev => [...prev, id]);
             await supabase.from('user_wishlist').insert({ user_id: user.id, inventory_id: id });
+            toast.success('Saved vehicle to your wishlist!');
         }
     };
 
@@ -181,12 +187,24 @@ const Inventory = () => {
         return true;
     });
     
+    const parseTime = (dateVal: string | null | undefined) => {
+        if (!dateVal) return 0;
+        const normalized = String(dateVal).replace(' ', 'T');
+        const t = new Date(normalized).getTime();
+        return isNaN(t) ? 0 : t;
+    };
+
     if (sortBy === 'price-low') {
-        displayCars.sort((a, b) => a.price - b.price);
+        displayCars.sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
     } else if (sortBy === 'price-high') {
-        displayCars.sort((a, b) => b.price - a.price);
+        displayCars.sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0));
     } else {
-        displayCars.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        displayCars.sort((a, b) => {
+            const timeA = parseTime(a.created_at) || parseTime(a.updated_at);
+            const timeB = parseTime(b.created_at) || parseTime(b.updated_at);
+            if (timeB !== timeA) return timeB - timeA;
+            return (b.id || '').localeCompare(a.id || '');
+        });
     }
 
     const renderFiltersContent = () => (
@@ -548,7 +566,8 @@ const Inventory = () => {
                                                 <div className={`relative overflow-hidden bg-slate-100 ${viewMode === 'list' ? 'w-full sm:w-1/3 aspect-[16/11] sm:aspect-auto sm:h-full' : 'aspect-[16/11]'}`}>
                                                     <img 
                                                         alt={`${car.year} ${car.make} ${car.model}`} 
-                                                        src={getPrimaryImage(car.images)} 
+                                                        src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))} 
+                                                        onError={handleImageError}
                                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                                                     />
                                                     <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">

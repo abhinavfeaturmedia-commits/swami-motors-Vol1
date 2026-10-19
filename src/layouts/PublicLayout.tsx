@@ -7,7 +7,7 @@ import { useInquiryCart } from '../contexts/InquiryCartContext';
 import { InquiryCartDrawer } from '../components/ui/InquiryCartDrawer';
 import { Chatbot } from '../components/Chatbot';
 import { supabase } from '../lib/supabase';
-import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
+import { getPrimaryImage, formatPriceLakh, handleImageError } from '../lib/utils';
 
 interface SearchCarMatch {
     id: string;
@@ -312,8 +312,9 @@ const PublicLayout: React.FC = () => {
                                                                 className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-colors text-left group cursor-pointer"
                                                             >
                                                                 <img
-                                                                    src={getPrimaryImage(car.images)}
+                                                                    src={getPrimaryImage(car.images?.length ? car.images : ((car as any).thumbnail ? [(car as any).thumbnail] : []))}
                                                                     alt={`${car.year} ${car.make} ${car.model}`}
+                                                                    onError={handleImageError}
                                                                     className="size-12 rounded-lg object-cover bg-slate-100 shrink-0"
                                                                 />
                                                                 <div className="flex-1 min-w-0">
@@ -516,8 +517,9 @@ const PublicLayout: React.FC = () => {
                                                     className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors text-left border-b border-slate-100 last:border-0"
                                                 >
                                                     <img
-                                                        src={getPrimaryImage(car.images)}
+                                                        src={getPrimaryImage(car.images?.length ? car.images : ((car as any).thumbnail ? [(car as any).thumbnail] : []))}
                                                         alt={`${car.year} ${car.make} ${car.model}`}
+                                                        onError={handleImageError}
                                                         className="size-11 rounded-lg object-cover bg-slate-100 shrink-0"
                                                     />
                                                     <div className="flex-1 min-w-0">

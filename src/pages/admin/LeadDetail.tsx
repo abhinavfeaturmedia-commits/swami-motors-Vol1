@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
-import { toWhatsAppUrl, formatPriceLakh } from '../../lib/utils';
+import { toWhatsAppUrl, formatPriceLakh, resolveImage, handleImageError } from '../../lib/utils';
 import HighlightText from '../../components/ui/HighlightText';
 import { generateOpenRouterCompletion } from '../../lib/openrouter';
 
@@ -1549,7 +1549,12 @@ const LeadDetail = () => {
                                             <div key={car.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100 transition-colors">
                                                 <div className="w-16 h-12 rounded-lg bg-slate-200 overflow-hidden shrink-0">
                                                     {car.thumbnail ? (
-                                                        <img src={car.thumbnail} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" />
+                                                        <img 
+                                                            src={resolveImage(car.thumbnail)} 
+                                                            alt={`${car.make} ${car.model}`} 
+                                                            onError={handleImageError}
+                                                            className="w-full h-full object-cover" 
+                                                        />
                                                     ) : (
                                                         <div className="w-full h-full flex items-center justify-center bg-slate-100">
                                                             <span className="material-symbols-outlined text-slate-300 text-xl">directions_car</span>
@@ -2180,7 +2185,7 @@ const LeadDetail = () => {
                                     <div key={interest.id} className="px-4 py-3 flex items-start gap-3 hover:bg-slate-50/60 transition-colors">
                                         <div className={`size-12 rounded-xl overflow-hidden shrink-0 flex items-center justify-center ${interest.is_wishlist ? 'bg-purple-100' : 'bg-slate-100'}`}>
                                             {!interest.is_wishlist && interest.car?.thumbnail ? (
-                                                <img src={interest.car.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                <img src={resolveImage(interest.car.thumbnail)} alt="" onError={handleImageError} className="w-full h-full object-cover" />
                                             ) : (
                                                 <span className={`material-symbols-outlined text-xl ${interest.is_wishlist ? 'text-purple-400' : 'text-slate-300'}`}>{interest.is_wishlist ? 'search' : 'directions_car'}</span>
                                             )}

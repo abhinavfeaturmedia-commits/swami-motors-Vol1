@@ -1,11 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { formatPriceLakh } from '../lib/utils';
+import { formatPriceLakh, resolveImage, getPrimaryImage, handleImageError } from '../lib/utils';
 import { Loader2, Phone, Mail, User, CheckCircle, Calendar, MessageSquare, ArrowLeft, X, ShoppingBag, Grid, Layers, Heart, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FeedPost, Car } from '../components/shared_catalog/FeedPost';
+import { FeedPost } from '../components/shared_catalog/FeedPost';
 import DownloadPhotosModal from '../components/admin/DownloadPhotosModal';
+
+export interface Car {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    price: number;
+    fuel_type: string;
+    transmission: string;
+    mileage: number;
+    images: string[];
+    thumbnail?: string | null;
+    condition: string;
+    status: string;
+}
 
 interface Profile {
     full_name: string | null;
@@ -479,8 +494,9 @@ const SharedCatalog: React.FC = () => {
                                     <div className="relative aspect-[16/11] rounded-2xl overflow-hidden bg-slate-100">
                                         <Link to={`/car/${car.id}?catalogId=${id}`} className="w-full h-full block">
                                             <img 
-                                                src={car.images?.[0]} 
+                                                src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))} 
                                                 alt="" 
+                                                onError={handleImageError}
                                                 className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" 
                                             />
                                         </Link>

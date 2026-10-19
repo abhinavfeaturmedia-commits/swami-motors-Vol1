@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { resolveImage, handleImageError } from '../../lib/utils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface ShareLog {
@@ -243,7 +244,7 @@ const ShareLogs: React.FC = () => {
                                             <div className="flex items-center gap-3">
                                                 <div className="size-10 rounded-xl overflow-hidden bg-slate-100 shrink-0">
                                                     {log.inventory?.thumbnail ? (
-                                                        <img src={log.inventory.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                        <img src={resolveImage(log.inventory.thumbnail)} alt="" onError={handleImageError} className="w-full h-full object-cover" />
                                                     ) : (
                                                         <div className="w-full h-full flex items-center justify-center">
                                                             <span className="material-symbols-outlined text-slate-300 text-xl">directions_car</span>

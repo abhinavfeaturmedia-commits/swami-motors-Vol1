@@ -10,14 +10,29 @@ const Commissions = () => {
     const { sales } = useData();
 
     const [profiles, setProfiles] = React.useState<any[]>([]);
+    const [disbursements, setDisbursements] = React.useState<any[]>([]);
+    const [payoutMember, setPayoutMember] = React.useState<any | null>(null);
+    const [payoutAmount, setPayoutAmount] = React.useState('');
+    const [payoutNotes, setPayoutNotes] = React.useState('');
+    const [savingPayout, setSavingPayout] = React.useState(false);
+
+    const fetchDisbursements = async () => {
+        const { data } = await supabase
+            .from('staff_incentives')
+            .select('*')
+            .eq('incentive_type', 'commission')
+            .order('created_at', { ascending: false });
+        if (data) setDisbursements(data);
+    };
 
     React.useEffect(() => {
-        // Fetch real team members from profiles
+        // Fetch real team members from profiles and disbursements
         const fetchProfiles = async () => {
             const { data } = await supabase.from('profiles').select('id, full_name, role, avatar_url, created_at').eq('is_active', true);
             if (data) setProfiles(data);
         };
         fetchProfiles();
+        fetchDisbursements();
     }, []);
 
     const [attendanceMap, setAttendanceMap] = React.useState<Record<string, number>>({});
@@ -99,11 +114,44 @@ const Commissions = () => {
         }
     }, [profiles]);
 
+    const handleRecordPayout = async () => {
+        if (!payoutMember || !payoutAmount || Number(payoutAmount) <= 0) {
+            alert('Please enter a valid payout amount.');
+            return;
+        }
+
+        setSavingPayout(true);
+        try {
+            const amountNum = Number(payoutAmount);
+            const { error } = await supabase.from('staff_incentives').insert({
+                staff_id: payoutMember.id,
+                amount: amountNum,
+                incentive_type: 'commission',
+                reason: `Sales Commission Disbursement (${payoutMember.name})`,
+                notes: payoutNotes?.trim() || 'Paid via Bank/Cash',
+                month: new Date().toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }),
+                created_at: new Date().toISOString()
+            });
+
+            if (error) throw error;
+            await fetchDisbursements();
+            setPayoutMember(null);
+            setPayoutAmount('');
+            setPayoutNotes('');
+        } catch (err: any) {
+            alert('Failed to record payout: ' + err.message);
+        } finally {
+            setSavingPayout(false);
+        }
+    };
+
     const commissionData = useMemo(() => {
         const baseRate = 0.015; // 1.5% fixed standard commission in V1
 
         let totalSalesVolume = 0;
         let totalEarnedPool = 0;
+        let totalPaidPool = 0;
+        let totalPendingPool = 0;
         
         // Use live profiles from the database
         const table = profiles.map(member => {
@@ -114,16 +162,18 @@ const Commissions = () => {
             // Calculate real gross volume for this specific user
             const memberVolume = memberSales.reduce((acc, curr) => acc + Number(curr.final_price || 0), 0);
             
-            const earned = memberVolume * baseRate;
+            const earned = Math.round(memberVolume * baseRate);
             
-            // Assume logic for disbursements (to be built out in the future)
-            // Currently rendering based on calculated gross to simulate real math
-            const paid = 0; // For now, all is pending unless we have a disbursement system
-            const pending = earned - paid;
+            // Real disbursements loaded from MySQL staff_incentives table
+            const memberDisbursements = disbursements.filter(d => d.staff_id === member.id);
+            const paid = Math.round(memberDisbursements.reduce((sum, d) => sum + Number(d.amount || 0), 0));
+            const pending = Math.max(0, earned - paid);
             
             // Add to totals
             totalSalesVolume += memberVolume;
             totalEarnedPool += earned;
+            totalPaidPool += paid;
+            totalPendingPool += pending;
 
             return {
                 id: member.id,
@@ -131,25 +181,25 @@ const Commissions = () => {
                 avatar: member.avatar_url ? 'P' : member.full_name?.charAt(0).toUpperCase(),
                 role: member.role === 'admin' ? 'Administrator' : 'Sales Executive',
                 deals: deals,
-                rate: '1.5%', // All default to 1.5% for now
-                earnedStr: formatCurrency(Math.round(earned)),
-                paidStr: formatCurrency(Math.round(paid)),
-                pendingStr: formatCurrency(Math.round(pending)),
-                status: pending > 0 ? 'Partial' : 'Paid',
+                rate: '1.5%',
+                earned,
+                paid,
+                pending,
+                earnedStr: formatCurrency(earned),
+                paidStr: formatCurrency(paid),
+                pendingStr: formatCurrency(pending),
+                status: pending === 0 && earned > 0 ? 'Paid' : (paid > 0 ? 'Partial' : 'Unpaid'),
                 attendancePct: attendanceMap[member.id] ?? null,
             };
         });
 
-        // Filter out people with 0 deals from table or leave them so everyone shows up?
-        // Let's keep them so the manager sees the whole staff list.
-
         return {
             table,
-            totalEarnedStr: formatCurrency(Math.round(totalEarnedPool)),
-            totalPaidStr: formatCurrency(0), 
-            totalPendingStr: formatCurrency(Math.round(totalEarnedPool))
+            totalEarnedStr: formatCurrency(totalEarnedPool),
+            totalPaidStr: formatCurrency(totalPaidPool), 
+            totalPendingStr: formatCurrency(totalPendingPool)
         };
-    }, [sales, profiles, attendanceMap]);
+    }, [sales, profiles, attendanceMap, disbursements]);
 
     return (
         <div className="space-y-6">
@@ -192,10 +242,11 @@ const Commissions = () => {
                             <th className="text-left px-5 py-3">Disbursed</th>
                             <th className="text-left px-5 py-3">Pending</th>
                             <th className="text-left px-5 py-3">Attendance</th>
+                            <th className="text-right px-5 py-3">Action</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {commissionData.table.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400">No active sales recorded to calculate pools.</td></tr>}
+                        {commissionData.table.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-slate-400">No active sales recorded to calculate pools.</td></tr>}
                         {commissionData.table.map(c => (
                             <tr key={c.name} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
                                 <td className="px-5 py-3.5">
@@ -219,11 +270,96 @@ const Commissions = () => {
                                             : <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-lg">{c.attendancePct}% ✓</span>
                                     )}
                                 </td>
+                                <td className="px-5 py-3.5 text-right">
+                                    <button
+                                        onClick={() => {
+                                            setPayoutMember(c);
+                                            setPayoutAmount(String(c.pending > 0 ? c.pending : ''));
+                                            setPayoutNotes('');
+                                        }}
+                                        className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-xl hover:bg-primary-light transition-all shadow-xs cursor-pointer inline-flex items-center gap-1"
+                                    >
+                                        <span className="material-symbols-outlined text-sm">payments</span>
+                                        Disburse
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
+
+            {/* Record Payout Disbursement Modal */}
+            {payoutMember && (
+                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-primary font-display">Record Commission Payout</h3>
+                            <button onClick={() => setPayoutMember(null)} className="text-slate-400 hover:text-slate-600">
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+
+                        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2 text-xs">
+                            <div className="flex justify-between">
+                                <span className="text-slate-500">Staff Member:</span>
+                                <span className="font-bold text-primary">{payoutMember.name}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500">Total Earned:</span>
+                                <span className="font-bold text-primary">{payoutMember.earnedStr}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500">Already Disbursed:</span>
+                                <span className="font-bold text-green-600">{payoutMember.paidStr}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500">Current Pending:</span>
+                                <span className="font-bold text-amber-600">{payoutMember.pendingStr}</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Disbursement Amount (₹)</label>
+                            <input
+                                type="number"
+                                placeholder="Enter amount to pay..."
+                                value={payoutAmount}
+                                onChange={e => setPayoutAmount(e.target.value)}
+                                className="w-full h-11 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-primary outline-none focus:border-primary"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Payment Reference / Notes</label>
+                            <input
+                                type="text"
+                                placeholder="e.g., IMPS via HDFC Bank / Cash Slip #42"
+                                value={payoutNotes}
+                                onChange={e => setPayoutNotes(e.target.value)}
+                                className="w-full h-11 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-primary"
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button
+                                onClick={() => setPayoutMember(null)}
+                                className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleRecordPayout}
+                                disabled={savingPayout}
+                                className="h-10 px-5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                                <span className="material-symbols-outlined text-sm">{savingPayout ? 'sync' : 'check_circle'}</span>
+                                {savingPayout ? 'Saving...' : 'Save Payout to MySQL'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

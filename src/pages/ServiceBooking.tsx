@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { trackEvent } from '../hooks/useAnalytics';
 
 const SERVICES = [
     { id: 'general', icon: 'build', title: 'General Service', desc: 'Regular maintenance — oil change, filter replacement, fluid top-up, and 50-point checkup.' },
@@ -85,14 +86,27 @@ const ServiceBooking = () => {
         setSubmitting(false);
         if (!error) {
             if (leadData?.id) {
-                await supabase.from('bookings').insert({
-                    lead_id: leadData.id,
-                    booking_type: 'service',
-                    booking_date: selectedDate,
-                    booking_time: time24,
-                    status: 'scheduled'
-                });
+                await Promise.allSettled([
+                    supabase.from('bookings').insert({
+                        lead_id: leadData.id,
+                        booking_type: 'service',
+                        booking_date: selectedDate,
+                        booking_time: time24,
+                        status: 'scheduled'
+                    }),
+                    supabase.from('service_bookings').insert({
+                        customer_name: name.trim(),
+                        phone: phone.trim(),
+                        email: email.trim() || null,
+                        description: `Vehicle: ${vehicleDesc || 'Not specified'} | Services: ${selectedServiceTitles}`,
+                        preferred_date: selectedDate,
+                        preferred_time: selectedTime,
+                        service_type: selectedServiceTitles || 'General Service',
+                        status: 'scheduled'
+                    })
+                ]);
             }
+            trackEvent('form_submit', { searchQuery: `Car Service: ${selectedServiceTitles}` });
             setSubmitted(true);
         } else {
             console.error('Service booking error:', error);

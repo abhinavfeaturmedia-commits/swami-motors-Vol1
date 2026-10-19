@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Heart, Sparkles, ChevronRight, Landmark } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getPrimaryImage, formatPriceLakh } from '../lib/utils';
+import { getPrimaryImage, resolveImage, formatPriceLakh, handleImageError } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { trackEvent } from '../hooks/useAnalytics';
 
 const TRUST_BADGES = [
     { icon: 'verified_user', title: '200-Point Check', desc: 'Certified Quality Standards' },
@@ -72,6 +73,7 @@ interface Car {
     transmission: string;
     mileage: number;
     images: string[];
+    thumbnail?: string | null;
     condition: string;
     status: string;
     body_type?: string;
@@ -375,20 +377,47 @@ const Home = () => {
         setReserveError('');
 
         try {
-            const { error: err } = await supabase.from('leads').insert({
+            const { data: leadData, error: err } = await supabase.from('leads').insert({
                 type: 'reservation',
-                full_name: reserveForm.full_name,
-                phone: reserveForm.phone,
-                email: reserveForm.email || null,
+                full_name: reserveForm.full_name.trim(),
+                phone: reserveForm.phone.trim(),
+                email: reserveForm.email?.trim() || null,
                 car_make: dealCar?.make || null,
                 car_model: dealCar?.model || null,
                 car_year: dealCar?.year || null,
                 message: `Reservation inquiry with ₹10,000 deposit intent for Deal of the Week: ${dealCar?.year} ${dealCar?.make} ${dealCar?.model}.`,
                 source: 'website',
                 status: 'new'
-            });
+            }).select().single();
 
             if (err) throw err;
+
+            // Relational persistence: Link car to bookings, lead_car_interests, and lead_inventory_items
+            const leadId = leadData?.id;
+            if (leadId && dealCar?.id) {
+                const today = new Date().toISOString().split('T')[0];
+                await Promise.allSettled([
+                    supabase.from('bookings').insert({
+                        lead_id: leadId,
+                        inventory_id: dealCar.id,
+                        booking_type: 'reservation',
+                        booking_date: today,
+                        status: 'scheduled'
+                    }),
+                    supabase.from('lead_car_interests').insert({
+                        lead_id: leadId,
+                        inventory_id: dealCar.id,
+                        interest_level: 'high',
+                        notes: 'Deal of the Week Online Reservation'
+                    }),
+                    supabase.from('lead_inventory_items').insert({
+                        lead_id: leadId,
+                        inventory_id: dealCar.id
+                    })
+                ]);
+            }
+
+            trackEvent('form_submit', { vehicleId: dealCar?.id, searchQuery: 'Deal of the Week Reservation' });
             setReserveSuccess(true);
         } catch (err: any) {
             setReserveError(err.message || 'Failed to submit reservation. Please try again.');
@@ -765,7 +794,8 @@ const Home = () => {
                                                 <img 
                                                     alt={`${car.make} ${car.model}`} 
                                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                                                    src={getPrimaryImage(car.images)} 
+                                                    src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))} 
+                                                    onError={handleImageError}
                                                 />
                                                 <div className="absolute top-2.5 left-2.5 bg-primary/90 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1 shadow-sm">
                                                     <span className="material-symbols-outlined text-xs text-accent">verified</span> Certified
@@ -896,8 +926,9 @@ const Home = () => {
                                 {/* Main graphic */}
                                 <div className="lg:col-span-7 aspect-[16/10] sm:aspect-[16/9] rounded-2xl overflow-hidden bg-slate-800 border border-white/5 relative group">
                                     <img 
-                                        src={getPrimaryImage(dealCar.images)} 
+                                        src={getPrimaryImage(dealCar.images?.length ? dealCar.images : (dealCar.thumbnail ? [dealCar.thumbnail] : []))} 
                                         alt={dealCar.model}
+                                        onError={handleImageError}
                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
                                     />
                                     {/* Overlay details */}
@@ -947,8 +978,9 @@ const Home = () => {
                                         <div className="aspect-[16/10] rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shadow-inner flex items-center justify-center relative">
                                             {carA ? (
                                                 <img 
-                                                    src={getPrimaryImage(carA.images)} 
+                                                    src={getPrimaryImage(carA.images?.length ? carA.images : (carA.thumbnail ? [carA.thumbnail] : []))} 
                                                     alt={`${carA.make} ${carA.model}`}
+                                                    onError={handleImageError}
                                                     className="w-full h-full object-cover"
                                                 />
                                             ) : (
@@ -958,8 +990,9 @@ const Home = () => {
                                         <div className="aspect-[16/10] rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shadow-inner flex items-center justify-center relative">
                                             {carB ? (
                                                 <img 
-                                                    src={getPrimaryImage(carB.images)} 
+                                                    src={getPrimaryImage(carB.images?.length ? carB.images : (carB.thumbnail ? [carB.thumbnail] : []))} 
                                                     alt={`${carB.make} ${carB.model}`}
+                                                    onError={handleImageError}
                                                     className="w-full h-full object-cover"
                                                 />
                                             ) : (
@@ -1146,7 +1179,7 @@ const Home = () => {
                                 {/* Vehicle Summary card */}
                                 <div className="flex gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
                                     <div className="size-14 rounded-lg overflow-hidden bg-slate-200 shrink-0">
-                                        <img src={getPrimaryImage(dealCar.images)} alt="" className="w-full h-full object-cover" />
+                                        <img src={getPrimaryImage(dealCar.images?.length ? dealCar.images : (dealCar.thumbnail ? [dealCar.thumbnail] : []))} onError={handleImageError} alt="" className="w-full h-full object-cover" />
                                     </div>
                                     <div>
                                         <h4 className="text-xs font-bold text-primary font-display leading-tight">{dealCar.year} {dealCar.make} {dealCar.model}</h4>

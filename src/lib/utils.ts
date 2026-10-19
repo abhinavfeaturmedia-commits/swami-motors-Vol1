@@ -21,34 +21,61 @@ export const formatCurrency = (val: number): string => {
 
 // ─── Image Resolution ─────────────────────────────────────────────────────────
 
-/** Resolves a car image to a full URL (supports Supabase storage paths and full URLs) */
-export const getPrimaryImage = (images: string[] | null | undefined): string => {
-    if (!images || images.length === 0) {
-        return 'https://placehold.co/800x500/e2e8f0/94a3b8?text=No+Photo';
+export const FALLBACK_CAR_IMAGE = 'https://placehold.co/800x500/e2e8f0/94a3b8?text=Vehicle+Photo';
+
+/** Resolves a car image to a full URL (supports Supabase storage paths, uploads, and full URLs) */
+export const getPrimaryImage = (images: string[] | string | null | undefined): string => {
+    if (!images) return FALLBACK_CAR_IMAGE;
+    if (Array.isArray(images)) {
+        if (images.length === 0) return FALLBACK_CAR_IMAGE;
+        return resolveImage(images[0]);
     }
-    const img = images[0];
-    return resolveImage(img);
+    return resolveImage(images);
 };
 
-export const resolveImage = (img: string | null | undefined): string => {
-    if (!img) return 'https://placehold.co/800x500/e2e8f0/94a3b8?text=No+Photo';
-    if (img.startsWith('http://') || img.startsWith('https://') || img.startsWith('data:')) return img;
-    
-    // Check if it is a local upload path on Hostinger Express server
-    if (img.startsWith('/uploads/')) {
-        const apiBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-        return `${apiBase}${img}`;
+export const resolveImage = (img: string | string[] | null | undefined): string => {
+    if (!img) return FALLBACK_CAR_IMAGE;
+    if (Array.isArray(img)) {
+        if (img.length === 0) return FALLBACK_CAR_IMAGE;
+        img = img[0];
     }
-    if (img.startsWith('uploads/')) {
-        const apiBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-        return `${apiBase}/${img}`;
+    if (typeof img !== 'string' || !img.trim()) return FALLBACK_CAR_IMAGE;
+    const cleanImg = img.trim();
+
+    if (cleanImg.startsWith('http://') || cleanImg.startsWith('https://') || cleanImg.startsWith('data:')) {
+        return cleanImg;
+    }
+    
+    // Check if it is a local upload path on Hostinger Express / LiteSpeed server
+    if (cleanImg.startsWith('/uploads/')) {
+        const apiBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : ''));
+        return `${apiBase}${cleanImg}`;
+    }
+    if (cleanImg.startsWith('uploads/')) {
+        const apiBase = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : ''));
+        return `${apiBase}/${cleanImg}`;
     }
 
     const base = import.meta.env.VITE_SUPABASE_URL as string;
     if (base && !base.includes('missing-url')) {
-        return `${base}/storage/v1/object/public/car-images/${img}`;
+        const cleanPath = cleanImg.replace(/^\/+/, '');
+        return `${base}/storage/v1/object/public/car-images/${cleanPath}`;
     }
-    return img;
+    return cleanImg;
+};
+
+/**
+ * Graceful image error handler that sets a reliable fallback placeholder without infinite loops
+ */
+export const handleImageError = (
+    e: React.SyntheticEvent<HTMLImageElement, Event>,
+    fallback: string = FALLBACK_CAR_IMAGE
+) => {
+    const target = e.currentTarget;
+    if (target.src !== fallback) {
+        target.onerror = null;
+        target.src = fallback;
+    }
 };
 
 // ─── Date Formatting ──────────────────────────────────────────────────────────

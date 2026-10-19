@@ -6,6 +6,7 @@ import { useData } from '../../contexts/DataContext';
 import { generateOpenRouterCompletion } from '../../lib/openrouter';
 import imageCompression from 'browser-image-compression';
 import VideoPlayer from '../../components/ui/VideoPlayer';
+import { resolveImage, handleImageError } from '../../lib/utils';
 
 const MAKES = [
     'Maruti Suzuki', 'Hyundai', 'Tata', 'Honda', 'Toyota', 'Kia', 'MG', 'Mahindra', 
@@ -91,6 +92,7 @@ const InventoryForm = () => {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [initialLoading, setInitialLoading] = useState(isEditMode);
+    const [originalCar, setOriginalCar] = useState<any | null>(null);
     const [autoFillText, setAutoFillText] = useState('');
 
     const set = (field: string, value: string | number) => setForm(prev => ({ ...prev, [field]: value }));
@@ -160,6 +162,7 @@ Condition: ${form.condition}`;
                 setInitialLoading(false);
                 return;
             }
+            setOriginalCar(data);
             // Populate form
             setForm({
                 make: data.make || '',
@@ -266,8 +269,7 @@ Condition: ${form.condition}`;
     };
 
     const getImageUrl = (img: string) => {
-        if (img.startsWith('http')) return img;
-        return `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/car-images/${img}`;
+        return resolveImage(img);
     };
 
     // ─── Smart Auto Fill ──────────────────────────────────────────────────────
@@ -606,8 +608,14 @@ Condition: ${form.condition}`;
             // If storage returned a concrete file path (e.g. /uploads/cars/... from Hostinger), use it directly
             if (uploadResult?.path) {
                 const uPath = uploadResult.path;
-                if (uPath.startsWith('http') || uPath.startsWith('/uploads/')) {
+                if (uPath.startsWith('http')) {
                     urls.push(uPath);
+                    continue;
+                }
+                if (uPath.startsWith('/uploads/') || uPath.startsWith('uploads/')) {
+                    const cleanPath = uPath.startsWith('/') ? uPath : `/${uPath}`;
+                    const canonicalUrl = `${import.meta.env.VITE_PUBLIC_URL || 'https://autokundali.com'}${cleanPath}`;
+                    urls.push(canonicalUrl);
                     continue;
                 }
             }
@@ -704,13 +712,47 @@ Condition: ${form.condition}`;
                 dealer_commission: source === 'dealer' && dealerCommission ? Number(dealerCommission) : null,
             };
 
+            const nowTimestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
             if (isEditMode) {
+                payload.updated_at = nowTimestamp;
                 const { error: updateError } = await supabase.from('inventory').update(payload).eq('id', id);
                 if (updateError) throw updateError;
+
+                // If price changed, audit log in MySQL
+                if (originalCar && Number(originalCar.price) !== Number(form.price)) {
+                    await supabase.from('audit_logs').insert({
+                        user_id: user?.id ?? null,
+                        action: 'price_change',
+                        target_type: 'inventory',
+                        target_name: `${form.year} ${form.make} ${form.model} (${normalizedRegNo || id})`,
+                        details: JSON.stringify({
+                            car_id: id,
+                            old_price: Number(originalCar.price),
+                            new_price: Number(form.price),
+                            difference: Number(form.price) - Number(originalCar.price)
+                        })
+                    });
+                }
             } else {
                 payload.added_by = user?.id ?? null;
-                const { error: insertError } = await supabase.from('inventory').insert(payload);
+                payload.created_at = nowTimestamp;
+                payload.updated_at = nowTimestamp;
+                const { data: insertedData, error: insertError } = await supabase.from('inventory').insert(payload).select().single();
                 if (insertError) throw insertError;
+
+                // Log inventory creation audit
+                await supabase.from('audit_logs').insert({
+                    user_id: user?.id ?? null,
+                    action: 'create',
+                    target_type: 'inventory',
+                    target_name: `${form.year} ${form.make} ${form.model} (${normalizedRegNo || 'New'})`,
+                    details: JSON.stringify({
+                        price: Number(form.price),
+                        source,
+                        car_id: insertedData?.id
+                    })
+                });
             }
 
             if (refreshData) {
@@ -1286,7 +1328,7 @@ Condition: ${form.condition}`;
                             {existingImages.map((src, i) => (
                                 <div key={`ex-${i}`} className="relative group">
                                     <div className="aspect-square rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
-                                        <img src={getImageUrl(src)} alt={`Existing ${i}`} className="w-full h-full object-cover" />
+                                        <img src={getImageUrl(src)} alt={`Existing ${i}`} onError={handleImageError} className="w-full h-full object-cover" />
                                     </div>
                                     {i === 0 && (
                                         <span className="absolute bottom-1 left-1 bg-primary text-white text-[8px] font-bold px-1.5 py-0.5 rounded">THUMB</span>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { resolveImage, handleImageError } from '../../lib/utils';
 
 interface CatalogInventory {
     make: string;
@@ -449,7 +450,7 @@ const SharedCatalogsAdmin: React.FC = () => {
                                                             {(catalog.items || []).slice(0, 4).map((item, i) => (
                                                                 <div key={i} className="size-7 rounded-full overflow-hidden border-2 border-white bg-slate-100 shrink-0 shadow-sm">
                                                                     {item.inventory?.thumbnail ? (
-                                                                        <img src={item.inventory.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                                        <img src={resolveImage(item.inventory.thumbnail)} alt="" onError={handleImageError} className="w-full h-full object-cover" />
                                                                     ) : (
                                                                         <div className="w-full h-full flex items-center justify-center bg-slate-200">
                                                                             <span className="material-symbols-outlined text-[10px] text-slate-400">directions_car</span>
@@ -584,7 +585,7 @@ const SharedCatalogsAdmin: React.FC = () => {
                                                                         <div className="flex items-center gap-2.5">
                                                                             <div className="size-11 rounded-lg overflow-hidden bg-slate-100 shrink-0 relative border border-slate-100">
                                                                                 {item.inventory?.thumbnail ? (
-                                                                                    <img src={item.inventory.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                                                    <img src={resolveImage(item.inventory.thumbnail)} alt="" onError={handleImageError} className="w-full h-full object-cover" />
                                                                                 ) : (
                                                                                     <div className="w-full h-full flex items-center justify-center">
                                                                                         <span className="material-symbols-outlined text-slate-300 text-2xl">directions_car</span>
