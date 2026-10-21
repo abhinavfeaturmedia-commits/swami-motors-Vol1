@@ -1,12 +1,14 @@
 {
   "name": "swami-motors-backend",
   "version": "1.0.0",
+  "private": true,
   "description": "Hostinger Node.js & MySQL Monolithic Backend for Swami Motors (autokundali.com)",
-  "main": "server.js",
+  "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "build": "node -e \"console.log('Ready for production')\"",
+    "start": "node index.js",
+    "dev": "node --watch index.js"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -160,7 +160,13 @@ async function expandRelations(currentTable, columnsStr, rows) {
         }
 
         const placeholders = ids.map(() => '?').join(', ');
-        const relRows = await query(`SELECT * FROM \`${relatedTable}\` WHERE \`id\` IN (${placeholders})`, ids);
+        let relRows = await query(`SELECT * FROM \`${relatedTable}\` WHERE \`id\` IN (${placeholders})`, ids);
+        
+        // Recursively expand nested relations if sub-columns contain relations (e.g., car:inventory(..., dealer:dealers(...)))
+        if (match[3] && match[3].includes('(')) {
+            relRows = await expandRelations(relatedTable, match[3], relRows);
+        }
+
         const relMap = {};
         for (const relRow of relRows) {
             relMap[relRow.id] = parseJsonFields(relRow);
@@ -237,6 +243,26 @@ router.post('/select', async (req, res) => {
                         .map(s => s.trim())
                         .filter(s => s.length > 0 && isValidIdentifier(s))
                         .map(c => `\`${c}\``);
+
+                    // Ensure necessary foreign key columns are included in SELECT if relations are requested
+                    const relMatches = columns.matchAll(/(?:([a-zA-Z0-9_]+):)?([a-zA-Z0-9_]+)(?:![a-zA-Z0-9_]+)?\([^)]*\)/g);
+                    for (const m of relMatches) {
+                        const alias = m[1] || m[2];
+                        const rel = m[2];
+                        let neededFk = null;
+                        if (rel === 'inventory' || alias === 'car') neededFk = 'inventory_id';
+                        else if (rel === 'dealers' || alias === 'dealer') neededFk = 'dealer_id';
+                        else if (rel === 'customers' || alias === 'customer') neededFk = 'customer_id';
+                        else if (rel === 'leads' || alias === 'lead') neededFk = 'lead_id';
+                        else if (rel === 'accessories') neededFk = 'accessory_id';
+                        else if (rel === 'profiles') neededFk = alias === 'creator' ? 'created_by' : (alias === 'staff' ? 'staff_id' : (alias === 'assigned_profile' ? 'assigned_to' : 'user_id'));
+                        else neededFk = rel + '_id';
+
+                        if (neededFk && !parts.includes(`\`${neededFk}\``)) {
+                            parts.push(`\`${neededFk}\``);
+                        }
+                    }
+
                     colSql = parts.length > 0 ? parts.join(', ') : '*';
                 }
             }
@@ -521,10 +547,32 @@ router.post('/insert', async (req, res) => {
             if (table === 'catalog_views' && !item.viewed_at) {
                 item.viewed_at = nowSqlStr;
             }
-            if ((table === 'inventory' || table === 'visits' || table === 'finance_services' || table === 'staff_announcements' || table === 'leads' || table === 'bookings' || table === 'consignments' || table === 'customers') && !item.created_at) {
+            if (table === 'shared_catalogs') {
+                if (item.is_active === undefined || item.is_active === null) {
+                    item.is_active = 1;
+                }
+                if (!item.created_at) {
+                    item.created_at = nowSqlStr;
+                }
+                if (item.expires_at && typeof item.expires_at === 'string' && item.expires_at.includes('T')) {
+                    item.expires_at = item.expires_at.slice(0, 19).replace('T', ' ');
+                }
+            }
+            if (table === 'shared_catalog_items') {
+                if (item.is_liked === undefined || item.is_liked === null) {
+                    item.is_liked = 0;
+                }
+                if (item.comments === undefined || item.comments === null) {
+                    item.comments = '[]';
+                }
+                if (!item.created_at) {
+                    item.created_at = nowSqlStr;
+                }
+            }
+            if ((table === 'inventory' || table === 'visits' || table === 'finance_services' || table === 'staff_announcements' || table === 'leads' || table === 'bookings' || table === 'consignments' || table === 'customers' || table === 'sales') && !item.created_at) {
                 item.created_at = nowSqlStr;
             }
-            if ((table === 'inventory' || table === 'visits' || table === 'finance_services' || table === 'staff_announcements' || table === 'leads' || table === 'bookings' || table === 'consignments' || table === 'customers') && !item.updated_at) {
+            if ((table === 'inventory' || table === 'visits' || table === 'finance_services' || table === 'staff_announcements' || table === 'leads' || table === 'bookings' || table === 'consignments' || table === 'customers' || table === 'sales') && !item.updated_at) {
                 item.updated_at = nowSqlStr;
             }
 

@@ -21,7 +21,7 @@ export const formatCurrency = (val: number): string => {
 
 // ─── Image Resolution ─────────────────────────────────────────────────────────
 
-export const FALLBACK_CAR_IMAGE = 'https://placehold.co/800x500/e2e8f0/94a3b8?text=Vehicle+Photo';
+export const FALLBACK_CAR_IMAGE = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%230f172a"/><stop offset="100%" stop-color="%231e293b"/></linearGradient></defs><rect width="800" height="500" fill="url(%23bg)"/><g fill="none" stroke="%2338bdf8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"><path d="M180 340 L240 340 M320 340 L480 340 M560 340 L620 340"/><circle cx="280" cy="340" r="40"/><circle cx="520" cy="340" r="40"/><path d="M190 310 C210 270 270 260 310 260 L390 200 C410 185 460 185 530 200 L600 250 C630 265 650 280 650 310 L650 325 C650 330 645 335 640 335 L600 335 M200 335 L170 335 C165 335 160 330 160 325 L160 310 C160 300 170 295 190 295"/><path d="M380 215 L320 260 L450 260 L450 210 Z"/></g><text x="400" y="420" font-family="system-ui,-apple-system,sans-serif" font-size="18" font-weight="700" fill="%2394a3b8" text-anchor="middle" letter-spacing="3">SHREE SWAMI SAMARTH MOTORS</text></svg>`;
 
 /** Resolves a car image to a full URL (supports Supabase storage paths, uploads, and full URLs) */
 export const getPrimaryImage = (images: string[] | string | null | undefined): string => {

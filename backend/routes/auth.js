@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import { query } from '../db.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'swami_motors_default_jwt_secret_key_change_me';
+const JWT_SECRET = process.env.JWT_SECRET || 'swami_motors_super_secret_jwt_key_2026_autokundali';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 // Authentication middleware to extract user from Bearer token

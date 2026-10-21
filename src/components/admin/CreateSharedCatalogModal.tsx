@@ -194,7 +194,7 @@ const CreateSharedCatalogModal: React.FC<CreateSharedCatalogModalProps> = ({
                 const days = parseInt(expiryDays);
                 const date = new Date();
                 date.setDate(date.getDate() + days);
-                expiresAt = date.toISOString();
+                expiresAt = date.toISOString().slice(0, 19).replace('T', ' ');
             }
 
             // 1. Insert into shared_catalogs
@@ -207,6 +207,7 @@ const CreateSharedCatalogModal: React.FC<CreateSharedCatalogModalProps> = ({
                     lead_id: finalLeadId,
                     customer_id: finalCustomerId,
                     customer_phone: finalPhone || null,
+                    is_active: true,
                     expires_at: expiresAt
                 })
                 .select()
@@ -217,7 +218,9 @@ const CreateSharedCatalogModal: React.FC<CreateSharedCatalogModalProps> = ({
             // 2. Insert items into shared_catalog_items
             const linkItems = selectedCarIds.map(carId => ({
                 catalog_id: catalog.id,
-                inventory_id: carId
+                inventory_id: carId,
+                is_liked: false,
+                comments: []
             }));
 
             const { error: itemsError } = await supabase

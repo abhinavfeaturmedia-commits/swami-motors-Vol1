@@ -104,11 +104,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
             }
         };
 
-        // ── 1. Hot Lead Alert (48h no update) ────────────────────────────────
+        // ── 1. Hot Lead Alert (48h no update, within last 14 days) ───────────
         leads.forEach(lead => {
             if (['lost', 'converted', 'sold'].includes(lead.status)) return;
             const hrs = hoursSince(lead.updated_at || lead.created_at);
-            if (hrs < 48) return;
+            if (hrs < 48 || hrs > 336) return;
             maybe({
                 type: 'hot_lead', category: 'critical', priority: 1,
                 icon: 'local_fire_department', color: 'red',
@@ -117,7 +117,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 action_url: `/admin/leads/${lead.id}`, action_label: 'View Lead',
                 related_entity_type: 'lead', related_entity_id: lead.id,
                 assigned_to_user_id: lead.assigned_to || null,
-                dedup_key: `hot_lead_${lead.id}_${today}`,
+                dedup_key: `hot_lead_${lead.id}`,
                 metadata: { lead_name: lead.full_name, hours: Math.floor(hrs) },
             });
         });

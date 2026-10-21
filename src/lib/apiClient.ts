@@ -504,7 +504,7 @@ export const hostingerClient = {
         return {
             async then(resolve: (result: { data: any; error: any }) => void) {
                 try {
-                    const token = localStorage.getItem('swami_auth_token');
+                    const token = localStorage.getItem('swami_token');
                     const headers: Record<string, string> = {
                         'Content-Type': 'application/json'
                     };
