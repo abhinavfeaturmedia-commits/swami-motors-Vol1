@@ -7,16 +7,19 @@ export function cn(...inputs: ClassValue[]) {
 
 // ─── Price Formatting ─────────────────────────────────────────────────────────
 
-/** Returns price in Lakh string: "10.50" */
-export const formatPriceLakh = (price: number): string => {
-    return (price / 100000).toFixed(2);
+/** Returns price in Lakh string: "10.50" (null-safe) */
+export const formatPriceLakh = (price: number | null | undefined): string => {
+    if (price === null || price === undefined || isNaN(Number(price))) return '0.00';
+    return (Number(price) / 100000).toFixed(2);
 };
 
-/** Returns formatted currency: ₹10.50 L, ₹1.25 Cr */
-export const formatCurrency = (val: number): string => {
-    if (val >= 10000000) return `₹${(val / 10000000).toFixed(2)} Cr`;
-    if (val >= 100000) return `₹${(val / 100000).toFixed(1)} L`;
-    return `₹${val.toLocaleString('en-IN')}`;
+/** Returns formatted currency: ₹10.50 L, ₹1.25 Cr (null-safe) */
+export const formatCurrency = (val: number | null | undefined): string => {
+    if (val === null || val === undefined || isNaN(Number(val))) return '₹0';
+    const num = Number(val);
+    if (num >= 10000000) return `₹${(num / 10000000).toFixed(2)} Cr`;
+    if (num >= 100000) return `₹${(num / 100000).toFixed(1)} L`;
+    return `₹${num.toLocaleString('en-IN')}`;
 };
 
 // ─── Image Resolution ─────────────────────────────────────────────────────────
@@ -24,20 +27,22 @@ export const formatCurrency = (val: number): string => {
 export const FALLBACK_CAR_IMAGE = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%230f172a"/><stop offset="100%" stop-color="%231e293b"/></linearGradient></defs><rect width="800" height="500" fill="url(%23bg)"/><g fill="none" stroke="%2338bdf8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"><path d="M180 340 L240 340 M320 340 L480 340 M560 340 L620 340"/><circle cx="280" cy="340" r="40"/><circle cx="520" cy="340" r="40"/><path d="M190 310 C210 270 270 260 310 260 L390 200 C410 185 460 185 530 200 L600 250 C630 265 650 280 650 310 L650 325 C650 330 645 335 640 335 L600 335 M200 335 L170 335 C165 335 160 330 160 325 L160 310 C160 300 170 295 190 295"/><path d="M380 215 L320 260 L450 260 L450 210 Z"/></g><text x="400" y="420" font-family="system-ui,-apple-system,sans-serif" font-size="18" font-weight="700" fill="%2394a3b8" text-anchor="middle" letter-spacing="3">SHREE SWAMI SAMARTH MOTORS</text></svg>`;
 
 /** Resolves a car image to a full URL (supports Supabase storage paths, uploads, and full URLs) */
-export const getPrimaryImage = (images: string[] | string | null | undefined): string => {
+export const getPrimaryImage = (images: (string | null | undefined)[] | string | null | undefined): string => {
     if (!images) return FALLBACK_CAR_IMAGE;
     if (Array.isArray(images)) {
-        if (images.length === 0) return FALLBACK_CAR_IMAGE;
-        return resolveImage(images[0]);
+        const firstValid = images.find(img => typeof img === 'string' && img.trim().length > 0);
+        if (!firstValid) return FALLBACK_CAR_IMAGE;
+        return resolveImage(firstValid);
     }
     return resolveImage(images);
 };
 
-export const resolveImage = (img: string | string[] | null | undefined): string => {
+export const resolveImage = (img: (string | null | undefined)[] | string | null | undefined): string => {
     if (!img) return FALLBACK_CAR_IMAGE;
     if (Array.isArray(img)) {
-        if (img.length === 0) return FALLBACK_CAR_IMAGE;
-        img = img[0];
+        const firstValid = img.find(item => typeof item === 'string' && item.trim().length > 0);
+        if (!firstValid) return FALLBACK_CAR_IMAGE;
+        img = firstValid;
     }
     if (typeof img !== 'string' || !img.trim()) return FALLBACK_CAR_IMAGE;
     const cleanImg = img.trim();
@@ -58,14 +63,14 @@ export const resolveImage = (img: string | string[] | null | undefined): string 
 
     const base = import.meta.env.VITE_SUPABASE_URL as string;
     if (base && !base.includes('missing-url')) {
-        const cleanPath = cleanImg.replace(/^\/+/, '');
+        const cleanPath = cleanImg.replace(/^\/+/, '').replace(/^car-images\//, '');
         return `${base}/storage/v1/object/public/car-images/${cleanPath}`;
     }
     return cleanImg;
 };
 
 /**
- * Graceful image error handler that sets a reliable fallback placeholder without infinite loops
+ * Graceful image error handler that sets a reliable fallback placeholder without infinite loops.
  */
 export const handleImageError = (
     e: React.SyntheticEvent<HTMLImageElement, Event>,

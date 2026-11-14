@@ -6,7 +6,7 @@ const statusColors: Record<string, string> = { Filed: 'bg-green-100 text-green-7
 const formatCurrency = (val: number) => `₹${Math.round(val).toLocaleString('en-IN')}`;
 
 const TaxCompliance = () => {
-    const { sales, inventory, expenses } = useData();
+    const { sales, inventory, expenses, loading } = useData();
     const [tab, setTab] = useState<'gst' | 'tds'>('gst');
 
     const taxMetrics = useMemo(() => {
@@ -98,7 +98,7 @@ const TaxCompliance = () => {
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                    { label: 'Pending GST Payable', val: formatCurrency(taxMetrics.totalPayableThisMonth), icon: 'receipt', color: 'bg-blue-500/10 text-blue-600' },
+                    { label: 'Pending GST Payable', val: loading ? '...' : formatCurrency(taxMetrics.totalPayableThisMonth), icon: 'receipt', color: 'bg-blue-500/10 text-blue-600' },
                     { label: 'Automated Accounting', val: 'Active', icon: 'credit_score', color: 'bg-green-500/10 text-green-600' },
                     { label: 'TDS Pending', val: 'Check Detail', icon: 'pending_actions', color: 'bg-amber-500/10 text-amber-600' },
                     { label: 'Next Auto-Filing', val: 'End of Month', icon: 'event', color: 'bg-red-500/10 text-red-600' },
@@ -131,8 +131,12 @@ const TaxCompliance = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {taxMetrics.gstArray.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400">No finalized sales to deduce margin tax.</td></tr>}
-                            {taxMetrics.gstArray.map(g => (
+                            {loading ? (
+                                <tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400">Calculating margin tax data…</td></tr>
+                            ) : taxMetrics.gstArray.length === 0 ? (
+                                <tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400">No finalized sales to deduce margin tax.</td></tr>
+                            ) : null}
+                            {!loading && taxMetrics.gstArray.map(g => (
                                 <tr key={g.month} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
                                     <td className="px-5 py-3.5 text-sm font-semibold text-primary border-r border-slate-100">{g.month}</td>
                                     <td className="px-5 py-3.5 text-sm text-slate-700 font-bold">{g.taxableStr}</td>

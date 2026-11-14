@@ -105,7 +105,7 @@ const SharedCatalogsAdmin: React.FC = () => {
             .from('shared_catalogs')
             .select(`
                 *,
-                salesperson:profiles!shared_catalogs_created_by_fkey(full_name, phone, avatar_url),
+                salesperson:profiles!created_by(full_name, phone, avatar_url),
                 items:shared_catalog_items(
                     inventory_id,
                     is_liked,

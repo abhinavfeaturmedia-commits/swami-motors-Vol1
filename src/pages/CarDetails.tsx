@@ -8,6 +8,7 @@ import { getPrimaryImage, formatPriceLakh, handleImageError } from '../lib/utils
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { useInquiryCart } from '../contexts/InquiryCartContext';
+import { getCachedInventory } from '../lib/inventoryCache';
 import VideoPlayer from '../components/ui/VideoPlayer';
 
 const SPECS = [
@@ -229,7 +230,7 @@ const CarDetails = () => {
         if (car.year) list.push(`Model Year: ${car.year}`);
         if (car.fuel_type) list.push(`Fuel Type: ${car.fuel_type}`);
         if (car.transmission) list.push(`Transmission: ${car.transmission}`);
-        if (car.mileage) list.push(`Odometer: ${car.mileage.toLocaleString('en-IN')} km`);
+        if (car.mileage != null && !isNaN(Number(car.mileage))) list.push(`Odometer: ${Number(car.mileage).toLocaleString('en-IN')} km`);
         if (car.ownership) {
             const ownershipStr = typeof car.ownership === 'number' 
                 ? `${car.ownership} Owner` 
@@ -364,7 +365,7 @@ const CarDetails = () => {
 
     // Scroll to top when vehicle ID changes
     useEffect(() => {
-        window.scrollTo(0, 0);
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     }, [id]);
 
     // Load wishlist
@@ -403,15 +404,24 @@ const CarDetails = () => {
 
     const fetchSimilarCars = async (currentCar: CarData) => {
         try {
-            const { data, error: err } = await supabase
-                .from('inventory')
-                .select('*, dealer:dealers(dealer_code)')
-                .in('status', ['available', 'reserved'])
-                .neq('id', currentCar.id);
+            let pool: any[] = [];
+            const cached = getCachedInventory();
+            if (cached && cached.length > 0) {
+                // Instant memory scoring from cache (0 ms network time)
+                pool = cached.filter(c => c.id !== currentCar.id).slice(0, 30);
+            } else {
+                const { data, error: err } = await supabase
+                    .from('inventory')
+                    .select('id, make, model, year, price, fuel_type, transmission, mileage, condition, body_type, images, thumbnail, status, source, dealer:dealers(dealer_code)')
+                    .in('status', ['available', 'reserved'])
+                    .neq('id', currentCar.id)
+                    .limit(24);
 
-            if (err || !data) return;
+                if (err || !data) return;
+                pool = data;
+            }
 
-            const scored = data.map((other: any) => {
+            const scored = pool.map((other: any) => {
                 let score = 0;
                 if (other.make?.toLowerCase() === currentCar.make?.toLowerCase()) {
                     score += 5;
@@ -425,8 +435,10 @@ const CarDetails = () => {
                 if (other.transmission?.toLowerCase() === currentCar.transmission?.toLowerCase()) {
                     score += 2;
                 }
-                if (currentCar.price > 0) {
-                    const priceDiffRatio = Math.abs(other.price - currentCar.price) / currentCar.price;
+                const otherPrice = Number(other.price) || 0;
+                const curPrice = Number(currentCar.price) || 0;
+                if (curPrice > 0 && otherPrice > 0) {
+                    const priceDiffRatio = Math.abs(otherPrice - curPrice) / curPrice;
                     const priceScore = Math.max(0, 5 * (1 - priceDiffRatio));
                     score += priceScore;
                 }
@@ -445,23 +457,45 @@ const CarDetails = () => {
     };
 
     useEffect(() => {
+        let isMounted = true;
         const fetchCar = async () => {
-            if (!id) return;
-            const { data, error: err } = await supabase
-                .from('inventory')
-                .select('*, dealer:dealers(dealer_code)')
-                .eq('id', id)
-                .single();
-            if (err || !data) {
+            if (!id) {
                 setError(true);
-            } else {
-                const currentCar = data as unknown as CarData;
-                setCar(currentCar);
-                fetchSimilarCars(currentCar);
+                setLoading(false);
+                return;
             }
-            setLoading(false);
+
+            try {
+                setLoading(true);
+                setError(false);
+                const { data, error: err } = await supabase
+                    .from('inventory')
+                    .select('*, dealer:dealers(dealer_code)')
+                    .eq('id', id)
+                    .single();
+
+                if (!isMounted) return;
+
+                if (err || !data) {
+                    console.error('Error fetching car details for ID:', id, err);
+                    setError(true);
+                } else {
+                    const currentCar = data as unknown as CarData;
+                    setCar(currentCar);
+                    fetchSimilarCars(currentCar);
+                }
+            } catch (err) {
+                console.error('Unhandled error loading vehicle details:', err);
+                if (isMounted) setError(true);
+            } finally {
+                if (isMounted) setLoading(false);
+            }
         };
+
         fetchCar();
+        return () => {
+            isMounted = false;
+        };
     }, [id]);
 
     useEffect(() => {
@@ -773,14 +807,21 @@ const CarDetails = () => {
                         <h2 className="text-xl font-bold text-primary font-display mb-5">Car Specifications</h2>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                             {SPECS.map(spec => {
-                                let val = (car as any)[spec.key];
-                                if (val === undefined || val === null || val === '') val = spec.default;
-                                if (spec.key === 'mileage' && val) val = val.toLocaleString();
+                                const rawVal = (car as any)[spec.key];
+                                const isMissing = rawVal === undefined || rawVal === null || rawVal === '';
+                                let displayVal = isMissing ? (spec.default || '—') : rawVal;
+                                if (spec.key === 'mileage') {
+                                    displayVal = !isMissing && !isNaN(Number(rawVal)) 
+                                        ? `${Number(rawVal).toLocaleString('en-IN')} km` 
+                                        : (spec.default || '—');
+                                } else if (!isMissing && spec.suffix) {
+                                    displayVal = `${String(displayVal)}${spec.suffix}`;
+                                }
                                 return (
                                     <div key={spec.key} className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-4 shadow-[var(--shadow-card)]">
                                         <span className="material-symbols-outlined text-xl text-accent mb-2 block">{spec.icon}</span>
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">{spec.label}</p>
-                                        <p className="text-sm font-bold text-primary">{String(val)}{spec.suffix || ''}</p>
+                                        <p className="text-sm font-bold text-primary">{String(displayVal)}</p>
                                     </div>
                                 );
                             })}
@@ -965,10 +1006,10 @@ const CarDetails = () => {
                                 <div>
                                     <span className="text-[10px] text-amber-900 font-bold uppercase tracking-wider block">Estimated Monthly EMI</span>
                                     <span className="text-sm font-black text-primary font-display">
-                                        ₹ {Math.round((car.price * 0.8 * 0.0215)).toLocaleString('en-IN')}<span className="text-xs font-semibold text-slate-500">/mo*</span>
+                                        ₹ {Math.round(((Number(car.price) || 0) * 0.8 * 0.0215)).toLocaleString('en-IN')}<span className="text-xs font-semibold text-slate-500">/mo*</span>
                                     </span>
                                 </div>
-                                <Link to={`/finance?price=${car.price}`} className="text-xs font-bold text-accent hover:underline flex items-center gap-0.5">
+                                <Link to={`/finance?price=${car.price || 0}`} className="text-xs font-bold text-accent hover:underline flex items-center gap-0.5">
                                     Options <span className="material-symbols-outlined text-xs">arrow_forward</span>
                                 </Link>
                             </div>
@@ -1280,10 +1321,10 @@ const CarDetails = () => {
                 {/* Horizontal Specs Track */}
                 <div className="flex overflow-x-auto gap-3 pb-2 px-4 -mx-4 scrollbar-none snap-x snap-mandatory">
                     {[
-                        { icon: 'speed', label: 'Odometer', val: `${car.mileage.toLocaleString()} km` },
-                        { icon: 'local_gas_station', label: 'Fuel Type', val: car.fuel_type },
-                        { icon: 'tune', label: 'Transmission', val: car.transmission },
-                        { icon: 'calendar_month', label: 'Model Year', val: String(car.year) },
+                        { icon: 'speed', label: 'Odometer', val: car.mileage != null && !isNaN(Number(car.mileage)) ? `${Number(car.mileage).toLocaleString('en-IN')} km` : '—' },
+                        { icon: 'local_gas_station', label: 'Fuel Type', val: car.fuel_type || '—' },
+                        { icon: 'tune', label: 'Transmission', val: car.transmission || '—' },
+                        { icon: 'calendar_month', label: 'Model Year', val: String(car.year || '—') },
                     ].map((spec, i) => (
                         <div key={i} className="min-w-[45%] bg-white border border-slate-100 rounded-2xl p-4 shadow-sm snap-start flex items-center gap-3">
                             <div className="size-9 bg-slate-50 rounded-xl flex items-center justify-center text-accent shrink-0">
@@ -1519,7 +1560,7 @@ const CarDetails = () => {
                                 <article key={sCar.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-all duration-300 group flex flex-col relative">
                                     <Link to={`/car/${sCar.id}`} className="flex flex-col flex-1">
                                         <div className="relative aspect-[16/11] overflow-hidden bg-slate-100">
-                                            <img alt={`${sCar.make} ${sCar.model}`} onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src={getPrimaryImage(sCar.images && sCar.images.length > 0 ? sCar.images : [sCar.thumbnail])} />
+                                            <img alt={`${sCar.make} ${sCar.model}`} onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src={getPrimaryImage(sCar.images?.length ? sCar.images : (sCar.thumbnail ? [sCar.thumbnail] : []))} />
                                             {sCar.condition === 'Excellent' && (
                                                 <div className="absolute top-3 left-3 bg-primary text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider">
                                                     Certified
@@ -1683,7 +1724,7 @@ const CarDetails = () => {
                         <span className="text-xs font-bold text-primary font-display">L</span>
                     </div>
                     <span className="text-[10px] text-amber-800 font-semibold leading-none truncate">
-                        EMI ₹{Math.round((car.price * 0.8 * 0.0215)).toLocaleString('en-IN')}/mo*
+                        EMI ₹{Math.round(((Number(car.price) || 0) * 0.8 * 0.0215)).toLocaleString('en-IN')}/mo*
                     </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

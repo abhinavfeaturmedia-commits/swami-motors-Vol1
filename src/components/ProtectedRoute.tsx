@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 // ─── Loading Spinner (used while session initialises) ─────────────────────────
@@ -51,6 +51,32 @@ export const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }
     return <>{children}</>;
 };
 
+// ─── Access Restricted Fallback ───────────────────────────────────────────────
+
+const AccessRestricted: React.FC<{ module: string }> = ({ module }) => {
+    const navigate = useNavigate();
+    const formattedModule = module.charAt(0).toUpperCase() + module.slice(1).replace(/_/g, ' ');
+
+    return (
+        <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+            <div className="size-16 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mb-4 shadow-sm">
+                <span className="material-symbols-outlined text-3xl">lock</span>
+            </div>
+            <h2 className="text-xl font-bold text-slate-800 font-display mb-2">Access Restricted</h2>
+            <p className="text-sm text-slate-500 max-w-md mb-6 leading-relaxed">
+                You do not have permission to view the <span className="font-semibold text-slate-700">{formattedModule}</span> module. If you need access, please contact an administrator to update your user role permissions.
+            </p>
+            <button
+                onClick={() => navigate('/admin')}
+                className="px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm"
+            >
+                <span className="material-symbols-outlined text-lg">dashboard</span>
+                Return to Dashboard
+            </button>
+        </div>
+    );
+};
+
 // ─── Module Route Guard ───────────────────────────────────────────────────────
 // Protects individual routes based on module access permissions.
 
@@ -59,7 +85,7 @@ export const ModuleRoute: React.FC<{ module: string, children: React.ReactNode }
     
     // Admins always have access, staff must have explicitly granted 'view' permission for the module.
     if (!isAdmin && !hasPermission(module, 'view')) {
-        return <Navigate to="/admin" replace />;
+        return <AccessRestricted module={module} />;
     }
     
     return <>{children}</>;

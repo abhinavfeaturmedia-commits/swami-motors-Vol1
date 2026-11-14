@@ -207,30 +207,14 @@ const AdminLeads = () => {
     const fetchLeads = async () => {
         setLoading(true);
         try {
-            let allLeads: Lead[] = [];
-            let from = 0;
-            const batchSize = 1000;
-            let hasMore = true;
+            const { data, error } = await supabase
+                .from('leads')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(500);
 
-            while (hasMore) {
-                const { data, error } = await supabase
-                    .from('leads')
-                    .select('*')
-                    .order('created_at', { ascending: false })
-                    .range(from, from + batchSize - 1);
-
-                if (error) throw error;
-                if (data && data.length > 0) {
-                    allLeads = [...allLeads, ...(data as unknown as Lead[])];
-                    from += batchSize;
-                    if (data.length < batchSize) {
-                        hasMore = false;
-                    }
-                } else {
-                    hasMore = false;
-                }
-            }
-            setLeads(allLeads);
+            if (error) throw error;
+            setLeads((data as unknown as Lead[]) || []);
         } catch (error) {
             console.error('Error fetching leads:', error);
         } finally {
@@ -312,13 +296,29 @@ const AdminLeads = () => {
         }
 
         searchTimeout.current = setTimeout(async () => {
-            // Optional: call the backend RPC if the user deployed the migration
-            // This falls back silently if the RPC does not exist
             const { data, error } = await supabase.rpc('search_leads_by_text', { search_term: query });
-            if (!error && data) {
+            if (!error && Array.isArray(data)) {
                 setRpcMatchIds(new Set(data.map((id: string) => id)));
+                if (data.length > 0) {
+                    setLeads(prev => {
+                        const existingIds = new Set(prev.map(l => l.id));
+                        const missingIds = data.filter((id: string) => !existingIds.has(id));
+                        if (missingIds.length > 0) {
+                            supabase.from('leads').select('*').in('id', missingIds).then(({ data: fetched }) => {
+                                if (fetched && fetched.length > 0) {
+                                    setLeads(current => {
+                                        const curIds = new Set(current.map(l => l.id));
+                                        const toAdd = (fetched as unknown as Lead[]).filter(l => !curIds.has(l.id));
+                                        return [...toAdd, ...current];
+                                    });
+                                }
+                            });
+                        }
+                        return prev;
+                    });
+                }
             }
-        }, 500);
+        }, 400);
 
         return () => {
             if (searchTimeout.current) clearTimeout(searchTimeout.current);

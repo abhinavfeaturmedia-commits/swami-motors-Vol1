@@ -4,7 +4,7 @@ import { useData } from '../../contexts/DataContext';
 const REPORT_TYPES = ['Sales Report', 'Inventory Report', 'Lead Analysis', 'Vehicle Expenses Report'];
 
 const Reports = () => {
-    const { sales, inventory, leads, expenses } = useData();
+    const { sales, inventory, leads, expenses, loading } = useData();
     const [reportType, setReportType] = useState('Sales Report');
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
@@ -170,8 +170,8 @@ const Reports = () => {
                         <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm text-primary outline-none" />
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={generateReport} disabled={generating} className="flex-1 h-10 bg-primary text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-primary-light transition-colors disabled:opacity-50">
-                            <span className="material-symbols-outlined text-lg">{generating ? 'sync' : 'description'}</span> {generating ? 'Building...' : 'Extract CSV'}
+                        <button onClick={generateReport} disabled={generating || loading} className="flex-1 h-10 bg-primary text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-primary-light transition-colors disabled:opacity-50">
+                            <span className="material-symbols-outlined text-lg">{generating || loading ? 'sync' : 'description'}</span> {generating ? 'Building...' : (loading ? 'Loading Data...' : 'Extract CSV')}
                         </button>
                     </div>
                 </div>

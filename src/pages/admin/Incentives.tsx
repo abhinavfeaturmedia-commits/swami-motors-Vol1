@@ -29,6 +29,14 @@ const PRIORITIES = [
   { value: 'celebration', label: 'Celebration 🎉', color: 'bg-yellow-100 text-yellow-700' },
 ];
 
+const parseSafeDate = (d: any): Date => {
+  if (!d) return new Date(0);
+  if (d instanceof Date) return isNaN(d.getTime()) ? new Date(0) : d;
+  const str = String(d).trim().replace(' ', 'T');
+  const parsed = new Date(str);
+  return isNaN(parsed.getTime()) ? new Date(0) : parsed;
+};
+
 const fmt = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 const typeInfo = (t: string) => TYPES.find(x => x.value === t) ?? TYPES[0];
 
@@ -60,55 +68,109 @@ export default function Incentives() {
   const [showAnnForm, setShowAnnForm] = useState(false);
   const [incForm, setIncForm] = useState(emptyInc);
   const [annForm, setAnnForm] = useState(emptyAnn);
+  const [incError, setIncError] = useState<string|null>(null);
+  const [annError, setAnnError] = useState<string|null>(null);
   const [editingIncId, setEditingIncId] = useState<string|null>(null);
   const [editingAnnId, setEditingAnnId] = useState<string|null>(null);
   const [viewingInc, setViewingInc] = useState<Incentive|null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string|null>(null);
   const [notifSent, setNotifSent] = useState<string | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const notifTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flashNotif = (msg: string) => {
     setNotifSent(msg);
     if (notifTimer.current) clearTimeout(notifTimer.current);
-    notifTimer.current = setTimeout(() => setNotifSent(null), 4000);
+    notifTimer.current = setTimeout(() => setNotifSent(null), 4500);
   };
 
-  const openAddInc = () => { setEditingIncId(null); setIncForm(emptyInc); setShowIncForm(true); };
+  const triggerHighlight = (id: string) => {
+    setHighlightId(id);
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightId(null), 5000);
+  };
+
+  const openAddInc = () => {
+    setEditingIncId(null);
+    setIncForm(emptyInc);
+    setIncError(null);
+    setShowIncForm(true);
+  };
   const openEditInc = (inc: Incentive) => {
     setEditingIncId(inc.id);
     setIncForm({ staff_id: inc.staff_id, amount: String(inc.amount), reason: inc.reason, incentive_type: inc.incentive_type, month: inc.month, notes: inc.notes ?? '' });
+    setIncError(null);
     setShowIncForm(true);
   };
-  const openAddAnn = () => { setEditingAnnId(null); setAnnForm(emptyAnn); setShowAnnForm(true); };
+  const openAddAnn = () => {
+    setEditingAnnId(null);
+    setAnnForm(emptyAnn);
+    setAnnError(null);
+    setShowAnnForm(true);
+  };
   const openEditAnn = (a: Announcement) => {
     setEditingAnnId(a.id);
     setAnnForm({ title: a.title, body: a.body, priority: a.priority, is_pinned: a.is_pinned, expires_at: a.expires_at ? a.expires_at.slice(0,10) : '' });
+    setAnnError(null);
     setShowAnnForm(true);
   };
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [{ data: inc }, { data: ann }, { data: st }] = await Promise.all([
-      supabase.from('staff_incentives').select('*, staff:profiles!staff_id(full_name,department)').order('created_at', { ascending: false }),
-      supabase.from('staff_announcements').select('*, creator:profiles!created_by(full_name)').order('created_at', { ascending: false }),
-      supabase.from('profiles').select('id,full_name,department').in('role',['admin','staff']).order('full_name'),
-    ]);
-    setIncentives((inc as Incentive[]) ?? []);
-    setAnnouncements((ann as Announcement[]) ?? []);
-    setStaff((st as Staff[]) ?? []);
-    setLoading(false);
+    try {
+      const [{ data: inc, error: incErr }, { data: ann, error: annErr }, { data: st }] = await Promise.all([
+        supabase.from('staff_incentives').select('*, staff:profiles!staff_id(full_name,department)').order('created_at', { ascending: false }),
+        supabase.from('staff_announcements').select('*, creator:profiles!created_by(full_name)').order('created_at', { ascending: false }),
+        supabase.from('profiles').select('id,full_name,department').in('role',['admin','staff']).order('full_name'),
+      ]);
+      if (incErr) console.error('Error fetching staff_incentives:', incErr);
+      if (annErr) console.error('Error fetching staff_announcements:', annErr);
+
+      setIncentives((inc as Incentive[]) ?? []);
+      setAnnouncements((ann as Announcement[]) ?? []);
+      setStaff((st as Staff[]) ?? []);
+    } catch (err) {
+      console.error('fetchAll error:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  // ── Helper to match an incentive against a period ────────────────────────
+  const matchesPeriod = useCallback((inc: Incentive, periodIndex: number) => {
+    const p = PERIODS[periodIndex];
+    if (!p || !p.days) return true; // All Time
+
+    const now = new Date();
+    const incDate = parseSafeDate(inc.created_at);
+
+    if (p.label === 'This Month') {
+      const currentMonthStr = now.toISOString().slice(0, 7);
+      // Matches if month string matches current month OR created within current month OR in last 30 days
+      if (inc.month && inc.month === currentMonthStr) return true;
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
+      return incDate >= startOfMonth || incDate >= thirtyDaysAgo;
+    }
+
+    if (p.label === 'This Year') {
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      return incDate >= startOfYear;
+    }
+
+    const cutoff = new Date(now.getTime() - p.days * 86400000);
+    return incDate >= cutoff;
+  }, []);
+
+  // ── Live item counts for each period ─────────────────────────────────────
+  const periodCounts = PERIODS.map((_, idx) => incentives.filter(i => matchesPeriod(i, idx)).length);
+
   // ── Filtered incentives by period ────────────────────────────────────────
-  const filteredInc = (() => {
-    const days = PERIODS[period].days;
-    if (!days) return incentives;
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
-    return incentives.filter(i => new Date(i.created_at) >= cutoff);
-  })();
+  const filteredInc = incentives.filter(i => matchesPeriod(i, period));
 
   // ── Leaderboard computation ──────────────────────────────────────────────
   const leaderboard = (() => {
@@ -126,152 +188,251 @@ export default function Incentives() {
   // ── Save incentive (insert or update) ───────────────────────────────────
   const saveIncentive = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!incForm.staff_id || !incForm.amount || !incForm.reason) return;
-    setSaving(true);
-
-    if (editingIncId) {
-      // ── UPDATE existing incentive ──
-      const { error } = await supabase
-        .from('staff_incentives')
-        .update({
-          staff_id: incForm.staff_id, amount: Number(incForm.amount),
-          reason: incForm.reason, incentive_type: incForm.incentive_type,
-          month: incForm.month, notes: incForm.notes || null,
-        })
-        .eq('id', editingIncId);
-
-      if (!error) flashNotif('✏️ Incentive updated successfully ✓');
-    } else {
-      // ── INSERT new incentive ──
-      const { data: inserted, error } = await supabase
-        .from('staff_incentives')
-        .insert({
-          staff_id: incForm.staff_id, amount: Number(incForm.amount),
-          reason: incForm.reason, incentive_type: incForm.incentive_type,
-          month: incForm.month, notes: incForm.notes || null, awarded_by: user?.id,
-        })
-        .select()
-        .single();
-
-      if (!error && inserted) {
-        const amountFmt = `₹${Number(inserted.amount).toLocaleString('en-IN')}`;
-        const typeLabel = (inserted.incentive_type || 'incentive')
-          .replace(/_/g, ' ')
-          .replace(/\b\w/g, (c: string) => c.toUpperCase());
-        const dedupKey = `incentive_awarded_${inserted.id}`;
-
-        await addNotification({
-          type: 'incentive_awarded',
-          category: 'staff',
-          priority: 1,
-          icon: 'workspace_premium',
-          color: 'green',
-          title: `🏆 You've Earned a ${typeLabel}!`,
-          message: `${amountFmt} has been awarded to you. Reason: ${inserted.reason || 'See incentives page.'}`,
-          action_url: '/admin/my-incentives',
-          action_label: 'View My Incentives',
-          related_entity_type: 'incentive',
-          related_entity_id: inserted.id,
-          assigned_to_user_id: inserted.staff_id,
-          dedup_key: dedupKey,
-          metadata: {
-            amount: inserted.amount,
-            incentive_type: inserted.incentive_type,
-            reason: inserted.reason,
-            month: inserted.month,
-          },
-          is_read: false,
-          is_dismissed: false,
-        });
-
-        flashNotif('📨 Incentive saved — staff member has been notified ✓');
-      }
+    setIncError(null);
+    if (!incForm.staff_id || !incForm.amount || !incForm.reason) {
+      setIncError('Please fill in all required fields (Staff Member, Amount, and Reason).');
+      return;
+    }
+    const numAmount = Number(incForm.amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      setIncError('Please enter a valid positive amount.');
+      return;
     }
 
-    setShowIncForm(false); setEditingIncId(null); setIncForm(emptyInc); setSaving(false); fetchAll();
+    setSaving(true);
+    try {
+      if (editingIncId) {
+        // ── UPDATE existing incentive ──
+        const { error } = await supabase
+          .from('staff_incentives')
+          .update({
+            staff_id: incForm.staff_id,
+            amount: numAmount,
+            reason: incForm.reason.trim(),
+            incentive_type: incForm.incentive_type,
+            month: incForm.month,
+            notes: incForm.notes?.trim() || null,
+          })
+          .eq('id', editingIncId);
+
+        if (error) throw new Error(error.message || 'Failed to update incentive.');
+
+        flashNotif('✏️ Incentive updated successfully ✓');
+        triggerHighlight(editingIncId);
+      } else {
+        // ── INSERT new incentive ──
+        const { data: inserted, error } = await supabase
+          .from('staff_incentives')
+          .insert({
+            staff_id: incForm.staff_id,
+            amount: numAmount,
+            reason: incForm.reason.trim(),
+            incentive_type: incForm.incentive_type,
+            month: incForm.month,
+            notes: incForm.notes?.trim() || null,
+            awarded_by: user?.id || null,
+          })
+          .select()
+          .single();
+
+        if (error) throw new Error(error.message || 'Failed to add incentive.');
+
+        const newRec = inserted as Incentive;
+        if (newRec?.id) {
+          triggerHighlight(newRec.id);
+
+          // If the new record does not fall under the currently active period filter,
+          // automatically switch to "All Time" so it doesn't disappear from view!
+          if (!matchesPeriod(newRec, period)) {
+            const allTimeIdx = PERIODS.findIndex(p => p.days === 0);
+            if (allTimeIdx !== -1) setPeriod(allTimeIdx);
+          }
+
+          // Non-blocking notification dispatch to awarded staff member
+          try {
+            const amountFmt = `₹${numAmount.toLocaleString('en-IN')}`;
+            const typeLabel = (newRec.incentive_type || 'incentive')
+              .replace(/_/g, ' ')
+              .replace(/\b\w/g, (c: string) => c.toUpperCase());
+            const dedupKey = `incentive_awarded_${newRec.id}`;
+
+            await addNotification({
+              type: 'incentive_awarded',
+              category: 'staff',
+              priority: 1,
+              icon: 'workspace_premium',
+              color: 'green',
+              title: `🏆 You've Earned a ${typeLabel}!`,
+              message: `${amountFmt} has been awarded to you. Reason: ${newRec.reason || 'See incentives page.'}`,
+              action_url: '/admin/my-incentives',
+              action_label: 'View My Incentives',
+              related_entity_type: 'incentive',
+              related_entity_id: newRec.id,
+              assigned_to_user_id: newRec.staff_id,
+              dedup_key: dedupKey,
+              metadata: {
+                amount: newRec.amount,
+                incentive_type: newRec.incentive_type,
+                reason: newRec.reason,
+                month: newRec.month,
+              },
+              is_read: false,
+              is_dismissed: false,
+            });
+          } catch (notifErr) {
+            console.warn('Notification dispatch failed but incentive was saved:', notifErr);
+          }
+        }
+
+        flashNotif('📨 Incentive saved — staff member notified ✓');
+      }
+
+      setShowIncForm(false);
+      setEditingIncId(null);
+      setIncForm(emptyInc);
+      await fetchAll();
+    } catch (err: any) {
+      console.error('saveIncentive error:', err);
+      setIncError(err.message || 'Failed to save incentive. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── Delete incentive ─────────────────────────────────────────────────────
   const deleteIncentive = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this incentive record?')) return;
     setDeleting(id);
-    await supabase.from('staff_incentives').delete().eq('id', id);
-    setDeleting(null); fetchAll();
+    try {
+      const { error } = await supabase.from('staff_incentives').delete().eq('id', id);
+      if (error) throw new Error(error.message || 'Failed to delete incentive.');
+      flashNotif('🗑️ Incentive deleted successfully ✓');
+      await fetchAll();
+    } catch (err: any) {
+      alert(err.message || 'Error deleting incentive');
+    } finally {
+      setDeleting(null);
+    }
   };
 
   // ── Save announcement (insert or update) ────────────────────────────────
   const saveAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!annForm.title || !annForm.body) return;
-    setSaving(true);
-
-    if (editingAnnId) {
-      // ── UPDATE existing announcement ──
-      const { error } = await supabase
-        .from('staff_announcements')
-        .update({
-          title: annForm.title, body: annForm.body, priority: annForm.priority,
-          is_pinned: annForm.is_pinned, expires_at: annForm.expires_at || null,
-        })
-        .eq('id', editingAnnId);
-
-      if (!error) flashNotif('✏️ Announcement updated successfully ✓');
-    } else {
-      // ── INSERT new announcement ──
-      const { data: inserted, error } = await supabase
-        .from('staff_announcements')
-        .insert({
-          title: annForm.title, body: annForm.body, priority: annForm.priority,
-          is_pinned: annForm.is_pinned, created_by: user?.id,
-          expires_at: annForm.expires_at || null,
-        })
-        .select()
-        .single();
-
-      if (!error && inserted) {
-        const dedupKey = `announcement_posted_${inserted.id}`;
-        let priority: 1 | 2 | 3 | 4 = 3;
-        let color: 'red' | 'amber' | 'green' | 'blue' | 'purple' | 'orange' = 'amber';
-        let titlePrefix = '📢';
-
-        if (inserted.priority === 'urgent')           { priority = 1; color = 'red';    titlePrefix = '🚨'; }
-        else if (inserted.priority === 'celebration') { priority = 2; color = 'purple'; titlePrefix = '🎉'; }
-
-        await addNotification({
-          type: `announcement_${inserted.priority ?? 'normal'}`,
-          category: 'staff',
-          priority,
-          icon: 'campaign',
-          color,
-          title: `${titlePrefix} ${inserted.title}`,
-          message: inserted.body
-            ? inserted.body.slice(0, 120) + (inserted.body.length > 120 ? '…' : '')
-            : 'A new announcement has been posted.',
-          action_url: '/admin/my-incentives',
-          action_label: 'View Announcements',
-          related_entity_type: 'announcement',
-          related_entity_id: inserted.id,
-          assigned_to_user_id: null,
-          dedup_key: dedupKey,
-          metadata: {
-            announcement_id: inserted.id,
-            priority: inserted.priority,
-            is_pinned: inserted.is_pinned,
-          },
-          is_read: false,
-          is_dismissed: false,
-        });
-
-        flashNotif('📢 Announcement posted — all staff have been notified ✓');
-      }
+    setAnnError(null);
+    if (!annForm.title.trim() || !annForm.body.trim()) {
+      setAnnError('Please provide both a Title and Message for the announcement.');
+      return;
     }
 
-    setShowAnnForm(false); setEditingAnnId(null); setAnnForm(emptyAnn); setSaving(false); fetchAll();
+    setSaving(true);
+    try {
+      const expiresAtValue = annForm.expires_at ? `${annForm.expires_at} 23:59:59` : null;
+
+      if (editingAnnId) {
+        // ── UPDATE existing announcement ──
+        const { error } = await supabase
+          .from('staff_announcements')
+          .update({
+            title: annForm.title.trim(),
+            body: annForm.body.trim(),
+            priority: annForm.priority,
+            is_pinned: annForm.is_pinned,
+            expires_at: expiresAtValue,
+          })
+          .eq('id', editingAnnId);
+
+        if (error) throw new Error(error.message || 'Failed to update announcement.');
+        flashNotif('✏️ Announcement updated successfully ✓');
+        triggerHighlight(editingAnnId);
+      } else {
+        // ── INSERT new announcement ──
+        const { data: inserted, error } = await supabase
+          .from('staff_announcements')
+          .insert({
+            title: annForm.title.trim(),
+            body: annForm.body.trim(),
+            priority: annForm.priority,
+            is_pinned: annForm.is_pinned,
+            created_by: user?.id || null,
+            expires_at: expiresAtValue,
+          })
+          .select()
+          .single();
+
+        if (error) throw new Error(error.message || 'Failed to post announcement.');
+
+        const newAnn = inserted as Announcement;
+        if (newAnn?.id) {
+          triggerHighlight(newAnn.id);
+          setTab('announcements'); // Switch to announcements tab so it is immediately visible
+
+          // Non-blocking notification dispatch to all staff
+          try {
+            const dedupKey = `announcement_posted_${newAnn.id}`;
+            let priority: 1 | 2 | 3 | 4 = 3;
+            let color: 'red' | 'amber' | 'green' | 'blue' | 'purple' | 'orange' = 'amber';
+            let titlePrefix = '📢';
+
+            if (newAnn.priority === 'urgent')           { priority = 1; color = 'red';    titlePrefix = '🚨'; }
+            else if (newAnn.priority === 'celebration') { priority = 2; color = 'purple'; titlePrefix = '🎉'; }
+
+            await addNotification({
+              type: `announcement_${newAnn.priority ?? 'normal'}`,
+              category: 'staff',
+              priority,
+              icon: 'campaign',
+              color,
+              title: `${titlePrefix} ${newAnn.title}`,
+              message: newAnn.body
+                ? newAnn.body.slice(0, 120) + (newAnn.body.length > 120 ? '…' : '')
+                : 'A new announcement has been posted.',
+              action_url: '/admin/my-incentives',
+              action_label: 'View Announcements',
+              related_entity_type: 'announcement',
+              related_entity_id: newAnn.id,
+              assigned_to_user_id: null,
+              dedup_key: dedupKey,
+              metadata: {
+                announcement_id: newAnn.id,
+                priority: newAnn.priority,
+                is_pinned: newAnn.is_pinned,
+              },
+              is_read: false,
+              is_dismissed: false,
+            });
+          } catch (notifErr) {
+            console.warn('Notification dispatch failed but announcement was saved:', notifErr);
+          }
+        }
+
+        flashNotif('📢 Announcement posted — all staff notified ✓');
+      }
+
+      setShowAnnForm(false);
+      setEditingAnnId(null);
+      setAnnForm(emptyAnn);
+      await fetchAll();
+    } catch (err: any) {
+      console.error('saveAnnouncement error:', err);
+      setAnnError(err.message || 'Failed to post announcement. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const deleteAnn = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this announcement?')) return;
     setDeleting(id);
-    await supabase.from('staff_announcements').delete().eq('id', id);
-    setDeleting(null); fetchAll();
+    try {
+      const { error } = await supabase.from('staff_announcements').delete().eq('id', id);
+      if (error) throw new Error(error.message || 'Failed to delete announcement.');
+      flashNotif('🗑️ Announcement deleted successfully ✓');
+      await fetchAll();
+    } catch (err: any) {
+      alert(err.message || 'Error deleting announcement');
+    } finally {
+      setDeleting(null);
+    }
   };
 
   if (!isAdmin) return <p className="p-8 text-slate-500">Admin access required.</p>;
@@ -326,13 +487,20 @@ export default function Incentives() {
 
       {/* Period Filter (shown on records + leaderboard) */}
       {tab !== 'announcements' && (
-        <div className="flex gap-2 flex-wrap">
-          {PERIODS.map((p,i) => (
-            <button key={p.label} onClick={() => setPeriod(i)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${period===i ? 'bg-primary text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-primary/30'}`}>
-              {p.label}
-            </button>
-          ))}
+        <div className="flex gap-2 flex-wrap items-center">
+          {PERIODS.map((p,i) => {
+            const count = periodCounts[i];
+            const active = period === i;
+            return (
+              <button key={p.label} onClick={() => setPeriod(i)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${active ? 'bg-primary text-white shadow-sm ring-2 ring-primary/20' : 'bg-white border border-slate-200 text-slate-600 hover:border-primary/30'}`}>
+                <span>{p.label}</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -359,16 +527,40 @@ export default function Incentives() {
                   </thead>
                   <tbody>
                     {filteredInc.length === 0 ? (
-                      <tr><td colSpan={6} className="py-16 text-center text-slate-400 text-sm">No incentive records found.</td></tr>
+                      <tr>
+                        <td colSpan={6} className="py-16 text-center text-slate-400">
+                          <div className="max-w-xs mx-auto space-y-2">
+                            <span className="material-symbols-outlined text-3xl text-slate-300">workspace_premium</span>
+                            <p className="text-sm font-semibold text-slate-600">No incentive records found for {PERIODS[period].label}.</p>
+                            {incentives.length > 0 && period !== (PERIODS.length - 1) && (
+                              <button
+                                onClick={() => setPeriod(PERIODS.length - 1)}
+                                className="mt-2 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3.5 py-2 rounded-xl transition-colors inline-flex items-center gap-1.5"
+                              >
+                                <span className="material-symbols-outlined text-sm">visibility</span>
+                                View All Time Records ({incentives.length})
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     ) : filteredInc.map(inc => {
                       const ti = typeInfo(inc.incentive_type);
+                      const isHighlighted = highlightId === inc.id;
                       return (
                         <tr key={inc.id}
                           onClick={() => setViewingInc(inc)}
-                          className="border-b border-slate-50 last:border-0 hover:bg-primary/5 transition-colors cursor-pointer group">
+                          className={`border-b border-slate-50 last:border-0 hover:bg-primary/5 transition-all cursor-pointer group ${
+                            isHighlighted ? 'bg-emerald-50 ring-2 ring-emerald-400 ring-inset' : ''
+                          }`}>
                           <td className="px-5 py-3.5">
-                            <p className="text-sm font-semibold text-primary">{inc.staff?.full_name ?? '—'}</p>
-                            <p className="text-[10px] text-slate-400">{inc.staff?.department ?? '—'}</p>
+                            <div className="flex items-center gap-2">
+                              {isHighlighted && <span className="size-2 rounded-full bg-emerald-500 animate-ping" />}
+                              <div>
+                                <p className="text-sm font-semibold text-primary">{inc.staff?.full_name ?? '—'}</p>
+                                <p className="text-[10px] text-slate-400">{inc.staff?.department ?? '—'}</p>
+                              </div>
+                            </div>
                           </td>
                           <td className="px-5 py-3.5">
                             <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${ti.color}`}>{ti.label}</span>
@@ -401,7 +593,18 @@ export default function Incentives() {
           {tab === 'leaderboard' && (
             <div className="space-y-3">
               {leaderboard.length === 0 ? (
-                <div className="py-16 text-center text-slate-400">No data for this period.</div>
+                <div className="py-16 text-center text-slate-400">
+                  <p className="text-sm">No data for {PERIODS[period].label}.</p>
+                  {incentives.length > 0 && period !== (PERIODS.length - 1) && (
+                    <button
+                      onClick={() => setPeriod(PERIODS.length - 1)}
+                      className="mt-2 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3.5 py-2 rounded-xl transition-colors inline-flex items-center gap-1.5"
+                    >
+                      <span className="material-symbols-outlined text-sm">visibility</span>
+                      View All Time Leaderboard ({incentives.length} records)
+                    </button>
+                  )}
+                </div>
               ) : leaderboard.map((s, i) => (
                 <div key={s.name}
                   className={`bg-white rounded-2xl border p-4 flex items-center gap-4 shadow-[var(--shadow-card)] ${i===0 ? 'border-yellow-200 bg-yellow-50/30' : i===1 ? 'border-slate-200' : i===2 ? 'border-orange-100' : 'border-slate-100'}`}>
@@ -425,24 +628,40 @@ export default function Incentives() {
           {tab === 'announcements' && (
             <div className="space-y-3">
               {announcements.length === 0 ? (
-                <div className="py-16 text-center text-slate-400">No announcements yet.</div>
+                <div className="py-16 text-center text-slate-400">
+                  <div className="max-w-xs mx-auto space-y-2">
+                    <span className="material-symbols-outlined text-3xl text-slate-300">campaign</span>
+                    <p className="text-sm font-semibold text-slate-600">No announcements yet.</p>
+                    <p className="text-xs text-slate-400">Click "+ New Announcement" above to post team updates.</p>
+                  </div>
+                </div>
               ) : announcements.map(a => {
                 const pr = PRIORITIES.find(p=>p.value===a.priority)??PRIORITIES[0];
+                const isHighlighted = highlightId === a.id;
+                const isExpired = Boolean(a.expires_at && parseSafeDate(a.expires_at) < new Date());
+
                 return (
-                  <div key={a.id} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-[var(--shadow-card)]">
+                  <div key={a.id} className={`bg-white rounded-2xl border p-5 shadow-[var(--shadow-card)] transition-all ${
+                    isHighlighted ? 'ring-2 ring-amber-400 bg-amber-50/40 border-amber-200' : isExpired ? 'border-slate-100 opacity-75' : 'border-slate-100'
+                  }`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           {a.is_pinned && <span className="text-[10px] font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full uppercase">📌 Pinned</span>}
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${pr.color}`}>{pr.label}</span>
+                          {isExpired ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase">Expired</span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase">Active</span>
+                          )}
                         </div>
                         <h3 className="font-bold text-primary">{a.title}</h3>
                         <p className="text-sm text-slate-600 mt-1 whitespace-pre-line">{a.body}</p>
-                        <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-400">
+                        <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-400 flex-wrap">
                           <span>By {a.creator?.full_name ?? 'Admin'}</span>
                           <span>·</span>
-                          <span>{new Date(a.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</span>
-                          {a.expires_at && <><span>·</span><span>Expires {new Date(a.expires_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span></>}
+                          <span>{parseSafeDate(a.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</span>
+                          {a.expires_at && <><span>·</span><span>Expires {parseSafeDate(a.expires_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</span></>}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -478,7 +697,7 @@ export default function Incentives() {
                   </div>
                   <div>
                     <h2 className="text-lg font-black text-white">Incentive Details</h2>
-                    <p className="text-white/70 text-xs">{new Date(viewingInc.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                    <p className="text-white/70 text-xs">{parseSafeDate(viewingInc.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
                   </div>
                 </div>
                 <button onClick={() => setViewingInc(null)} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
@@ -552,7 +771,7 @@ export default function Incentives() {
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Date Awarded</p>
-                    <p className="text-sm text-slate-700 mt-0.5">{new Date(viewingInc.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    <p className="text-sm text-slate-700 mt-0.5">{parseSafeDate(viewingInc.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                   </div>
                 </div>
               </div>
@@ -581,11 +800,17 @@ export default function Incentives() {
           <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
             <div className="bg-gradient-to-r from-primary to-primary-light px-6 py-5 flex items-center justify-between">
               <h2 className="text-lg font-black text-white">{editingIncId ? '✏️ Edit Incentive' : 'Add Incentive'}</h2>
-              <button onClick={() => { setShowIncForm(false); setEditingIncId(null); }} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
+              <button onClick={() => { setShowIncForm(false); setEditingIncId(null); setIncError(null); }} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
                 <span className="material-symbols-outlined text-white text-lg">close</span>
               </button>
             </div>
             <form onSubmit={saveIncentive} className="p-6 space-y-4">
+              {incError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold flex items-center gap-2">
+                  <span className="material-symbols-outlined text-red-500 text-base shrink-0">error</span>
+                  <span>{incError}</span>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold text-slate-600 mb-1.5">Staff Member *</label>
                 <select required value={incForm.staff_id} onChange={e=>setIncForm({...incForm,staff_id:e.target.value})}
@@ -638,11 +863,17 @@ export default function Incentives() {
           <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
             <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-5 flex items-center justify-between">
               <h2 className="text-lg font-black text-white">{editingAnnId ? '✏️ Edit Announcement' : 'New Announcement'}</h2>
-              <button onClick={() => { setShowAnnForm(false); setEditingAnnId(null); }} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
+              <button onClick={() => { setShowAnnForm(false); setEditingAnnId(null); setAnnError(null); }} className="size-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center">
                 <span className="material-symbols-outlined text-white text-lg">close</span>
               </button>
             </div>
             <form onSubmit={saveAnnouncement} className="p-6 space-y-4">
+              {annError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold flex items-center gap-2">
+                  <span className="material-symbols-outlined text-red-500 text-base shrink-0">error</span>
+                  <span>{annError}</span>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold text-slate-600 mb-1.5">Title *</label>
                 <input type="text" required value={annForm.title} onChange={e=>setAnnForm({...annForm,title:e.target.value})}

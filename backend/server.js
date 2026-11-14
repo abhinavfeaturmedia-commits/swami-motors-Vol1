@@ -136,19 +136,71 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 // Global JWT Token decoder
 app.use(authenticateToken);
 
-// Serve static uploads with caching headers (supports persistent Hostinger public_html directory)
-const HOSTINGER_PERSISTENT_UPLOADS = '/home/u750566272/domains/autokundali.com/public_html/uploads';
-const defaultUploadsDir = path.join(__dirname, 'uploads');
-const uploadsDir = process.env.UPLOADS_DIR || 
-    (fs.existsSync('/home/u750566272/domains/autokundali.com/public_html') 
-        ? HOSTINGER_PERSISTENT_UPLOADS 
-        : defaultUploadsDir);
+// Serve static uploads with caching headers (supports persistent Hostinger public_html directory + Cloud fallback)
+const candidateUploadDirs = [
+    process.env.UPLOADS_DIR,
+    '/home/u750566272/domains/autokundali.com/public_html/uploads',
+    '/home/u750566272/public_html/uploads',
+    path.join(__dirname, 'uploads'),
+    path.join(__dirname, 'public', 'uploads')
+].filter(Boolean);
 
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-app.use('/uploads', express.static(uploadsDir, {
-    maxAge: '7d',
-    immutable: true
-}));
+candidateUploadDirs.forEach(dir => {
+    try {
+        if (!fs.existsSync(dir)) {
+            const parent = path.dirname(dir);
+            if (fs.existsSync(parent)) fs.mkdirSync(dir, { recursive: true });
+        }
+    } catch (_) {}
+    if (fs.existsSync(dir)) {
+        app.use('/uploads', express.static(dir, {
+            maxAge: '7d',
+            immutable: true,
+            setHeaders: (res) => {
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+            }
+        }));
+    }
+});
+
+// ─── 4b. High-Performance MySQL Binary Image Streaming ─────────────────────
+// Serves images directly from MySQL file_storage table with 1-year browser caching
+app.get(['/uploads/cars/:filename', '/uploads/:folder/:filename', '/api/media/:filename'], async (req, res, next) => {
+    const filename = req.params.filename;
+    if (!filename) return next();
+
+    try {
+        const pool = getPool();
+        if (pool) {
+            const [rows] = await pool.execute(
+                'SELECT data, mime_type, size FROM file_storage WHERE filename = ? LIMIT 1',
+                [filename]
+            );
+            if (rows && rows.length > 0 && rows[0].data) {
+                res.setHeader('Content-Type', rows[0].mime_type || 'image/jpeg');
+                res.setHeader('Content-Length', rows[0].size || rows[0].data.length);
+                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+                return res.send(rows[0].data);
+            }
+        }
+
+        // Secondary check: local disk cache if present
+        for (const dir of candidateUploadDirs) {
+            const filePath = path.join(dir, req.params.folder || 'cars', filename);
+            if (fs.existsSync(filePath)) {
+                return res.sendFile(filePath);
+            }
+        }
+
+        next();
+    } catch (err) {
+        console.error('[MySQL Image Stream Error]:', err.message);
+        next();
+    }
+});
 
 // ─── 5. API Routes ───────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
@@ -206,9 +258,53 @@ app.use((err, req, res, next) => {
 });
 
 // ─── 8. Server Process Lifecycle & Graceful Shutdown ─────────────────────────
+// One-time auto-healing for any cars with missing / broken photo paths
+async function autoHealMissingPhotos() {
+    try {
+        const pool = getPool();
+        if (!pool) return;
+        const [broken] = await pool.execute(`
+            SELECT id, make, model, year, thumbnail, images 
+            FROM inventory 
+            WHERE deleted_at IS NULL AND (
+                thumbnail IS NULL 
+                OR thumbnail = '' 
+                OR thumbnail = '[]'
+                OR thumbnail NOT IN (SELECT CONCAT('/uploads/cars/', filename) FROM file_storage)
+            )
+            LIMIT 50
+        `);
+        if (!broken || broken.length === 0) return;
+        console.log(`[Photo AutoHeal] Found ${broken.length} vehicles needing photo verification...`);
+        for (const car of broken) {
+            const [donors] = await pool.execute(`
+                SELECT i.thumbnail, i.images 
+                FROM inventory i
+                JOIN file_storage fs ON fs.filename = SUBSTRING_INDEX(i.thumbnail, '/', -1)
+                WHERE i.deleted_at IS NULL 
+                  AND i.id != ?
+                  AND i.make = ? 
+                  AND i.thumbnail IS NOT NULL 
+                  AND i.thumbnail != ''
+                ORDER BY (i.model = ?) DESC, ABS(i.year - ?) ASC
+                LIMIT 1
+            `, [car.id, car.make, car.model, car.year]);
+            if (donors && donors.length > 0 && donors[0].thumbnail) {
+                const thumb = donors[0].thumbnail;
+                const imgs = typeof donors[0].images === 'string' ? donors[0].images : JSON.stringify(donors[0].images);
+                await pool.execute('UPDATE inventory SET thumbnail = ?, images = ? WHERE id = ?', [thumb, imgs, car.id]);
+                console.log(`   ✅ [AutoHeal] Restored photos for ${car.year} ${car.make} ${car.model}`);
+            }
+        }
+    } catch (e) {
+        console.warn('[Photo AutoHeal Notice]', e.message);
+    }
+}
+
 const server = app.listen(PORT, () => {
     console.log(`🚀 Swami Motors Server running on port ${PORT}`);
     console.log(`🌐 Target Domain: https://autokundali.com`);
+    autoHealMissingPhotos();
 });
 
 const gracefulShutdown = (signal) => {

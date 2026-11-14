@@ -260,10 +260,14 @@ const AnnouncementBanner = () => {
             .order('created_at', { ascending: false })
             .then(({ data }: { data: any }) => {
                 if (data) {
-                    const today = new Date().toDateString();
-                    const visible = (data as any[]).filter((a: any) =>
-                        a.is_pinned || new Date(a.created_at).toDateString() === today
-                    );
+                    const now = new Date();
+                    const visible = (data as any[]).filter((a: any) => {
+                        if (a.expires_at) {
+                            const exp = new Date(String(a.expires_at).replace(' ', 'T'));
+                            if (!isNaN(exp.getTime()) && exp < now) return false;
+                        }
+                        return true;
+                    });
                     setAnnouncements(visible);
                 }
             });

@@ -4,7 +4,7 @@ import { useData } from '../../contexts/DataContext';
 const colorPalette = ['bg-blue-500', 'bg-purple-500', 'bg-green-500', 'bg-pink-500', 'bg-amber-500', 'bg-red-500', 'bg-teal-500', 'bg-indigo-500'];
 
 const LeadSources = () => {
-    const { leads } = useData();
+    const { leads, loading } = useData();
     
     // Compute dynamic sources from leads context
     const sourcesData = useMemo(() => {
@@ -111,12 +111,16 @@ const LeadSources = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {sourcesData.length === 0 && (
+                                {loading ? (
+                                    <tr>
+                                        <td colSpan={5} className="text-center py-10 text-slate-400">Loading lead source analytics…</td>
+                                    </tr>
+                                ) : sourcesData.length === 0 ? (
                                     <tr>
                                         <td colSpan={5} className="text-center py-10 text-slate-400">No leads found in database.</td>
                                     </tr>
-                                )}
-                                {sourcesData.map(s => (
+                                ) : null}
+                                {!loading && sourcesData.map(s => (
                                     <tr key={s.name} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
                                         <td className="px-5 py-3.5">
                                             <div className="flex items-center gap-2">

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useData } from '../../contexts/DataContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -24,6 +24,12 @@ const VehicleInspection = () => {
     const [statuses, setStatuses] = useState<Record<string, Status>>({});
     const [notes, setNotes] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        if (!selectedVehicleId && availableInventory.length > 0) {
+            setSelectedVehicleId(availableInventory[0].id);
+        }
+    }, [availableInventory, selectedVehicleId]);
 
     const total = CATEGORIES.reduce((s, c) => s + c.items.length, 0);
     const passed = Object.values(statuses).filter(v => v === 'Pass').length;

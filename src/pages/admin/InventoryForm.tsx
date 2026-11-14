@@ -644,7 +644,8 @@ Condition: ${form.condition}`;
             return;
         }
 
-        if (!form.make || !form.model || !form.price) {
+        const effectivePrice = form.price || (source === 'consignment' ? consignmentAgreedPrice : '');
+        if (!form.make || !form.model || !effectivePrice) {
             setError('Make, Model, and Price are required fields.');
             return;
         }
@@ -680,7 +681,7 @@ Condition: ${form.condition}`;
                 model: form.model,
                 variant: form.variant || null,
                 year: Number(form.year),
-                price: Number(form.price),
+                price: Number(effectivePrice),
                 original_price: form.original_price ? Number(form.original_price) : null,
                 fuel_type: form.fuel_type,
                 transmission: form.transmission,
@@ -690,7 +691,7 @@ Condition: ${form.condition}`;
                 registration_no: normalizedRegNo,
                 ownership: Number(form.ownership),
                 condition: form.condition,
-                status: isDraft ? 'pending' : form.status,
+                status: isDraft ? 'pending' : (form.status === 'pending' ? 'available' : form.status),
                 insurance: form.insurance || null,
                 video_url: form.video_url || null,
                 description: form.description || null,
@@ -929,7 +930,14 @@ Condition: ${form.condition}`;
                                         <input
                                             type="number"
                                             value={consignmentAgreedPrice}
-                                            onChange={e => setConsignmentAgreedPrice(e.target.value)}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setConsignmentAgreedPrice(val);
+                                                // Sync to public listing price if price was empty or zero
+                                                if (!form.price || form.price === '0') {
+                                                    set('price', val);
+                                                }
+                                            }}
                                             placeholder="e.g., 400000"
                                             className="w-full h-11 bg-white border border-purple-200 rounded-xl pl-7 pr-3 text-sm outline-none focus:ring-2 focus:ring-purple-300"
                                         />
@@ -1383,19 +1391,41 @@ Condition: ${form.condition}`;
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center justify-between pt-4 border-t border-slate-100 mt-8 sticky bottom-0 bg-white p-4 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] rounded-t-xl -mx-4 px-4 sm:mx-0 sm:px-6">
-                    <button
-                        type="button"
-                        onClick={e => handleSubmit(e as any, true)}
-                        disabled={saving || !canManage}
-                        className="h-11 px-6 border border-slate-200 text-slate-600 font-semibold rounded-xl text-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-                    >
-                        Save as Draft
-                    </button>
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 mt-8 sticky bottom-0 bg-white/95 backdrop-blur-md p-4 z-30 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] rounded-t-2xl -mx-4 px-4 sm:mx-0 sm:px-6">
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <button
+                            type="button"
+                            onClick={e => handleSubmit(e as any, true)}
+                            disabled={saving || !canManage}
+                            className="h-11 px-5 border border-slate-200 text-slate-600 font-semibold rounded-xl text-sm hover:bg-slate-50 transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                            Save as Draft
+                        </button>
+                        <div className="hidden sm:flex items-center gap-1.5 bg-slate-100/90 rounded-xl p-1 text-xs border border-slate-200/60">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide px-2">Live Status:</span>
+                            {(['available', 'reserved', 'sold', 'pending'] as const).map(s => (
+                                <button
+                                    key={s}
+                                    type="button"
+                                    onClick={() => set('status', s)}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold capitalize transition-all cursor-pointer ${
+                                        form.status === s
+                                            ? s === 'available' ? 'bg-emerald-600 text-white shadow-xs'
+                                            : s === 'reserved' ? 'bg-amber-500 text-white shadow-xs'
+                                            : s === 'sold' ? 'bg-slate-700 text-white shadow-xs'
+                                            : 'bg-blue-600 text-white shadow-xs'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    {s === 'available' ? '● Live on Website' : s === 'pending' ? 'Draft' : s}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                     <button
                         type="submit"
                         disabled={saving || uploading || !canManage}
-                        className="h-11 px-6 bg-accent text-primary font-bold rounded-xl text-sm hover:bg-accent-hover transition-all shadow-sm flex items-center gap-2 disabled:opacity-50 min-w-[160px] justify-center"
+                        className="h-11 px-6 bg-accent text-primary font-bold rounded-xl text-sm hover:bg-accent-hover transition-all shadow-sm flex items-center gap-2 disabled:opacity-50 min-w-[160px] justify-center cursor-pointer"
                     >
                         {saving || uploading ? (
                             <>

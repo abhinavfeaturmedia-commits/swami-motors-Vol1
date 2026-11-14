@@ -2,8 +2,10 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { requireAuth } from './auth.js';
+import { getPool } from '../db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,18 +13,54 @@ const __dirname = path.dirname(__filename);
 const router = express.Router();
 
 // Persistent uploads directory logic (supports Hostinger public_html or environment override or local fallback)
-const HOSTINGER_PERSISTENT_UPLOADS = '/home/u750566272/domains/autokundali.com/public_html/uploads';
-const defaultUploadsDir = path.join(__dirname, '..', 'uploads');
+function resolveUploadsDir() {
+    if (process.env.UPLOADS_DIR) {
+        return process.env.UPLOADS_DIR;
+    }
+    const candidates = [
+        '/home/u750566272/domains/autokundali.com/public_html/uploads',
+        '/home/u750566272/public_html/uploads',
+        path.join(__dirname, '..', 'uploads'),
+        path.join(process.cwd(), 'uploads')
+    ];
+    for (const c of candidates) {
+        const parent = path.dirname(c);
+        if (fs.existsSync(parent)) {
+            return c;
+        }
+    }
+    return path.join(__dirname, '..', 'uploads');
+}
 
-const uploadsDir = process.env.UPLOADS_DIR || 
-    (fs.existsSync('/home/u750566272/domains/autokundali.com/public_html') 
-        ? HOSTINGER_PERSISTENT_UPLOADS 
-        : defaultUploadsDir);
-
+const uploadsDir = resolveUploadsDir();
 const carsUploadsDir = path.join(uploadsDir, 'cars');
 
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 if (!fs.existsSync(carsUploadsDir)) fs.mkdirSync(carsUploadsDir, { recursive: true });
+
+/**
+ * Persists an uploaded file buffer directly into the MySQL file_storage table as LONGBLOB
+ */
+async function saveFileToMySQL(filePath, filename, mimeType) {
+    try {
+        const pool = getPool();
+        if (!pool) throw new Error('Database pool not available');
+        const fileBuffer = fs.readFileSync(filePath);
+        const id = crypto.randomUUID();
+        const size = fileBuffer.length;
+
+        await pool.execute(
+            `INSERT INTO file_storage (id, filename, mime_type, data, size) 
+             VALUES (?, ?, ?, ?, ?) 
+             ON DUPLICATE KEY UPDATE data = VALUES(data), size = VALUES(size), mime_type = VALUES(mime_type)`,
+            [id, filename, mimeType || 'image/jpeg', fileBuffer, size]
+        );
+        return `/uploads/cars/${filename}`;
+    } catch (err) {
+        console.error('[MySQL File Storage Error]:', err.message);
+        return null;
+    }
+}
 
 // Configure Multer storage with sanitized filenames
 const storage = multer.diskStorage({
@@ -102,7 +140,7 @@ function checkContentLength(maxBytes) {
 }
 
 // ─── POST /api/upload/single (Authenticated Staff/Admin) ──────────────────────
-router.post('/single', requireAuth, checkContentLength(12 * 1024 * 1024), upload.single('file'), (req, res) => {
+router.post('/single', requireAuth, checkContentLength(12 * 1024 * 1024), upload.single('file'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded or file rejected by security filter.' });
     }
@@ -114,7 +152,10 @@ router.post('/single', requireAuth, checkContentLength(12 * 1024 * 1024), upload
         return res.status(400).json({ error: 'Security verification failed: File content does not match allowed format signature.' });
     }
 
+    // Store image binary directly into MySQL file_storage table
+    await saveFileToMySQL(req.file.path, req.file.filename, req.file.mimetype);
     const publicUrl = `/uploads/cars/${req.file.filename}`;
+
     return res.json({
         url: publicUrl,
         filename: req.file.filename,
@@ -123,7 +164,7 @@ router.post('/single', requireAuth, checkContentLength(12 * 1024 * 1024), upload
 });
 
 // ─── POST /api/upload/multiple (Authenticated Staff/Admin) ────────────────────
-router.post('/multiple', requireAuth, checkContentLength(60 * 1024 * 1024), upload.array('files', 20), (req, res) => {
+router.post('/multiple', requireAuth, checkContentLength(60 * 1024 * 1024), upload.array('files', 20), async (req, res) => {
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: 'No files uploaded or files rejected by security filter.' });
     }
@@ -131,8 +172,11 @@ router.post('/multiple', requireAuth, checkContentLength(60 * 1024 * 1024), uplo
     const validFiles = [];
     for (const f of req.files) {
         if (verifyMagicBytes(f.path)) {
+            await saveFileToMySQL(f.path, f.filename, f.mimetype);
+            const publicUrl = `/uploads/cars/${f.filename}`;
+
             validFiles.push({
-                url: `/uploads/cars/${f.filename}`,
+                url: publicUrl,
                 filename: f.filename,
                 size: f.size
             });

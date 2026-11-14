@@ -25,14 +25,14 @@ const AuditLogs = () => {
                 // Fetch real audit logs joined with the profiles table
                 const auditPromise = supabase
                     .from('audit_logs')
-                    .select('id, action, target_type, target_name, details, created_at, profiles:user_id(full_name)')
+                    .select('id, action, target_type, target_name, details, created_at, profiles:profiles!user_id(full_name)')
                     .order('created_at', { ascending: false })
                     .limit(200);
 
                 // Fetch lead activities
                 const leadPromise = supabase
                     .from('lead_activities')
-                    .select('id, activity_type, notes, created_at, created_by, lead:leads(full_name)')
+                    .select('id, activity_type, notes, created_at, created_by, lead:leads(full_name), profile:profiles!created_by(full_name)')
                     .order('created_at', { ascending: false })
                     .limit(200);
 
@@ -63,10 +63,11 @@ const AuditLogs = () => {
                         else if (d.activity_type === 'call') actionLabel = 'Call Logged';
                         else if (d.activity_type === 'meeting') actionLabel = 'Meeting Set';
 
+                        const userName = d.profile?.full_name || 'Staff Member';
                         return {
                             id: 'l_' + d.id,
-                            user: d.created_by || 'System User',
-                            avatar: (d.created_by || 'System User').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase(),
+                            user: userName,
+                            avatar: userName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase(),
                             action: actionLabel,
                             target: `Lead: ${d.lead?.full_name || 'Deleted'}`,
                             element: d.notes || 'Activity logged',

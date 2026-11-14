@@ -29,7 +29,12 @@ export const InquiryCartDrawer: React.FC = () => {
         try {
             // 1. Format the vehicle list details for the lead message
             const vehicleListText = cartItems
-                .map((car, idx) => `${idx + 1}. ${car.year} ${car.make} ${car.model} (Price: Rs. ${formatPriceLakh(car.price)} Lakh, Mileage: ${car.mileage.toLocaleString('en-IN')} km)`)
+                .map((car, idx) => {
+                    const mileageText = car.mileage != null && !isNaN(Number(car.mileage))
+                        ? `${Number(car.mileage).toLocaleString('en-IN')} km`
+                        : 'N/A';
+                    return `${idx + 1}. ${car.year} ${car.make} ${car.model} (Price: Rs. ${formatPriceLakh(car.price)} Lakh, Mileage: ${mileageText})`;
+                })
                 .join('\n');
 
             const fullMessage = `Customer Inquired Catalog Cart containing:\n${vehicleListText}\n\nAdditional message:\n${message || 'No additional remarks.'}`;

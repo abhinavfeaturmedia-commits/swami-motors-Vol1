@@ -191,7 +191,7 @@ const Home = () => {
         const fetchRecentInventory = async () => {
             const { data, error: err } = await supabase
                 .from('inventory')
-                .select('*')
+                .select('id, make, model, year, price, fuel_type, transmission, mileage, images, thumbnail, condition, status, created_at')
                 .in('status', ['available', 'reserved'])
                 .order('created_at', { ascending: false })
                 .limit(4);
@@ -796,6 +796,8 @@ const Home = () => {
                                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                                                     src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))} 
                                                     onError={handleImageError}
+                                                    loading="lazy"
+                                                    decoding="async"
                                                 />
                                                 <div className="absolute top-2.5 left-2.5 bg-primary/90 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1 shadow-sm">
                                                     <span className="material-symbols-outlined text-xs text-accent">verified</span> Certified

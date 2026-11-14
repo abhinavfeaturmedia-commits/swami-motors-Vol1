@@ -105,77 +105,162 @@ function parseJsonFields(row) {
     return parsed;
 }
 
-// Helper to batch-resolve joined PostgREST relations (e.g. car:inventory(*), customer:customers(*), profiles!staff_id(*))
+// Helper to batch-resolve joined PostgREST relations (e.g. car:inventory(*), customer:customers(*), profiles!staff_id(*), items:shared_catalog_items(*))
 async function expandRelations(currentTable, columnsStr, rows) {
     if (!rows || rows.length === 0 || typeof columnsStr !== 'string' || !columnsStr.includes('(')) {
         return rows;
     }
 
-    const relationRegex = /(?:([a-zA-Z0-9_]+):)?([a-zA-Z0-9_]+)(?:![a-zA-Z0-9_]+)?\(([^)]*)\)/g;
+    const relationRegex = /(?:([a-zA-Z0-9_]+):)?([a-zA-Z0-9_]+)(?:!([a-zA-Z0-9_]+))?\(([^)]*)\)/g;
     let match;
     while ((match = relationRegex.exec(columnsStr)) !== null) {
         const alias = match[1] || match[2];
-        const relatedTable = match[2];
-        if (!ALLOWED_TABLES.has(relatedTable)) continue;
+        const rawTarget = match[2];
+        const explicitFk = match[3] || null;
+        const subCols = match[4] || '*';
 
-        // Determine foreign key column in currentTable
+        let relatedTable = null;
         let fkCol = null;
-        if (relatedTable === 'inventory' || alias === 'car') {
-            if ('inventory_id' in rows[0]) fkCol = 'inventory_id';
-            else if ('car_id' in rows[0]) fkCol = 'car_id';
-            else fkCol = 'inventory_id';
-        } else if (relatedTable === 'customers' || alias === 'customer') {
-            if ('customer_id' in rows[0]) fkCol = 'customer_id';
-            else if ('client_id' in rows[0]) fkCol = 'client_id';
-            else fkCol = 'customer_id';
-        } else if (relatedTable === 'leads' || alias === 'lead') {
-            if ('lead_id' in rows[0]) fkCol = 'lead_id';
-            else fkCol = 'lead_id';
-        } else if (relatedTable === 'dealers' || alias === 'dealer') {
-            if ('dealer_id' in rows[0]) fkCol = 'dealer_id';
-            else fkCol = 'dealer_id';
-        } else if (relatedTable === 'accessories') {
-            if ('accessory_id' in rows[0]) fkCol = 'accessory_id';
-            else fkCol = 'accessory_id';
-        } else if (relatedTable === 'profiles') {
-            if (alias === 'creator' || columnsStr.includes('created_by')) fkCol = 'created_by';
-            else if (alias === 'staff' || columnsStr.includes('staff_id')) fkCol = 'staff_id';
-            else if (alias === 'assigned_profile' || columnsStr.includes('assigned_to')) fkCol = 'assigned_to';
-            else if (alias === 'added_by_profile' || columnsStr.includes('added_by')) fkCol = 'added_by';
-            else if ('user_id' in rows[0]) fkCol = 'user_id';
-            else if ('staff_id' in rows[0]) fkCol = 'staff_id';
-            else if ('assigned_to' in rows[0]) fkCol = 'assigned_to';
+
+        if (ALLOWED_TABLES.has(rawTarget)) {
+            relatedTable = rawTarget;
+        } else if (match[1] && ALLOWED_TABLES.has(match[1])) {
+            relatedTable = match[1];
+            fkCol = rawTarget;
+        } else if (alias === 'profile' && ALLOWED_TABLES.has('profiles')) {
+            relatedTable = 'profiles';
+            fkCol = rawTarget;
+        } else if (rawTarget.endsWith('_id')) {
+            const stripped = rawTarget.replace(/_id$/, '');
+            if (ALLOWED_TABLES.has(stripped)) {
+                relatedTable = stripped;
+                fkCol = rawTarget;
+            } else if (ALLOWED_TABLES.has(stripped + 's')) {
+                relatedTable = stripped + 's';
+                fkCol = rawTarget;
+            }
         }
 
-        if (!fkCol && (relatedTable + '_id') in rows[0]) {
-            fkCol = relatedTable + '_id';
+        if (!relatedTable || !ALLOWED_TABLES.has(relatedTable)) continue;
+
+        // Determine foreign key column if not resolved yet
+        if (!fkCol && explicitFk) {
+            if (explicitFk in rows[0]) fkCol = explicitFk;
+            else if (explicitFk.includes('created_by')) fkCol = 'created_by';
+            else if (explicitFk.includes('staff_id')) fkCol = 'staff_id';
+            else if (explicitFk.includes('assigned_to')) fkCol = 'assigned_to';
+            else if (explicitFk.includes('user_id')) fkCol = 'user_id';
+            else if (explicitFk.includes('dealer_id')) fkCol = 'dealer_id';
+            else if (explicitFk.includes('inventory_id')) fkCol = 'inventory_id';
         }
 
-        if (!fkCol) continue;
+        if (!fkCol) {
+            if (relatedTable === 'inventory' || alias === 'car') {
+                if ('inventory_id' in rows[0]) fkCol = 'inventory_id';
+                else if ('car_id' in rows[0]) fkCol = 'car_id';
+                else fkCol = 'inventory_id';
+            } else if (relatedTable === 'customers' || alias === 'customer') {
+                if ('customer_id' in rows[0]) fkCol = 'customer_id';
+                else if ('client_id' in rows[0]) fkCol = 'client_id';
+                else fkCol = 'customer_id';
+            } else if (relatedTable === 'leads' || alias === 'lead') {
+                if ('lead_id' in rows[0]) fkCol = 'lead_id';
+                else fkCol = 'lead_id';
+            } else if (relatedTable === 'dealers' || alias === 'dealer') {
+                if ('dealer_id' in rows[0]) fkCol = 'dealer_id';
+                else fkCol = 'dealer_id';
+            } else if (relatedTable === 'accessories') {
+                if ('accessory_id' in rows[0]) fkCol = 'accessory_id';
+                else fkCol = 'accessory_id';
+            } else if (relatedTable === 'profiles') {
+                if (alias === 'creator' || (explicitFk && explicitFk.includes('created_by'))) fkCol = 'created_by';
+                else if (alias === 'staff' || (explicitFk && explicitFk.includes('staff_id'))) fkCol = 'staff_id';
+                else if (alias === 'assigned_profile' || alias === 'assigned_to') fkCol = 'assigned_to';
+                else if (alias === 'added_by_profile' || alias === 'added_by') fkCol = 'added_by';
+                else if ('user_id' in rows[0]) fkCol = 'user_id';
+                else if ('staff_id' in rows[0]) fkCol = 'staff_id';
+                else if ('assigned_to' in rows[0]) fkCol = 'assigned_to';
+                else if ('created_by' in rows[0]) fkCol = 'created_by';
+            } else if ((relatedTable + '_id') in rows[0]) {
+                fkCol = relatedTable + '_id';
+            } else if ((relatedTable.replace(/s$/, '') + '_id') in rows[0]) {
+                fkCol = relatedTable.replace(/s$/, '') + '_id';
+            }
+        }
 
-        const ids = [...new Set(rows.map(r => r[fkCol]).filter(Boolean))];
-        if (ids.length === 0) {
-            rows.forEach(r => { r[alias] = null; });
+        // Case A: N-to-1 relationship (Foreign key is on current row)
+        if (fkCol && fkCol in rows[0]) {
+            const ids = [...new Set(rows.map(r => r[fkCol]).filter(Boolean))];
+            if (ids.length === 0) {
+                rows.forEach(r => { r[alias] = null; });
+                continue;
+            }
+
+            const placeholders = ids.map(() => '?').join(', ');
+            let relRows = await query(`SELECT * FROM \`${relatedTable}\` WHERE \`id\` IN (${placeholders})`, ids);
+            
+            // Recursively expand nested relations if sub-columns contain relations (e.g., car:inventory(..., dealer:dealers(...)))
+            if (subCols && subCols.includes('(')) {
+                relRows = await expandRelations(relatedTable, subCols, relRows);
+            }
+
+            const relMap = {};
+            for (const relRow of relRows) {
+                relMap[relRow.id] = parseJsonFields(relRow);
+            }
+
+            rows.forEach(r => {
+                const id = r[fkCol];
+                r[alias] = id && relMap[id] ? relMap[id] : null;
+            });
             continue;
         }
 
-        const placeholders = ids.map(() => '?').join(', ');
-        let relRows = await query(`SELECT * FROM \`${relatedTable}\` WHERE \`id\` IN (${placeholders})`, ids);
-        
-        // Recursively expand nested relations if sub-columns contain relations (e.g., car:inventory(..., dealer:dealers(...)))
-        if (match[3] && match[3].includes('(')) {
-            relRows = await expandRelations(relatedTable, match[3], relRows);
+        // Case B: 1-to-many relationship (Foreign key is on the related child table pointing to parent row)
+        const parentIds = [...new Set(rows.map(r => r.id).filter(Boolean))];
+        if (parentIds.length === 0) {
+            rows.forEach(r => { r[alias] = []; });
+            continue;
         }
 
-        const relMap = {};
-        for (const relRow of relRows) {
-            relMap[relRow.id] = parseJsonFields(relRow);
+        const candidateChildFks = [
+            `${currentTable.replace(/s$/, '')}_id`,
+            `${currentTable}_id`
+        ];
+
+        let matchedChildFk = null;
+        let childRows = [];
+
+        for (const childFk of candidateChildFks) {
+            try {
+                const placeholders = parentIds.map(() => '?').join(', ');
+                const res = await query(`SELECT * FROM \`${relatedTable}\` WHERE \`${childFk}\` IN (${placeholders})`, parentIds);
+                if (Array.isArray(res)) {
+                    matchedChildFk = childFk;
+                    childRows = res;
+                    break;
+                }
+            } catch (err) {
+                // Column might not exist on child table, try next candidate
+            }
         }
 
-        rows.forEach(r => {
-            const id = r[fkCol];
-            r[alias] = id && relMap[id] ? relMap[id] : null;
-        });
+        if (matchedChildFk) {
+            if (subCols && subCols.includes('(')) {
+                childRows = await expandRelations(relatedTable, subCols, childRows);
+            }
+
+            const childMap = {};
+            for (const c of childRows) {
+                const parentId = c[matchedChildFk];
+                if (!childMap[parentId]) childMap[parentId] = [];
+                childMap[parentId].push(parseJsonFields(c));
+            }
+
+            rows.forEach(r => {
+                r[alias] = childMap[r.id] || [];
+            });
+        }
     }
 
     return rows;
@@ -237,8 +322,8 @@ router.post('/select', async (req, res) => {
                 if (columns.includes('*')) {
                     colSql = '*';
                 } else {
-                    // Strip out relational queries like `car:inventory(...)` or `items(...)` so nested columns don't leak into parent table SELECT
-                    const cleaned = columns.replace(/\w+(?::\w+)?\([^)]*\)/g, '').trim();
+                    // Strip out relational queries like `car:inventory(...)` or `items(...)` or `salesperson:profiles!fk(...)` so nested columns don't leak into parent table SELECT
+                    const cleaned = columns.replace(/(?:[a-zA-Z0-9_]+:)?(?:[a-zA-Z0-9_]+)(?:![a-zA-Z0-9_]+)?\([^)]*\)/g, '').trim();
                     const parts = cleaned.split(',')
                         .map(s => s.trim())
                         .filter(s => s.length > 0 && isValidIdentifier(s))
@@ -569,10 +654,11 @@ router.post('/insert', async (req, res) => {
                     item.created_at = nowSqlStr;
                 }
             }
-            if ((table === 'inventory' || table === 'visits' || table === 'finance_services' || table === 'staff_announcements' || table === 'leads' || table === 'bookings' || table === 'consignments' || table === 'customers' || table === 'sales') && !item.created_at) {
+            if ((table === 'inventory' || table === 'visits' || table === 'finance_services' || table === 'staff_announcements' || table === 'staff_incentives' || table === 'smart_notifications' || table === 'leads' || table === 'bookings' || table === 'consignments' || table === 'customers' || table === 'sales') && !item.created_at) {
                 item.created_at = nowSqlStr;
             }
-            if ((table === 'inventory' || table === 'visits' || table === 'finance_services' || table === 'staff_announcements' || table === 'leads' || table === 'bookings' || table === 'consignments' || table === 'customers' || table === 'sales') && !item.updated_at) {
+            // Note: staff_announcements and staff_incentives do NOT have an updated_at column in MySQL
+            if ((table === 'inventory' || table === 'visits' || table === 'finance_services' || table === 'leads' || table === 'bookings' || table === 'consignments' || table === 'customers' || table === 'sales') && !item.updated_at) {
                 item.updated_at = nowSqlStr;
             }
 

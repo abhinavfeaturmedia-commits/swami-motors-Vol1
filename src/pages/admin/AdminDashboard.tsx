@@ -26,7 +26,7 @@ const AdminDashboard = () => {
             setLoading(true);
             try {
                 // Inventory breakdown
-                const { data: inv } = await supabase.from('inventory').select('status, price, source, consignment_end_date');
+                const { data: inv } = await supabase.from('inventory').select('id, make, model, status, price, source, consignment_end_date');
                 let available = 0, sold = 0, consignmentActive = 0, dealerCars = 0;
                 const today = new Date();
                 const in7Days = new Date(); in7Days.setDate(today.getDate() + 7);

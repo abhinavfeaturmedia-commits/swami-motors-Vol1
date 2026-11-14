@@ -9,11 +9,12 @@ import PublicLayout from './layouts/PublicLayout';
 import AdminLayout from './layouts/AdminLayout';
 import { trackEvent } from './hooks/useAnalytics';
 
-// Tracks public route pageviews to MySQL website_events
+// Tracks public route pageviews to MySQL website_events & resets scroll position
 const RouteTracker: React.FC = () => {
     const location = useLocation();
 
     useEffect(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
         if (!location.pathname.startsWith('/admin')) {
             trackEvent('page_view', { searchQuery: location.pathname });
         }
@@ -33,9 +34,9 @@ const PageLoader = () => (
 // Eagerly loaded public primary pages for instant initial paint
 import Home from './pages/Home';
 import Inventory from './pages/Inventory';
+import CarDetails from './pages/CarDetails';
 
 // Lazy-loaded secondary public pages
-const CarDetails = React.lazy(() => import('./pages/CarDetails'));
 const Auth = React.lazy(() => import('./pages/Auth'));
 const UserDashboard = React.lazy(() => import('./pages/UserDashboard'));
 const Contact = React.lazy(() => import('./pages/Contact'));

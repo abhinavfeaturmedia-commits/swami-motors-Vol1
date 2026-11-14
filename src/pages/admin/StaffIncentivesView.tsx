@@ -153,11 +153,18 @@ export default function StaffIncentivesView() {
 
   const myRank = leaderboard.findIndex(x => x.isMe) + 1;
 
-  // ── Today's announcements ────────────────────────────────────────────────
-  const today = new Date().toDateString();
-  const todayAnn = announcements.filter(a => new Date(a.created_at).toDateString() === today);
-  const pinnedAnn = announcements.filter(a => a.is_pinned);
-  const visibleAnn = [...new Map([...pinnedAnn, ...todayAnn].map(a => [a.id, a])).values()];
+  // ── Active announcements ────────────────────────────────────────────────
+  const now = new Date();
+  const activeAnn = announcements.filter(a => {
+    if (a.expires_at) {
+      const exp = new Date(String(a.expires_at).replace(' ', 'T'));
+      if (!isNaN(exp.getTime()) && exp < now) return false;
+    }
+    return true;
+  });
+  const pinnedAnn = activeAnn.filter(a => a.is_pinned);
+  const unpinnedAnn = activeAnn.filter(a => !a.is_pinned);
+  const visibleAnn = [...pinnedAnn, ...unpinnedAnn];
 
   if (loading) return (
     <div className="py-20 flex items-center justify-center">
@@ -188,12 +195,12 @@ export default function StaffIncentivesView() {
         </div>
       </div>
 
-      {/* Today's Announcements Banner */}
+      {/* Announcements Banner */}
       {visibleAnn.length > 0 && (
         <div className="space-y-3">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
             <span className="material-symbols-outlined text-sm text-amber-500">campaign</span>
-            Today's Announcements
+            Team Announcements
           </p>
           {visibleAnn.map(a => {
             const ps = PRIORITY_STYLES[a.priority] ?? PRIORITY_STYLES.normal;

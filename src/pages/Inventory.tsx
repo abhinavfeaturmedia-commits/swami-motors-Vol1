@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { X, Heart } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { X, Heart, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getPrimaryImage, formatPriceLakh, handleImageError } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { useInquiryCart } from '../contexts/InquiryCartContext';
 import { useToast } from '../contexts/ToastContext';
+import { getCachedInventory, setCachedInventory } from '../lib/inventoryCache';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Car {
@@ -27,6 +28,7 @@ interface Car {
 }
 
 const Inventory = () => {
+    const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const { addToCart, isInCart, setIsCartOpen } = useInquiryCart();
     
@@ -36,6 +38,8 @@ const Inventory = () => {
     const { user } = useAuth();
     const toast = useToast();
 
+    const CARS_PER_PAGE = 18;
+    const [currentPage, setCurrentPage] = useState(1);
     const [sortBy, setSortBy] = useState('newest');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [showFilters, setShowFilters] = useState(false);
@@ -64,17 +68,26 @@ const Inventory = () => {
         loadWishlist();
 
         const fetchInventory = async () => {
+            // Instant 0ms paint from in-memory cache if available
+            const cached = getCachedInventory();
+            if (cached && cached.length > 0) {
+                setCars(cached as Car[]);
+                setLoading(false);
+                return;
+            }
+
             setLoading(true);
             setError(false);
             const { data, error: err } = await supabase
                 .from('inventory')
-                .select('*')
+                .select('id, make, model, year, price, fuel_type, transmission, mileage, images, thumbnail, status, created_at, updated_at, condition, body_type')
                 .in('status', ['available', 'reserved'])
                 .order('created_at', { ascending: false });
                 
             if (err) {
                 setError(true);
             } else if (data) {
+                setCachedInventory(data);
                 setCars(data);
             }
             setLoading(false);
@@ -145,67 +158,97 @@ const Inventory = () => {
         return Array.from(new Set(cars.map(c => String(c.year)))).sort().reverse();
     }, [cars]);
 
-    // Apply filtering and sorting
-    let displayCars = cars.filter(car => {
-        // Keyword text search filter
-        if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            const matchesMake = car.make?.toLowerCase().includes(query);
-            const matchesModel = car.model?.toLowerCase().includes(query);
-            const matchesYear = String(car.year).includes(query);
-            const matchesFuel = car.fuel_type?.toLowerCase().includes(query);
-            const matchesTrans = car.transmission?.toLowerCase().includes(query);
-            if (!matchesMake && !matchesModel && !matchesYear && !matchesFuel && !matchesTrans) {
+    // Reset to page 1 whenever search, filters, or sort change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, selectedBrands, selectedYears, selectedBudget, selectedBodyTypes, selectedTransmissions, sortBy]);
+
+    // Apply filtering and sorting (memoized for maximum UI responsiveness)
+    const displayCars = useMemo(() => {
+        const result = cars.filter(car => {
+            // Keyword text search filter
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                const matchesMake = car.make?.toLowerCase().includes(query);
+                const matchesModel = car.model?.toLowerCase().includes(query);
+                const matchesYear = String(car.year).includes(query);
+                const matchesFuel = car.fuel_type?.toLowerCase().includes(query);
+                const matchesTrans = car.transmission?.toLowerCase().includes(query);
+                if (!matchesMake && !matchesModel && !matchesYear && !matchesFuel && !matchesTrans) {
+                    return false;
+                }
+            }
+
+            // Brand filter
+            if (selectedBrands.length > 0 && !selectedBrands.includes(car.make)) return false;
+            
+            // Year filter
+            if (selectedYears.length > 0 && !selectedYears.includes(String(car.year))) return false;
+            
+            // Budget filter
+            if (selectedBudget) {
+                const price = Number(car.price) || 0;
+                if (selectedBudget === 'under5' && price > 500000) return false;
+                if (selectedBudget === '5to10' && (price < 500000 || price > 1000000)) return false;
+                if (selectedBudget === '10to20' && (price < 1000000 || price > 2000000)) return false;
+                if (selectedBudget === '20plus' && price < 2000000) return false;
+            }
+
+            // Body Type filter
+            if (selectedBodyTypes.length > 0 && !selectedBodyTypes.some(bt => (car.body_type || '').toLowerCase() === bt.toLowerCase())) {
                 return false;
             }
-        }
 
-        // Brand filter
-        if (selectedBrands.length > 0 && !selectedBrands.includes(car.make)) return false;
-        
-        // Year filter
-        if (selectedYears.length > 0 && !selectedYears.includes(String(car.year))) return false;
-        
-        // Budget filter
-        if (selectedBudget) {
-            if (selectedBudget === 'under5' && car.price > 500000) return false;
-            if (selectedBudget === '5to10' && (car.price < 500000 || car.price > 1000000)) return false;
-            if (selectedBudget === '10to20' && (car.price < 1000000 || car.price > 2000000)) return false;
-            if (selectedBudget === '20plus' && car.price < 2000000) return false;
-        }
+            // Transmission filter
+            if (selectedTransmissions.length > 0 && !selectedTransmissions.some(t => (car.transmission || '').toLowerCase() === t.toLowerCase())) {
+                return false;
+            }
 
-        // Body Type filter
-        if (selectedBodyTypes.length > 0 && !selectedBodyTypes.some(bt => (car.body_type || '').toLowerCase() === bt.toLowerCase())) {
-            return false;
-        }
-
-        // Transmission filter
-        if (selectedTransmissions.length > 0 && !selectedTransmissions.some(t => (car.transmission || '').toLowerCase() === t.toLowerCase())) {
-            return false;
-        }
-
-        return true;
-    });
-    
-    const parseTime = (dateVal: string | null | undefined) => {
-        if (!dateVal) return 0;
-        const normalized = String(dateVal).replace(' ', 'T');
-        const t = new Date(normalized).getTime();
-        return isNaN(t) ? 0 : t;
-    };
-
-    if (sortBy === 'price-low') {
-        displayCars.sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
-    } else if (sortBy === 'price-high') {
-        displayCars.sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0));
-    } else {
-        displayCars.sort((a, b) => {
-            const timeA = parseTime(a.created_at) || parseTime(a.updated_at);
-            const timeB = parseTime(b.created_at) || parseTime(b.updated_at);
-            if (timeB !== timeA) return timeB - timeA;
-            return (b.id || '').localeCompare(a.id || '');
+            return true;
         });
-    }
+        
+        const parseTime = (dateVal: string | null | undefined) => {
+            if (!dateVal) return 0;
+            const normalized = String(dateVal).replace(' ', 'T');
+            const t = new Date(normalized).getTime();
+            return isNaN(t) ? 0 : t;
+        };
+
+        if (sortBy === 'price-low') {
+            result.sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
+        } else if (sortBy === 'price-high') {
+            result.sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0));
+        } else {
+            result.sort((a, b) => {
+                const timeA = parseTime(a.created_at) || parseTime(a.updated_at);
+                const timeB = parseTime(b.created_at) || parseTime(b.updated_at);
+                if (timeB !== timeA) return timeB - timeA;
+                return (b.id || '').localeCompare(a.id || '');
+            });
+        }
+
+        return result;
+    }, [cars, searchQuery, selectedBrands, selectedYears, selectedBudget, selectedBodyTypes, selectedTransmissions, sortBy]);
+
+    const totalPages = Math.ceil(displayCars.length / CARS_PER_PAGE) || 1;
+
+    const paginatedCars = useMemo(() => {
+        const start = (currentPage - 1) * CARS_PER_PAGE;
+        return displayCars.slice(start, start + CARS_PER_PAGE);
+    }, [displayCars, currentPage]);
+
+    const getPageNumbers = (current: number, total: number): (number | string)[] => {
+        if (total <= 7) {
+            return Array.from({ length: total }, (_, i) => i + 1);
+        }
+        if (current <= 4) {
+            return [1, 2, 3, 4, 5, '...', total];
+        }
+        if (current >= total - 3) {
+            return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+        }
+        return [1, '...', current - 1, current, current + 1, '...', total];
+    };
 
     const renderFiltersContent = () => (
         <>
@@ -479,7 +522,7 @@ const Inventory = () => {
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between mb-6 gap-3 sm:gap-4">
                         <div className="flex items-center justify-between sm:justify-start gap-4 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
                             <p className="text-xs sm:text-sm text-slate-500">
-                                Showing <strong className="text-primary font-black">{displayCars.length}</strong> <span className="hidden xs:inline">Cars</span>
+                                Showing <strong className="text-primary font-black">{displayCars.length > 0 ? `${(currentPage - 1) * CARS_PER_PAGE + 1}–${Math.min(currentPage * CARS_PER_PAGE, displayCars.length)} of ${displayCars.length}` : '0'}</strong> <span className="hidden xs:inline">Cars</span>
                             </p>
                             <div className="sm:hidden h-4 w-px bg-slate-200" />
                             <div className="flex items-center gap-1 sm:hidden">
@@ -552,102 +595,194 @@ const Inventory = () => {
                             </button>
                         </div>
                     ) : (
-                        <div className={`grid gap-5 sm:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'}`}>
-                            {displayCars.map(car => {
-                                const isSaved = wishlist.includes(car.id);
-                                const emiEst = car.price > 0 
-                                    ? Math.round((car.price * 0.8 * (0.095 / 12) * Math.pow(1 + 0.095 / 12, 60)) / (Math.pow(1 + 0.095 / 12, 60) - 1)) 
-                                    : 0;
+                        <div>
+                            <div className={`grid gap-5 sm:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'}`}>
+                                {paginatedCars.map((car, index) => {
+                                    const isSaved = wishlist.includes(car.id);
+                                    const carPrice = Number(car.price) || 0;
+                                    const emiEst = carPrice > 0 
+                                        ? Math.round((carPrice * 0.8 * (0.095 / 12) * Math.pow(1 + 0.095 / 12, 60)) / (Math.pow(1 + 0.095 / 12, 60) - 1)) 
+                                        : 0;
 
-                                return (
-                                    <article key={car.id} className={`doppelrand-shell hover:border-accent/40 group relative transition-all duration-300 ${viewMode === 'list' ? 'flex flex-col sm:flex-row' : 'flex flex-col'}`}>
-                                        <div className={`doppelrand-core flex flex-col flex-1 overflow-hidden ${viewMode === 'list' ? 'sm:flex-row' : ''}`}>
-                                            <Link to={`/car/${car.id}`} className={`flex flex-col flex-1 ${viewMode === 'list' ? 'sm:flex-row' : ''}`}>
-                                                <div className={`relative overflow-hidden bg-slate-100 ${viewMode === 'list' ? 'w-full sm:w-1/3 aspect-[16/11] sm:aspect-auto sm:h-full' : 'aspect-[16/11]'}`}>
-                                                    <img 
-                                                        alt={`${car.year} ${car.make} ${car.model}`} 
-                                                        src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))} 
-                                                        onError={handleImageError}
-                                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                                                    />
-                                                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider text-white bg-primary/90 backdrop-blur-md flex items-center gap-1 shadow-sm">
-                                                            <span className="material-symbols-outlined text-xs text-accent">verified</span> 200-Pt Checked
-                                                        </span>
-                                                        {car.status === 'reserved' && (
-                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider text-white bg-amber-600 shadow-sm">
-                                                                Reserved
+                                    return (
+                                        <article 
+                                            key={car.id} 
+                                            onClick={(e) => {
+                                                const target = e.target as HTMLElement;
+                                                if (target.closest('button, a, input')) return;
+                                                navigate(`/car/${car.id}`);
+                                            }}
+                                            className={`doppelrand-shell hover:border-accent/50 group relative transition-all duration-300 cursor-pointer ${viewMode === 'list' ? 'flex flex-col sm:flex-row' : 'flex flex-col'}`}
+                                        >
+                                            <div className={`doppelrand-core flex flex-col flex-1 overflow-hidden ${viewMode === 'list' ? 'sm:flex-row' : ''}`}>
+                                                <Link 
+                                                    to={`/car/${car.id}`} 
+                                                    className={`flex flex-col flex-1 ${viewMode === 'list' ? 'sm:flex-row' : ''}`}
+                                                >
+                                                    <div className={`relative overflow-hidden bg-slate-100 ${viewMode === 'list' ? 'w-full sm:w-1/3 aspect-[16/11] sm:aspect-auto sm:h-full' : 'aspect-[16/11]'}`}>
+                                                        <img 
+                                                            alt={`${car.year} ${car.make} ${car.model}`} 
+                                                            src={getPrimaryImage(car.images?.length ? car.images : (car.thumbnail ? [car.thumbnail] : []))} 
+                                                            onError={handleImageError}
+                                                            loading={index < 3 ? 'eager' : 'lazy'}
+                                                            decoding="async"
+                                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                                        />
+                                                        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider text-white bg-primary/90 backdrop-blur-md flex items-center gap-1 shadow-sm">
+                                                                <span className="material-symbols-outlined text-xs text-accent">verified</span> 200-Pt Checked
                                                             </span>
+                                                            {car.status === 'reserved' && (
+                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider text-white bg-amber-600 shadow-sm">
+                                                                    Reserved
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="absolute bottom-2.5 left-2.5 bg-black/60 text-white text-[10px] font-medium px-2 py-0.5 rounded backdrop-blur-sm flex items-center gap-1">
+                                                            <span className="material-symbols-outlined text-xs">photo_library</span> {car.images?.length || 0}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="p-4 sm:p-5 flex flex-col flex-1">
+                                                        <h3 className="text-sm sm:text-base font-bold text-primary font-display line-clamp-1 group-hover:text-accent transition-colors" title={`${car.year} ${car.make} ${car.model}`}>
+                                                            {car.year} {car.make} {car.model}
+                                                        </h3>
+                                                        <p className="text-xs text-slate-500 mb-2 line-clamp-1">{car.fuel_type} • {car.transmission}</p>
+                                                        
+                                                        <div className="flex items-center gap-2.5 text-xs text-slate-500 mb-3 font-medium">
+                                                            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm text-slate-400">speed</span>{car.mileage != null && !isNaN(Number(car.mileage)) ? `${Number(car.mileage).toLocaleString('en-IN')} km` : '—'}</span>
+                                                            <span>•</span>
+                                                            <span>{car.fuel_type}</span>
+                                                            <span>•</span>
+                                                            <span>{car.transmission}</span>
+                                                        </div>
+
+                                                        {/* Calculated Monthly EMI Badge */}
+                                                        {emiEst > 0 && (
+                                                            <div className="inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200/80 text-[10px] font-bold text-amber-800 mb-3">
+                                                                <span>EMI from ₹{emiEst.toLocaleString('en-IN')}/mo*</span>
+                                                            </div>
                                                         )}
                                                     </div>
-                                                    <div className="absolute bottom-2.5 left-2.5 bg-black/60 text-white text-[10px] font-medium px-2 py-0.5 rounded backdrop-blur-sm flex items-center gap-1">
-                                                        <span className="material-symbols-outlined text-xs">photo_library</span> {car.images?.length || 0}
-                                                    </div>
-                                                </div>
+                                                </Link>
 
-                                                <div className="p-4 sm:p-5 flex flex-col flex-1">
-                                                    <h3 className="text-sm sm:text-base font-bold text-primary font-display line-clamp-1 group-hover:text-accent transition-colors" title={`${car.year} ${car.make} ${car.model}`}>
-                                                        {car.year} {car.make} {car.model}
-                                                    </h3>
-                                                    <p className="text-xs text-slate-500 mb-2 line-clamp-1">{car.fuel_type} • {car.transmission}</p>
-                                                    
-                                                    <div className="flex items-center gap-2.5 text-xs text-slate-500 mb-3 font-medium">
-                                                        <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm text-slate-400">speed</span>{(car.mileage || 0).toLocaleString()} km</span>
-                                                        <span>•</span>
-                                                        <span>{car.fuel_type}</span>
-                                                        <span>•</span>
-                                                        <span>{car.transmission}</span>
-                                                    </div>
-
-                                                    {/* Calculated Monthly EMI Badge */}
-                                                    {emiEst > 0 && (
-                                                        <div className="inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200/80 text-[10px] font-bold text-amber-800 mb-3">
-                                                            <span>EMI from ₹{emiEst.toLocaleString('en-IN')}/mo*</span>
+                                                <button 
+                                                    className={`absolute top-4 right-4 p-2 bg-white/95 rounded-full transition-all shadow-md backdrop-blur-md z-10 cursor-pointer ${isSaved ? 'text-red-500' : 'text-slate-400 hover:text-red-500'}`}
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        toggleWishlist(e, car.id);
+                                                    }}
+                                                    aria-label="Save to Wishlist"
+                                                >
+                                                    <Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />
+                                                </button>
+                                                
+                                                <div className={`px-4 sm:px-5 pb-4 sm:pb-5 mt-auto ${viewMode === 'list' ? 'sm:w-1/3 sm:border-l sm:border-slate-100 sm:flex sm:flex-col sm:justify-center' : ''}`}>
+                                                    <div className="flex items-baseline gap-2 mb-3 pt-2 border-t border-slate-100">
+                                                        <div>
+                                                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Price</span>
+                                                            <span className="text-lg sm:text-xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)} Lakh</span>
                                                         </div>
-                                                    )}
-                                                </div>
-                                            </Link>
-
-                                            <button 
-                                                className={`absolute top-4 right-4 p-2 bg-white/95 rounded-full transition-all shadow-md backdrop-blur-md z-10 cursor-pointer ${isSaved ? 'text-red-500' : 'text-slate-400 hover:text-red-500'}`}
-                                                onClick={(e) => toggleWishlist(e, car.id)}
-                                                aria-label="Save to Wishlist"
-                                            >
-                                                <Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />
-                                            </button>
-                                            
-                                            <div className={`px-4 sm:px-5 pb-4 sm:pb-5 mt-auto ${viewMode === 'list' ? 'sm:w-1/3 sm:border-l sm:border-slate-100 sm:flex sm:flex-col sm:justify-center' : ''}`}>
-                                                <div className="flex items-baseline gap-2 mb-3 pt-2 border-t border-slate-100">
-                                                    <div>
-                                                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Price</span>
-                                                        <span className="text-lg sm:text-xl font-black text-primary font-display">₹ {formatPriceLakh(car.price)} Lakh</span>
                                                     </div>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <Link to={`/book-test-drive?car=${car.id}`} className="flex-1 h-9 sm:h-10 flex items-center justify-center text-xs font-semibold text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
-                                                        Test Drive
-                                                    </Link>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            if (isInCart(car.id)) {
-                                                                setIsCartOpen(true);
-                                                            } else {
-                                                                addToCart(car);
-                                                            }
-                                                        }}
-                                                        className={`flex-1 h-9 sm:h-10 flex items-center justify-center text-xs font-semibold rounded-xl transition-all duration-200 gap-1 cursor-pointer ${isInCart(car.id) ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100/70' : 'bg-primary text-white hover:bg-primary-light shadow-xs'}`}
-                                                    >
-                                                        <span className="material-symbols-outlined text-sm">{isInCart(car.id) ? 'done' : 'shopping_bag'}</span>
-                                                        {isInCart(car.id) ? 'In Cart' : 'Inquire'}
-                                                    </button>
+                                                    <div className="flex gap-2">
+                                                        <Link 
+                                                            to={`/book-test-drive?car=${car.id}`} 
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="flex-1 h-9 sm:h-10 flex items-center justify-center text-xs font-semibold text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                                                        >
+                                                            Test Drive
+                                                        </Link>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                if (isInCart(car.id)) {
+                                                                    setIsCartOpen(true);
+                                                                } else {
+                                                                    addToCart(car);
+                                                                }
+                                                            }}
+                                                            className={`flex-1 h-9 sm:h-10 flex items-center justify-center text-xs font-semibold rounded-xl transition-all duration-200 gap-1 cursor-pointer ${isInCart(car.id) ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100/70' : 'bg-primary text-white hover:bg-primary-light shadow-xs'}`}
+                                                        >
+                                                            <span className="material-symbols-outlined text-sm">{isInCart(car.id) ? 'done' : 'shopping_bag'}</span>
+                                                            {isInCart(car.id) ? 'In Cart' : 'Inquire'}
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </article>
-                                );
-                            })}
+                                        </article>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Pagination Controls */}
+                            {totalPages > 1 && (
+                                <div className="mt-10 pt-6 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                    <p className="text-xs text-slate-500 font-medium">
+                                        Page <strong className="text-primary font-bold">{currentPage}</strong> of <strong className="text-primary font-bold">{totalPages}</strong> ({displayCars.length} total vehicles)
+                                    </p>
+
+                                    <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                                        {/* Previous Page */}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (currentPage > 1) {
+                                                    setCurrentPage(p => p - 1);
+                                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                                }
+                                            }}
+                                            disabled={currentPage <= 1}
+                                            className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                                            aria-label="Previous Page"
+                                        >
+                                            <ChevronLeft size={15} />
+                                            <span className="hidden sm:inline">Prev</span>
+                                        </button>
+
+                                        {/* Numeric Page Buttons */}
+                                        {getPageNumbers(currentPage, totalPages).map((p, idx) => (
+                                            p === '...' ? (
+                                                <span key={`ellipsis-${idx}`} className="px-2 text-slate-400 font-bold text-xs select-none">…</span>
+                                            ) : (
+                                                <button
+                                                    key={`page-${p}`}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setCurrentPage(Number(p));
+                                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                                    }}
+                                                    className={`size-9 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                                        currentPage === p
+                                                            ? 'bg-primary text-white shadow-sm'
+                                                            : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs'
+                                                    }`}
+                                                >
+                                                    {p}
+                                                </button>
+                                            )
+                                        ))}
+
+                                        {/* Next Page */}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (currentPage < totalPages) {
+                                                    setCurrentPage(p => p + 1);
+                                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                                }
+                                            }}
+                                            disabled={currentPage >= totalPages}
+                                            className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                                            aria-label="Next Page"
+                                        >
+                                            <span className="hidden sm:inline">Next</span>
+                                            <ChevronRight size={15} />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

@@ -62,8 +62,8 @@ const ShareLogs: React.FC = () => {
             .from('inventory_shares')
             .select(`
                 *,
-                inventory:inventory_id ( make, model, year, variant, thumbnail ),
-                profile:shared_by ( full_name, email )
+                inventory:inventory!inventory_id ( make, model, year, variant, thumbnail ),
+                profile:profiles!shared_by ( full_name, email )
             `)
             .order('shared_at', { ascending: false })
             .range(from, to);

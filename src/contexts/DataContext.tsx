@@ -65,29 +65,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const refreshData = async () => {
         setLoading(true);
         try {
-            const safeFetchAll = async (queryFn: () => any) => {
+            const safeFetch = async (query: any) => {
                 try {
-                    let allData: any[] = [];
-                    let from = 0;
-                    const batchSize = 1000;
-                    let hasMore = true;
-                    
-                    while (hasMore) {
-                        const { data, error } = await queryFn().range(from, from + batchSize - 1);
-                        if (error) throw error;
-                        if (data && data.length > 0) {
-                            allData = [...allData, ...data];
-                            from += batchSize;
-                            if (data.length < batchSize) {
-                                hasMore = false;
-                            }
-                        } else {
-                            hasMore = false;
-                        }
+                    const { data, error } = await query;
+                    if (error) {
+                        console.warn("safeFetch query warning:", error);
+                        return { data: [] };
                     }
-                    return { data: allData };
+                    return { data: data || [] };
                 } catch (error) {
-                    console.error("Error in safeFetchAll:", error);
+                    console.error("Error in safeFetch:", error);
                     return { data: [] };
                 }
             };
@@ -118,32 +105,32 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 { data: businessDealsData },
                 { data: giftsData }
             ] = await Promise.all([
-                safeFetchAll(() => supabase.from('leads').select('*').order('created_at', { ascending: false })),
-                safeFetchAll(() => supabase.from('customers').select('*').order('created_at', { ascending: false })),
-                safeFetchAll(() => supabase.from('inventory').select('*').order('created_at', { ascending: false })),
-                safeFetchAll(() => supabase.from('sales').select('*, customer:customers(*), car:inventory(*)').order('sale_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('bookings').select('*, lead:leads(*), car:inventory(*)').order('booking_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('lead_activities').select('*').order('created_at', { ascending: false })),
+                safeFetch(supabase.from('leads').select('*').order('created_at', { ascending: false }).limit(250)),
+                safeFetch(supabase.from('customers').select('*').order('created_at', { ascending: false }).limit(300)),
+                safeFetch(supabase.from('inventory').select('*').order('created_at', { ascending: false }).limit(500)),
+                safeFetch(supabase.from('sales').select('*, customer:customers(*), car:inventory(*)').order('sale_date', { ascending: false }).limit(300)),
+                safeFetch(supabase.from('bookings').select('*, lead:leads(*), car:inventory(*)').order('booking_date', { ascending: false }).limit(300)),
+                safeFetch(supabase.from('lead_activities').select('*').order('created_at', { ascending: false }).limit(200)),
                 
                 // Keep these failsafe in case the user hasn't run the migration yet, it won't crash the app globally
-                safeFetchAll(() => supabase.from('tasks').select('*, lead:leads(*)').order('due_date', { ascending: true })),
-                safeFetchAll(() => supabase.from('follow_ups').select('*, lead:leads(*)').order('next_followup_date', { ascending: true })),
-                safeFetchAll(() => supabase.from('vehicle_expenses').select('*, car:inventory(*)').order('expense_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('inspections').select('*, car:inventory(*)').order('inspection_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('visits').select('*, staff:profiles!staff_id(full_name), lead:leads(*), customer:customers(*)').order('created_at', { ascending: false })),
-                safeFetchAll(() => supabase.from('dealership_settings').select('*')),
-                safeFetchAll(() => supabase.from('club_members').select('*, customer:customers(*)').order('created_at', { ascending: false })),
-                safeFetchAll(() => supabase.from('club_service_exchanges').select('*, added_by_profile:profiles!added_by(full_name)').order('transaction_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('finance_services').select('*, customer:customers(*), car:inventory(*)').order('created_at', { ascending: false })),
-                safeFetchAll(() => supabase.from('networking_clubs').select('*').order('name', { ascending: true })),
-                safeFetchAll(() => supabase.from('club_chapters').select('*').order('name', { ascending: true })),
-                safeFetchAll(() => supabase.from('club_attendance').select('*').order('meeting_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('club_presentations').select('*').order('presentation_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('club_one_to_one').select('*').order('meeting_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('club_one_to_many').select('*').order('meeting_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('club_referrals').select('*').order('referral_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('club_business_deals').select('*').order('deal_date', { ascending: false })),
-                safeFetchAll(() => supabase.from('club_gifts').select('*').order('gift_date', { ascending: false }))
+                safeFetch(supabase.from('tasks').select('*, lead:leads(*)').order('due_date', { ascending: true }).limit(200)),
+                safeFetch(supabase.from('follow_ups').select('*, lead:leads(*)').order('next_followup_date', { ascending: true }).limit(200)),
+                safeFetch(supabase.from('vehicle_expenses').select('*, car:inventory(*)').order('expense_date', { ascending: false }).limit(200)),
+                safeFetch(supabase.from('inspections').select('*, car:inventory(*)').order('inspection_date', { ascending: false }).limit(100)),
+                safeFetch(supabase.from('visits').select('*, staff:profiles!staff_id(full_name), lead:leads(*), customer:customers(*)').order('created_at', { ascending: false }).limit(200)),
+                safeFetch(supabase.from('dealership_settings').select('*')),
+                safeFetch(supabase.from('club_members').select('*, customer:customers(*)').order('created_at', { ascending: false }).limit(200)),
+                safeFetch(supabase.from('club_service_exchanges').select('*, added_by_profile:profiles!added_by(full_name)').order('transaction_date', { ascending: false }).limit(100)),
+                safeFetch(supabase.from('finance_services').select('*, customer:customers(*), car:inventory(*)').order('created_at', { ascending: false }).limit(100)),
+                safeFetch(supabase.from('networking_clubs').select('*').order('name', { ascending: true })),
+                safeFetch(supabase.from('club_chapters').select('*').order('name', { ascending: true })),
+                safeFetch(supabase.from('club_attendance').select('*').order('meeting_date', { ascending: false }).limit(100)),
+                safeFetch(supabase.from('club_presentations').select('*').order('presentation_date', { ascending: false }).limit(100)),
+                safeFetch(supabase.from('club_one_to_one').select('*').order('meeting_date', { ascending: false }).limit(100)),
+                safeFetch(supabase.from('club_one_to_many').select('*').order('meeting_date', { ascending: false }).limit(100)),
+                safeFetch(supabase.from('club_referrals').select('*').order('referral_date', { ascending: false }).limit(100)),
+                safeFetch(supabase.from('club_business_deals').select('*').order('deal_date', { ascending: false }).limit(100)),
+                safeFetch(supabase.from('club_gifts').select('*').order('gift_date', { ascending: false }).limit(100))
             ]);
 
             setLeads(leadsData || []);

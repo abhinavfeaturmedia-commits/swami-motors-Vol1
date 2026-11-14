@@ -9,7 +9,7 @@ const formatCurrency = (val: number) => `₹${val.toLocaleString('en-IN')}`;
 const formatCurrencyLakhs = (val: number) => `₹${(val / 100000).toFixed(2)}L`;
 
 const Accounts = () => {
-    const { sales, expenses, inventory } = useData();
+    const { sales, expenses, inventory, loading } = useData();
     const navigate = useNavigate();
     const [tab, setTab] = useState('All');
 
@@ -107,10 +107,10 @@ const Accounts = () => {
             {/* Summary */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                    { label: 'Gross Verified Income', val: formatCurrencyLakhs(totalIncome), icon: 'trending_up', color: 'bg-green-500/10 text-green-600' },
-                    { label: 'Outgoings & Capital', val: formatCurrencyLakhs(totalExpense), icon: 'trending_down', color: 'bg-red-500/10 text-red-600' },
-                    { label: 'Net Operative Cashflow', val: formatCurrencyLakhs(netBalance), icon: 'account_balance', color: netBalance >= 0 ? 'bg-blue-500/10 text-blue-600' : 'bg-red-500/10 text-red-600' },
-                    { label: 'Pending Collections', val: '₹0.00', icon: 'pending', color: 'bg-amber-500/10 text-amber-600' },
+                    { label: 'Gross Verified Income', val: loading ? '...' : formatCurrencyLakhs(totalIncome), icon: 'trending_up', color: 'bg-green-500/10 text-green-600' },
+                    { label: 'Outgoings & Capital', val: loading ? '...' : formatCurrencyLakhs(totalExpense), icon: 'trending_down', color: 'bg-red-500/10 text-red-600' },
+                    { label: 'Net Operative Cashflow', val: loading ? '...' : formatCurrencyLakhs(netBalance), icon: 'account_balance', color: netBalance >= 0 ? 'bg-blue-500/10 text-blue-600' : 'bg-red-500/10 text-red-600' },
+                    { label: 'Pending Collections', val: loading ? '...' : '₹0.00', icon: 'pending', color: 'bg-amber-500/10 text-amber-600' },
                 ].map(s => (
                     <div key={s.label} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-[var(--shadow-card)]">
                         <div className={`size-9 rounded-xl flex items-center justify-center ${s.color} mb-2`}><span className="material-symbols-outlined text-lg">{s.icon}</span></div>
@@ -140,8 +140,12 @@ const Accounts = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {filtered.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400">No transactions recorded for this filter.</td></tr>}
-                        {filtered.map(t => (
+                        {loading ? (
+                            <tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400">Loading ledger records…</td></tr>
+                        ) : filtered.length === 0 ? (
+                            <tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400">No transactions recorded for this filter.</td></tr>
+                        ) : null}
+                        {!loading && filtered.map(t => (
                             <tr
                                 key={t.id}
                                 onClick={() => t.link && navigate(t.link)}

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { toWhatsAppUrl, resolveImage, handleImageError } from '../../lib/utils';
+import { toWhatsAppUrl, resolveImage, handleImageError, formatPriceLakh } from '../../lib/utils';
 import HighlightText from '../../components/ui/HighlightText';
 
 interface ConsignmentCar {
@@ -310,7 +310,7 @@ const ConsignmentTracker = () => {
                                     const expiry = getExpiryStatus(car.consignment_end_date);
                                     const ourFee = (() => {
                                         if (!car.consignment_fee_value) return '—';
-                                        if (car.consignment_fee_type === 'fixed') return `₹${car.consignment_fee_value.toLocaleString('en-IN')}`;
+                                        if (car.consignment_fee_type === 'fixed') return `₹${Number(car.consignment_fee_value || 0).toLocaleString('en-IN')}`;
                                         if (car.consignment_fee_type === 'percentage') return `${car.consignment_fee_value}%`;
                                         return '—';
                                     })();
@@ -360,11 +360,11 @@ const ConsignmentTracker = () => {
                                             {/* Agreed Price */}
                                             <td className="px-5 py-3.5">
                                                 {car.consignment_agreed_price ? (
-                                                    <p className="text-sm font-bold text-slate-700">₹{(car.consignment_agreed_price / 100000).toFixed(2)}L</p>
+                                                    <p className="text-sm font-bold text-slate-700">₹{formatPriceLakh(car.consignment_agreed_price)}L</p>
                                                 ) : (
-                                                    <p className="text-sm text-slate-400">₹{(car.price / 100000).toFixed(2)}L</p>
+                                                    <p className="text-sm text-slate-400">₹{formatPriceLakh(car.price)}L</p>
                                                 )}
-                                                <p className="text-[10px] text-slate-400">Listed: ₹{(car.price / 100000).toFixed(2)}L</p>
+                                                <p className="text-[10px] text-slate-400">Listed: ₹{formatPriceLakh(car.price)}L</p>
                                             </td>
 
                                             {/* Fee */}
@@ -373,7 +373,7 @@ const ConsignmentTracker = () => {
                                                     <span className="material-symbols-outlined text-[12px]">payments</span>
                                                     {ourFee}
                                                     {car.consignment_fee_type === 'percentage' && car.consignment_fee_value && car.price
-                                                        ? <span className="text-purple-500 font-normal">(≈₹{Math.round(car.price * car.consignment_fee_value / 100).toLocaleString('en-IN')})</span>
+                                                        ? <span className="text-purple-500 font-normal">(≈₹{Math.round((Number(car.price) || 0) * (Number(car.consignment_fee_value) || 0) / 100).toLocaleString('en-IN')})</span>
                                                         : null
                                                     }
                                                 </span>
@@ -418,6 +418,23 @@ const ConsignmentTracker = () => {
                                                             <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
                                                         ))}
                                                     </select>
+                                                    {car.status === 'pending' && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleStatusChange(car.id, 'available')}
+                                                            className="text-[10px] font-bold px-2 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition flex items-center gap-1 shadow-xs cursor-pointer"
+                                                            title="Car is currently hidden in Draft/Pending. Click to show live on public website!"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[12px]">rocket_launch</span>
+                                                            Publish Live
+                                                        </button>
+                                                    )}
+                                                    {car.status === 'available' && (
+                                                        <span className="text-[10px] text-emerald-700 font-bold px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 flex items-center gap-1" title="Vehicle is visible on the public website">
+                                                            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                            Live on Site
+                                                        </span>
+                                                    )}
                                                     {whatsappLink && (
                                                         <a
                                                             href={whatsappLink}
@@ -495,7 +512,7 @@ const ConsignmentTracker = () => {
                                         ? Math.round(price * car.consignment_fee_value / 100) : 0;
                                 return fee > 0 ? (
                                     <div className="bg-purple-50 border border-purple-100 rounded-xl px-4 py-3 text-sm font-semibold text-purple-700">
-                                        🤝 Swami earns: ₹{fee.toLocaleString('en-IN')} ({car.consignment_fee_type === 'percentage' ? `${car.consignment_fee_value}%` : 'fixed'})
+                                        🤝 Swami earns: ₹{Number(fee || 0).toLocaleString('en-IN')} ({car.consignment_fee_type === 'percentage' ? `${car.consignment_fee_value}%` : 'fixed'})
                                     </div>
                                 ) : null;
                             })()}
